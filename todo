@@ -1,0 +1,5 @@
+-> Convert tlists to std::vector and priority vector
+-> memory pools for strings - sized blocks
+-> memory pools for objects - map contents etc
+-> connection speed scaling
+
