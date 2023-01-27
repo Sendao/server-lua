@@ -5,37 +5,21 @@ User::User(void)
 	bQuitting = false;
 	outbuf = NULL;
 	outbufsz = 0;
+	outbufalloc = 0;
+	outbufmax = 1500; // MTU
 	inbufmax = MSL;
 	inbuf = (char*)grabMem( MSL );
 	inbufsz = 0;
-	messages = new tlist;
-	qosbuf = new tlist;
 	sHost = NULL;
 	fSock = -1;
 	state = 0;
-
-	id = rrand(1000, 9999);
-	x = y = z = 0.0f;
-	name = NULL;
-	password = NULL;
-	pobj = NULL;
-
-	return;
 }
 
 User::~User(void)
 {
-	tnode *n;
-	tlist *m;
-
-	forTLIST( m, n, messages, tlist* ) {
-		deleteMem(m);
-	}
+	strmem->
 	GS->Free( sHost );
 	releaseMem(inbuf);
-	deleteMem(messages);
-
-	return;
 }
 
 

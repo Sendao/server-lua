@@ -3,6 +3,9 @@
 
 #include <string.h>
 #include <sys/types.h>
+#define SOL_ALL_SAFETIES_ON 1
+#include <sol/sol.hpp>
+#include <iostream>
 
 #ifdef WIN32
 #include <winsock2.h>
