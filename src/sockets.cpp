@@ -107,7 +107,10 @@ User *InitConnection(void)
 	new(user) User();
 	
 	user->fSock = fUser;
-	user->sHost = GS->Copy(inet_ntoa(saConn.sin_addr));
+	char *ntoa = inet_ntoa(saConn.sin_addr);
+	user->sHost = strmem->Alloc( strlen(ntoa)+1 );
+	strcpy(user->sHost, ntoa);
+
 	sscanf(user->sHost, "%d.%d.%d.%d", &user->iHost[0], &user->iHost[1], &user->iHost[2], &user->iHost[3]);
 	lprintf("Got connection from %d.%d.%d.%d", user->iHost[0], user->iHost[1], user->iHost[2], user->iHost[3]);
 
@@ -153,11 +156,9 @@ int OutputConnection(User *user)
 int InputConnection(User *user)
 {
 	uintptr_t iSize;
-	Message *m;
 	char *p, *tmpbuf;
 
 	if( !user ) return 0;
-	classdef *c = LookupClass<Message>();
 
 	iSize = recv(user->fSock, user->inbuf+user->inbufsz, user->inbufmax - user->inbufsz, 0);
 
@@ -169,6 +170,7 @@ int InputConnection(User *user)
 	user->inbufsz += iSize;
 
 	// Parse into messages
+	/*
 	p = user->inbuf;
 	iSize = 0;
 	do {
@@ -197,6 +199,7 @@ int InputConnection(User *user)
 			releaseMem(tmpbuf);
 		}
 	}
+	*/
 
 	return 0;
 }
