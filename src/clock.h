@@ -14,6 +14,7 @@ private:
 	int Test;
 	time_t time;
 	tm tmx;
+	float speed;
 
 public:
 	void InitialiseAPITable(void);
@@ -23,8 +24,10 @@ public:
 	void SetHour(int newHour);
 	void SetMin(int newMin);
 	void SetCalendar(int newDay, int newMonth, int newYear);
-	std::tuple<int, int> Clock::GetClock(void);
-	std::tuple<int, int, int> Clock::GetCalendar(void);
+	std::tuple<int, int> GetClock(void);
+	std::tuple<int, int, int> GetCalendar(void);
+	int GetHour(void);
+	int GetMin(void);
 	int GetDay(void);
 	int GetWeek(void);
 	int GetWeekDay(void);
@@ -33,9 +36,8 @@ public:
 	void PassDays(int days);
 	void SetTotalDaySec(int secs);
 	void SetDaySpeed(float speed);
-	int GetGameClockMinutesUntil();
-
-}
+	std::tuple<int, int, int> GetGameClockMinutesUntil();
+};
 
 
 

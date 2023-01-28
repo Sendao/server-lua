@@ -1,6 +1,7 @@
 #include "main.h"
 
 int fSock;
+#define LINUX
 
 void InitSocket(int port)
 {
@@ -114,9 +115,6 @@ User *InitConnection(void)
 	sscanf(user->sHost, "%d.%d.%d.%d", &user->iHost[0], &user->iHost[1], &user->iHost[2], &user->iHost[3]);
 	lprintf("Got connection from %d.%d.%d.%d", user->iHost[0], user->iHost[1], user->iHost[2], user->iHost[3]);
 
-	user->pobj = new Object();
-	objs->Add(user->pobj->id, (void*)user->pobj);
-
 	return user;
 }
 
@@ -134,9 +132,10 @@ int OutputConnection(User *user)
 		//lprintf("Output %d", iSent);
 		if( iSent >= user->outbufsz )
 		{
-			releaseMem(user->outbuf);
+			strmem->Free( user->outbuf, user->outbufalloc );
 			user->outbuf = NULL;
 			user->outbufsz = 0;
+			user->outbufalloc = 0;
 		} else {
 			user->outbuf = user->outbuf+iSent;
 			user->outbufsz -= iSent;
@@ -211,12 +210,13 @@ void Output(User *user, const char *str, uint16_t len)
 	if( user->outbufsz + len > user->outbufalloc ) {
 		user->outbufalloc = user->outbufsz + len + 1024;
 	}
-	np = (char*)grabMem( user->outbufalloc );
+	np = (char*)strmem->Alloc( user->outbufalloc );
 
 	if( user->outbufsz != 0 ) {
 		memcpy( np, user->outbuf, user->outbufsz );
-		releaseMem( user->outbuf_memory );
+		strmem->Free( user->outbuf_memory, user->outbufalloc );
 	}
+
 	memcpy( np+user->outbufsz, str, len );
 	user->outbufsz += len;
 	user->outbuf = np;

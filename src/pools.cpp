@@ -2,8 +2,6 @@
 
 unordered_map<size_t, vector<void*>*> pools;
 StringMemory *strmem;
-char *strbuf;
-long long strbufsz;
 
 void init_pools( void )
 {
@@ -11,9 +9,6 @@ void init_pools( void )
 	
 	strmem = (StringMemory*)halloc( sizeof(StringMemory) );
 	new(strmem) StringMemory();
-
-	strbufsz = 1024*1024;
-	strbuf = malloc( strbufsz );
 }
 
 void *halloc( size_t sz )
@@ -47,18 +42,31 @@ void hfree( void *ptr, size_t sz )
 StringMemory::StringMemory()
 {
 	size_t size = 1024*1024;
-	char *zero = malloc( size );
-	items_ptr.insert( StringMemoryItem(zero, size) );
-	items_sz.insert( StringMemoryItem2(zero, size) );
+	char *zero = (char*)malloc( size );
+
+	StringMemoryItem sptr(zero, size);
+	StringMemoryItem2 ssz(zero, size);
+
+	items_ptr.insert( sptr );
+	items_sz.insert( ssz );
 }
 
 StringMemory::~StringMemory()
 {
 	set<StringMemoryItem>::iterator it;
 	for( it=items_ptr.begin(); it!=items_ptr.end(); it++ ) {
-		free( it->ptr );
+		const StringMemoryItem &x = *it;
+		free( (void*)x.ptr );
 	}
 }
+
+
+StringMemoryItem::StringMemoryItem( const StringMemoryItem2 &a )
+: ptr(a.ptr), size(a.size)
+{
+
+}
+
 
 char *StringMemory::Alloc( size_t sz )
 {
@@ -67,52 +75,70 @@ char *StringMemory::Alloc( size_t sz )
 
 	it = items_sz.lower_bound( StringMemoryItem2(NULL, sz) );
 	if( it != items_sz.end() ) {
-		StringMemoryItem2 &item = *it;
+		const StringMemoryItem2 &item = *it;
+		StringMemoryItem2 newitem;
+
 		ptr = item.ptr;
 		if( item.size == sz ) {
 			items_sz.erase( it );
-			items_ptr.erase( item );
+			items_ptr.erase( items_ptr.find(StringMemoryItem(item)) );
 		} else {
-			item.ptr += sz;
-			item.size -= sz;
+			items_ptr.erase( items_ptr.find(StringMemoryItem(item)) );
+			items_sz.erase( it );
+
+			newitem.ptr = item.ptr + sz;
+			newitem.size = item.size - sz;
+
+			items_sz.insert( newitem );
+			items_ptr.insert( StringMemoryItem(newitem) );
 		}
 		return ptr;
 	}
 	// no free block found, allocate new
 	size_t size = 1024*1024;
-	char *zero = malloc( size );
+	char *zero = (char*)malloc( size );
 	ptr = zero;
 	zero += sz;
 	size -= sz;
-	items_ptr.insert( StringMemoryItem(zero, size) );
-	items_sz.insert( StringMemoryItem2(zero, size) );
+	StringMemoryItem sptr(zero, size);
+	StringMemoryItem2 ssz(zero, size);
+	items_ptr.insert( sptr );
+	items_sz.insert( ssz );
 	return ptr;
 }
 
 void StringMemory::Free( char *ptr, size_t sz )
 {
-	StringMemoryItem item(ptr, sz);
 	set<StringMemoryItem>::iterator it;
-	it = items_ptr.lower_bound( item );
+	StringMemoryItem srch(ptr, sz);
+	
+	it = items_ptr.lower_bound( srch );
 	if( it != items_ptr.end() && it != items_ptr.begin() ) {
-		StringMemoryItem &item2 = *(it);
-		if( ptr + sz == item2.ptr ) {
-			items_sz.erase( item2 );
-			item2.ptr = ptr;
-			item2.size += sz;
-			items_sz.insert( item2 );
+		const StringMemoryItem &item = *it;
+		if( ptr + sz == item.ptr ) {
+			items_sz.erase( items_sz.find( item ) );
+			items_ptr.erase( it );
+			StringMemoryItem newitem(item);
+			newitem.ptr = ptr;
+			newitem.size += sz;
+			items_sz.insert( StringMemoryItem2(newitem) );
+			items_ptr.insert( newitem );
 			return;
 		}
-		item2 = *(it-1);
-		if( item2.ptr + item2.size == ptr ) {
-			items_sz.erase( item2 );
-			item2.size += sz;
-			items_sz.insert( item2 );
+		it--;
+		const StringMemoryItem &itemb = *it;
+		if( itemb.ptr + itemb.size == ptr ) {
+			items_sz.erase( items_sz.find( itemb ) );
+			items_ptr.erase( it );
+			StringMemoryItem newitem(itemb);
+			newitem.size += sz;
+			items_sz.insert( StringMemoryItem2(newitem) );
+			items_ptr.insert( newitem );
 			return;
 		}
 	}
-	items_ptr.insert( item );
-	items_sz.insert( StringMemoryItem2(ptr, sz) );
+	items_ptr.insert( srch );
+	items_sz.insert( StringMemoryItem2(srch) );
 }
 
 /*

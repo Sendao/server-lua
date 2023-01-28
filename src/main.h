@@ -13,22 +13,37 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
+#include <unistd.h>
 #endif
 
 #include <fcntl.h>
 #include <errno.h>
 
+#include <set>
 
 using namespace std;
+
+
+// lua.cpp
+extern sol::state lua;
 
 // user.cpp
 typedef class User User;
 
 // pools.cpp
+typedef class StringMemory StringMemory;
+typedef class StringMemoryItem StringMemoryItem;
+typedef class StringMemoryItem2 StringMemoryItem2;
+//typedef class StringTrie StringTrie;
 extern unordered_map<size_t, vector<void*>*> pools;
 extern StringMemory *strmem;
 extern char *strbuf;
 extern long long strbufsz;
+
+void init_pools(void);
+void *halloc(size_t);
+void hfree(void *, size_t);
 
 
 // sockets.cpp
@@ -41,6 +56,7 @@ int OutputConnection(User *);
 int InputConnection(User *);
 void Output(User *, const char *, uint16_t);
 void Input(User *);
+extern int fSock;
 
 
 // util.cpp
@@ -49,22 +65,13 @@ void setlog(const char *p);
 void debuglogflags(int16_t fla); // I suggest DBG_TOGGLE, not DBG_MAIN :L=)
 void lprintfx(uint16_t flx, const char *fmt, ...); // for use with USER_BUG
 bool strprefix( const char *longstr, const char *shortstr );
-// memory
-void *halloc( size_t sz, int cnt, int tp );
-void *halloc( size_t sz, int cnt, const char *name );
-void releaseMemOf( classdef *, void * );
-void reportCommonMem();
-void *qalloc( int sz );
-char *bufalloc( unsigned long sz, unsigned long *realsz );
-#ifdef DEBUG_MEM
-void dumpmemreport(const char *);
-#endif
 // File ops
 void fpackf( FILE *fp, const char *fmt, ... );
 void funpackf( FILE *fp, const char *fmt, ... );
 void fpackd( int fd, const char *fmt, ... );
 void funpackd( int fd, const char *fmt, ... );
 // Strings
+char *str_copy(const char *);
 const char *findfirst( const char *pat, const char *tests[], int cnt, const char **resptr );
 const char *findfrom( const char *pat, const char *tests );
 bool isalphastr( const char *str );
@@ -112,8 +119,10 @@ class StringMemoryItem
 	public:
 	char *ptr;
 	size_t size;
+	StringMemoryItem() {}
 	StringMemoryItem( char *p, size_t s ) : ptr(p), size(s) { }
-	StringMemoryItem( StringMemoryItem &b ) : ptr(b.ptr), size(b.size) { }
+	StringMemoryItem( const StringMemoryItem &b ) : ptr(b.ptr), size(b.size) { }
+	StringMemoryItem( const StringMemoryItem2 &a );
 
 	public:
 	bool operator< ( const StringMemoryItem &b ) const
@@ -128,14 +137,17 @@ class StringMemoryItem
 	{
 		return (ptr == b.ptr);
 	}
-}
+};
+
 class StringMemoryItem2
 {
 	public:
 	char *ptr;
 	size_t size;
+	StringMemoryItem2() {}
 	StringMemoryItem2( char *p, size_t s ) : ptr(p), size(s) { }
-	StringMemoryItem2( StringMemoryItem2 &b ) : ptr(b.ptr), size(b.size) { }
+	StringMemoryItem2( const StringMemoryItem &a ) : ptr(a.ptr), size(a.size) { }
+	StringMemoryItem2( const StringMemoryItem2 &b ) : ptr(b.ptr), size(b.size) { }
 	
 	public:
 	bool operator< ( const StringMemoryItem2 &b ) const
@@ -146,7 +158,7 @@ class StringMemoryItem2
 	{
 		return (size > b.size);
 	}
-}
+};
 
 class StringMemory
 {
@@ -155,15 +167,16 @@ class StringMemory
 	~StringMemory();
 	
 	public:
-	set<StringMemoryItem> items_ptr; // set is implemented as a binary tree
-	set<StringMemoryItem2> items_sz;
+	std::set<StringMemoryItem> items_ptr; // set is implemented as a binary tree
+	std::set<StringMemoryItem2> items_sz;
 
 	public:
 	char *Alloc( size_t sz );
-	void Free( void *ptr, size_t sz );
-}
+	void Free( char *ptr, size_t sz );
+};
 
 
+/*
 class StringTrie
 {
 	public:
@@ -178,5 +191,6 @@ class StringTrie
 	char *Add( const char *str, int offset=0 );
 	char *Find( const char *str );
 }
+*/
 
 #endif

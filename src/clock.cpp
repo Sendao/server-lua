@@ -2,6 +2,10 @@
 #include "clock.h"
 
 
+Clock::Clock()
+{
+	
+}
 Clock::Clock( int secs )
 {
 
@@ -88,12 +92,27 @@ void Clock::SetCalendar(int newDay, int newMonth, int newYear)
 
 std::tuple<int, int> Clock::GetClock(void)
 {
-	return std::make_tuple<int, int>( tmx.tm_hour, tmx.tm_min );
+	int hours = tmx.tm_hour;
+	int mins = tmx.tm_min;
+	return std::make_tuple( hours, mins );
 }
 
 std::tuple<int, int, int> Clock::GetCalendar(void)
 {
-	return std::make_tuple<int, int, int>( tmx.tm_mday, tmx.tm_mon+1, tmx.tm_year + 1900 );
+	int mday = tmx.tm_mday;
+	int month = tmx.tm_mon+1;
+	int year = tmx.tm_year + 1900;
+	return std::make_tuple( mday, month, year );
+}
+
+int Clock::GetHour( void )
+{
+	return tmx.tm_hour;
+}
+
+int Clock::GetMin( void )
+{
+	return tmx.tm_min;
 }
 
 int Clock::GetDay( void )
@@ -129,8 +148,8 @@ void Clock::PassDays(int days)
 void Clock::SetTotalDaySec(int secs)
 {
 	int hour = floor(secs/3600);
-	int min = floor((secs-hours*3600)/60);
-	int sec = (secs - hours*3600) - (mins*60);
+	int min = floor((secs-hour*3600)/60);
+	int sec = (secs - hour*3600) - (min*60);
 
 	tmx.tm_hour = hour;
 	tmx.tm_min = min;
@@ -142,7 +161,7 @@ void Clock::SetDaySpeed(float speed)
 {
 	this->speed = speed;
 }
-int Clock::GetGameClockMinutesUntil()
+std::tuple<int, int, int> Clock::GetGameClockMinutesUntil()
 {
-	return std::make_tuple<int, int, int>( 0, 0, 0 );
+	return std::make_tuple( 0, 0, 0 );
 }

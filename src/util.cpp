@@ -1,6 +1,8 @@
-#include "gluton.h"
+#include "main.h"
 
 const char *LOGFILE="log.txt";
+
+#define MSL 1024
 
 void qexpand( char **buf, const char *add );
 
@@ -35,7 +37,7 @@ void lprintf(const char *fmt, ...)
     fclose(fp);
 }
 
-uint16_t dbg_flags=DBG_MAIN;
+uint16_t dbg_flags=0;//DBG_MAIN;
 
 void debuglogflags( int16_t fla )
 {
@@ -54,8 +56,6 @@ void lprintfx(uint16_t flx, const char *fmt, ...)
     if( (dbg_flags&flx)==0 ) return;
 
     va_list args;
-	tl_timestamp now;
-
     va_start(args, fmt);
     vsprintf(buf, fmt, args);
     va_end(args);
@@ -77,35 +77,20 @@ void lprintfx(uint16_t flx, const char *fmt, ...)
     fclose(fp);
 }
 
-#ifdef DEBUG_MEM
 
-typedef struct _hlist hlist;
-typedef struct _memslot memslot;
-
-struct _hlist
+char *str_copy( const char *src )
 {
-	hlist *next;
-	memslot *data;
-};
-struct _memslot
-{
-	size_t sz;
-	void *ptr;
-};
-
-hlist *memslots = NULL;
-
-#endif
-
-
-
+	char *sv = strmem->Alloc( strlen(src) + 1 );
+	strcpy(sv, src);
+	return sv;
+}
 char *strdupsafe( const char *p )
 {
 	return str_copy(p);
 }
 char *strndupsafe( const char *p, int n )
 {
-	char *np = (char*)grabMem( n+1 );
+	char *np = (char*)strmem->Alloc( n+1 );
 	if( *p )
 		strncpy( np, p, n );
 	else
@@ -113,18 +98,9 @@ char *strndupsafe( const char *p, int n )
 	np[n]='\0';
 	return np;
 }
-char *bufalloc( unsigned long sz, unsigned long *realsz )
-{
-	// increase allocated memory space to the nearest power of 2
-	int i;
-	unsigned long x;
-	for( i=0,x=1; x < sz; i++, x*=2 );
-	*realsz = x;
-	return (char*)grabMem(x);
-}
 char *str_toupper( const char *src )
 {
-	char *psrc, *ptr = (char*)grabMem(strlen(src)+1);
+	char *psrc, *ptr = strmem->Alloc(strlen(src)+1);
 	psrc=ptr;
 	while( *src ) {
 		*ptr = toupper(*src);
@@ -133,12 +109,12 @@ char *str_toupper( const char *src )
 	}
 	*ptr = '\0';
 	char *pCopy = str_copy(psrc);
-	GP->Del(psrc);
+	strmem->Free( psrc, strlen(psrc)+1 );
 	return pCopy;
 }
 char *str_tolower( const char *src )
 {
-	char *psrc, *ptr = (char*)grabMem(strlen(src)+1);
+	char *psrc, *ptr = strmem->Alloc(strlen(src)+1);
 	psrc=ptr;
 	while( *src ) {
 		*ptr = tolower(*src);
@@ -146,7 +122,9 @@ char *str_tolower( const char *src )
 		src++;
 	}
 	*ptr = '\0';
-	return str_copy(psrc);
+	char *pCopy = str_copy(psrc);
+	strmem->Free( psrc, strlen(psrc)+1 );
+	return pCopy;
 }
 bool isalphastr( const char *str )
 {
@@ -161,7 +139,7 @@ char *substr( const char *src, int start, int end)
 {
 	if( end-start <= 0 ) return strdupsafe("");
 
-	char *tgt = (char*)grabMem( (end-start) + 1 );
+	char *tgt = (char*)strmem->Alloc( (end-start) + 1 );
 	strncpy( tgt, src+start, end-start);
 	tgt[end-start]=0;
 	return tgt;
@@ -177,7 +155,7 @@ char *str_replace( const char *needle, const char *newform, const char *haystack
 		if( op != ptr ) {
 			tmpbuf = strndupsafe( op, (int)(ptr-op) );
 			qexpand( &newbuf, tmpbuf );
-			releaseMem(tmpbuf);
+			free(tmpbuf);
 		}
 		qexpand( &newbuf, newform );
 		op = ptr + needlelen;
@@ -189,28 +167,13 @@ char *str_replace( const char *needle, const char *newform, const char *haystack
 	return newbuf;
 }
 
-char *htmlspecialchars_decode( char *ptr )
-{
-	char *tp, *tp2;
-
-	tp = str_replace("&gt;", ">", ptr);
-	tp2 = str_replace("&lt;", "<", tp);
-	releaseMem(tp);
-	tp = str_replace("&amp;", "&", tp2);
-	releaseMem(tp2);
-	tp2 = str_replace("&quot;", "\"", tp);
-	releaseMem(tp);
-
-	return tp2;
-}
-
 const char *findfirst( const char *pat, const char *tests[], int cnt, const char **resptr )
 {
 	const char *pats, *src;
 	const char **p;// [cnt];
 	int c;
 
-	p = (const char**)grabMem(sizeof(char*) * cnt);
+	p = (const char**)strmem->Alloc(sizeof(char*) * cnt);
 
 	for( c=0; c<cnt; c++ ) {
 		p[c] = tests[c];
@@ -229,7 +192,7 @@ const char *findfirst( const char *pat, const char *tests[], int cnt, const char
 					src++;
 				}
 				if (!*src) {
-					releaseMem(p);
+					free(p);
 					return pat;
 				}
 			}
@@ -237,7 +200,7 @@ const char *findfirst( const char *pat, const char *tests[], int cnt, const char
 		pat++;
 	}
 	if( resptr ) *resptr=NULL;
-	releaseMem(p);
+	free(p);
 	return NULL;
 }
 const char *findfrom( const char *pat, const char *tests )
@@ -283,17 +246,17 @@ void qexpand( char **buf, const char *add )
 		return;
 
 	if( !*buf ) {
-		tptr = (char*)grabMem( strlen(add) + 1 );
+		tptr = strmem->Alloc( strlen(add) + 1 );
 		strcpy(tptr, add);
 	} else if( !**buf ) {
-		releaseMem(*buf);
-		tptr = (char*)grabMem( strlen(add) + 1 );
+		strmem->Free( *buf, strlen(*buf)+1 );
+		tptr = strmem->Alloc( strlen(add) + 1 );
 		strcpy(tptr, add);
 	} else {
-		tptr = (char*)grabMem( strlen(*buf) + strlen(add) + 1 );
+		tptr = strmem->Alloc( strlen(*buf) + strlen(add) + 1 );
 		strcpy(tptr, *buf);
 		strcat(tptr, add);
-		releaseMem(*buf);
+		strmem->Free( *buf, strlen(*buf)+1 );
 	}
 
 	*buf = tptr;
@@ -319,7 +282,7 @@ void mystrim( char **pbuf )
 	}
 	if( changed ) {
 		tb = str_copy(buf);
-		releaseMem(*pbuf);
+		free(*pbuf);
 		*pbuf = tb;
 	}
 }
@@ -345,7 +308,7 @@ void funpackf( FILE *fp, const char *fmt, ... )
 			case 's':
 				fread( &mylen, sizeof(long), 1, fp );
 				s = (char**)va_arg(args, char**);
-				*s = (char*)grabMem(mylen+1);
+				*s = strmem->Alloc(mylen+1);
 				if( mylen != 0 )
 					fread( *s, sizeof(char), mylen, fp );
 				s[mylen] = 0;
@@ -354,7 +317,7 @@ void funpackf( FILE *fp, const char *fmt, ... )
 				len = (long*)va_arg(args, long*);
 				fread( len, sizeof(long), 1, fp );
 				p = (char**)va_arg(args, char**);
-				*p = (char*)grabMem(*len+1);
+				*p = strmem->Alloc(*len+1);
 				if( *len != 0 )
 					fread( *p, sizeof(char), *len, fp );
 				p[*len] = 0;
@@ -383,7 +346,7 @@ void funpackd( int fd, const char *fmt, ... )
 			case 's':
 				s = (char**)va_arg(args, char**);
 				read( fd, &mylen, sizeof(long) );
-				*s = (char*)grabMem(mylen+1);
+				*s = strmem->Alloc(mylen+1);
 				if( mylen != 0 )
 					read( fd, *s, mylen );
 				s[mylen] = 0;
@@ -392,7 +355,7 @@ void funpackd( int fd, const char *fmt, ... )
 				len = (long*)va_arg(args, long*);
 				read( fd, len, sizeof(long) );
 				p = (char**)va_arg(args, char**);
-				*p = (char*)grabMem(*len+1);
+				*p = strmem->Alloc(*len+1);
 				if( *len != 0 )
 					read( fd, *p, *len );
 				p[*len] = 0;

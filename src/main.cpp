@@ -1,5 +1,7 @@
 #include "main.h"
 
+void mainloop(void);
+
 
 int main(int ac, char *av[])
 {
@@ -37,14 +39,17 @@ int gettimeofday(struct timeval* tp, void* tzp) {
 void mainloop()
 {
 	struct timeval per, next_cycle, zerotime, *usetv;
+	fd_set fdI, fdO, fdE;
+	int iHigh, err, lsock;
 	vector<User*>::iterator ituser;
 	User *user;
+	char *tmpbuf;
 
 	gettimeofday(&next_cycle, NULL);
 
 	while(1)
 	{
-		/* New Timings */
+		/*
 		tl_timestamp ts;
 		double timeleft;
 
@@ -58,18 +63,13 @@ void mainloop()
 			usetv = NULL;
 			lprintf("No events - waiting for connection");
 		}
+		*/
+		usetv = NULL;
 		FD_ZERO(&fdI);
 		FD_ZERO(&fdO);
 		FD_ZERO(&fdE);
-		FD_ZERO(&fdC);
 
 		iHigh = fSock+1;
-		if( fUnix+1 > iHigh )
-			iHigh = fUnix+1;
-
-		if( last_memcheck == 0 || last_memcheck+60 < time(NULL) ) {
-			defragMem();
-		}
 		for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
 		{
 			user = *ituser;
@@ -83,17 +83,13 @@ void mainloop()
 			FD_SET(fSock, &fdI);
 			FD_SET(fSock, &fdE);
 		}
-		if( fUnix != -1 ) {
-			FD_SET(fUnix, &fdI);
-			FD_SET(fUnix, &fdE);
-		}
 
 		err=select((int)iHigh, &fdI, NULL, &fdE, usetv);
 		if( err == -1 ) {
 			perror("select()");
 			tmpbuf = GetSocketError(fSock);
 			lprintf("select() error: %s", tmpbuf);
-			releaseMem(tmpbuf);
+			strmem->Free( tmpbuf, strlen(tmpbuf)+1 );
 			abort();
 		}
 
@@ -109,8 +105,8 @@ void mainloop()
 				sock_close(lsock);
 				FD_CLR(lsock, &fdI);
 				FD_CLR(lsock, &fdO);
-				userL->erase(user);
-					hfree(user);
+				userL.erase(ituser);
+				hfree(user, sizeof(User));
 				continue;
 
 			}
@@ -123,11 +119,11 @@ void mainloop()
 					lsock = user->fSock;
 					sock_close(lsock);
 					FD_CLR(lsock, &fdO);
-					userL->erase(user);
-					hfree(user);
+					userL.erase(ituser);
+					hfree(user, sizeof(User));
 					continue;
-				} else if( user->messages && user->messages->Count() > 0 ) {
-					user->ProcessMessages();
+				//} else if( user->messages && user->messages->Count() > 0 ) {
+				//	user->ProcessMessages();
 				}
 			}
 		}
@@ -147,8 +143,8 @@ void mainloop()
 						lsock = user->fSock;
 						sock_close(lsock);
 
-						userL->erase(user);
-						hfree(user);
+						userL.erase(ituser);
+						hfree(user, sizeof(User));
 					}
 				}
 			}
