@@ -111,8 +111,9 @@ char *StringMemory::Alloc( size_t sz )
 		}
 		return ptr;
 	}
+	
 	// no free block found, allocate new
-	char *ptr = (char*)malloc( sz );
+	ptr = (char*)malloc( sz );
 	StringMemoryItem sptr(ptr, sz);
 	StringMemoryItem2 ssz(ptr, sz);
 	items_ptr.insert( sptr );

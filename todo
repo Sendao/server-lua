@@ -33,3 +33,8 @@ actual todo items:
  key: string (id+name)
  value: object (int, long, string, float, vector3(float))
 -> syncvar: syncs value to all clients
+-> message format: [length][type][data]
+
+Message Distribution:
+- recv update -> key changes -> set dirty flag
+- send updates -> clear all dirty flags

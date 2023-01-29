@@ -175,36 +175,27 @@ int InputConnection(User *user)
 	user->inbuf += iSize;
 
 	// Parse into messages
-	/*
-	p = user->inbuf;
-	iSize = 0;
-	do {
-		lprintfx(DBG_SERIALIZE, "Incoming buffer size: %ld", user->inbufsz);
-		m = (Message*)ReadObjectOf( c, p, user->inbufsz, &iSize );
-		if( iSize > 0 && m && m->data ) {
-			user->messages->PushBack( m );
-			user->inbufsz -= iSize;
-			p += iSize;
-			lprintfx(DBG_COMMS, "Received message of %d bytes", iSize);
-		} else {
-			lprintf("Message dropped... (remaining: %d bytes)", user->inbufsz);
-			deleteMem(m);
-
-			break;
-		}
-	} while( m->data && user->inbufsz > 0 );
-
-	if( p != user->inbuf  ) { // trim input
-		if( user->inbufsz == 0 ) {
-			user->inbuf[0] = '\0';
-		} else {
-			tmpbuf = (char*)grabMem( user->inbufsz );
-			memcpy( tmpbuf, p, user->inbufsz );
-			memcpy( user->inbuf, tmpbuf, user->inbufsz );
-			releaseMem(tmpbuf);
-		}
+	long sz;
+	char *msgbuf;
+	p = user->inbuf_memory;
+	while( p < user->inbuf ) {
+		if( p+sizeof(long) >= user->inbuf ) break;
+		sz = *(long*)p;
+		if( p+sizeof(long)+sz >= user->inbuf ) break;
+		msgbuf = strmem->Alloc(sizeof(long)+sz);
+		memcpy( msgbuf, p, sizeof(long)+sz );
+		user->messages.push_back( msgbuf );
 	}
-	*/
+
+	if( p != user->inbuf_memory ) { // trim input
+		sz = p - user->inbuf_memory;
+		user->inbufsz -= sz;
+		tmpbuf = strmem->Alloc( user->inbufsz );
+		memcpy( tmpbuf, p, user->inbufsz );
+		memcpy( user->inbuf_memory, tmpbuf, user->inbufsz );
+		strmem->Free( tmpbuf, user->inbufsz );
+		user->inbuf = user->inbuf_memory + user->inbufsz;
+	}
 
 	return 0;
 }

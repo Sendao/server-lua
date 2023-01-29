@@ -2,10 +2,14 @@
 
 void mainloop(void);
 
+unordered_map<string,Primitive> datamap;
+unordered_set<string> dirtyset;
 
 int main(int ac, char *av[])
 {
 	init_pools();
+	init_commands();
+	init_lua();
 
 	//! Process arguments
 
@@ -122,8 +126,8 @@ void mainloop()
 					userL.erase(ituser);
 					hfree(user, sizeof(User));
 					continue;
-				//} else if( user->messages && user->messages->Count() > 0 ) {
-				//	user->ProcessMessages();
+				} else if( user->messages.size() > 0 ) {
+					user->ProcessMessages();
 				}
 			}
 		}

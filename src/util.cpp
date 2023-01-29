@@ -264,10 +264,11 @@ void mystrim( char **pbuf )
 	}
 }
 
-void sunpackf( const char *buffer, const char *fmt, ... )
+char *sunpackf( char *buffer, const char *fmt, ... )
 {
 	va_list args;
 	long *len, mylen;
+	int *smol;
 	float *pf;
 	char *c, **p, **s;
 	union FloatChar {
@@ -284,6 +285,11 @@ void sunpackf( const char *buffer, const char *fmt, ... )
 				c = (char*)va_arg(args, int*);
 				*c = *buffer;
 				buffer++;
+				continue;
+			case 'i':
+				smol = (int*)va_arg(args, int*);
+				*smol = *(int *)buffer;
+				buffer += sizeof(int);
 				continue;
 			case 'l':
 				len = (long*)va_arg(args, long*);
@@ -306,10 +312,10 @@ void sunpackf( const char *buffer, const char *fmt, ... )
 				s = (char**)va_arg(args, char**);
 				*s = strmem->Alloc(mylen+1);
 				if( mylen != 0 ) {
-					strncpy(s, buffer, mylen);
+					strncpy(*s, buffer, mylen);
 					buffer += mylen;
 				}
-				s[mylen] = '\0';
+				*(s[mylen]) = '\0';
 				continue;
 			case 'p': case 'v':
 				len = (long*)va_arg(args, long*);
@@ -318,20 +324,21 @@ void sunpackf( const char *buffer, const char *fmt, ... )
 				p = (char**)va_arg(args, char**);
 				*p = strmem->Alloc(*len+1);
 				if( *len != 0 ) {
-					strncpy(p, buffer, *len);
+					memcpy(*p, buffer, *len);
 					buffer += *len;
 				}
-				p[*len] = 0;
 				continue;
 		}
 	}
 	va_end(args);
+	return buffer;
 }
-char *spackf( const char *fmt, ... )
+long spackf( char **target, const char *fmt, ... )
 {
 	long alloced = 32;
 	char *buf = strmem->Alloc(alloced);
 	char *buffer = buf;
+	*target = buf;
 	long bufsz=0;
 	union FloatChar {
 		float f;
@@ -340,10 +347,10 @@ char *spackf( const char *fmt, ... )
 
 	va_list args;
 	long len;
+	int smol;
 	char c, *p, *s;
 
 	va_start(args, fmt);
-
 	while( *fmt )
 	{
 		switch( *fmt++ )
@@ -351,7 +358,7 @@ char *spackf( const char *fmt, ... )
 			case 'c':
 				c = (char)va_arg(args, int);
 				while( bufsz+1 >= alloced ) {
-					buf = strmem->Realloc(buf, alloced, alloced*2);
+					*target =buf = strmem->Realloc(buf, alloced, alloced*2);
 					alloced *= 2;
 				}
 				*buffer = c;
@@ -360,21 +367,32 @@ char *spackf( const char *fmt, ... )
 				continue;
 			case 'f':
 				FloatChar x;
-				x.f = va_arg(args, float);
+				x.f = (float)va_arg(args, double);
 				while( bufsz+sizeof(float) >= alloced ) {
-					buf = strmem->Realloc(buf, alloced, alloced*2);
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
 					alloced *= 2;
 				}
 				*(buffer) = x.c[0];
 				*(buffer+1) = x.c[1];
 				*(buffer+2) = x.c[2];
 				*(buffer+3) = x.c[3];
-				buffer += 4;
+				buffer += sizeof(float);
+				bufsz += sizeof(float);
+				continue;
+			case 'i':
+				smol = (int)va_arg(args, int);
+				while( bufsz+sizeof(int) >= alloced ) {
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*(int *)buffer = smol;
+				buffer += sizeof(int);
+				bufsz += sizeof(int);
 				continue;
 			case 'l':
 				len = va_arg(args, long);
 				while( bufsz+sizeof(long) >= alloced ) {
-					buf = strmem->Realloc(buf, alloced, alloced*2);
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
 					alloced *= 2;
 				}
 				*(long*)buffer = len;
@@ -388,36 +406,41 @@ char *spackf( const char *fmt, ... )
 				else
 					len = (unsigned long)strlen(s);
 				while( bufsz+sizeof(long)+len >= alloced ) {
-					buf = strmem->Realloc(buf, alloced, alloced*2);
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
 					alloced *= 2;
 				}
 
 				*(long*)buffer = len;
 				buffer += sizeof(long);
+				bufsz += sizeof(long);
+
 				if( len != 0 ) {
 					strncpy(buffer, s, len);
 					buffer += len;
+					bufsz += len;
 				}
 				continue;
 			case 'v': case 'p':
 				len = va_arg(args, long);
 				p = va_arg(args, char*);
 				while( bufsz+sizeof(long)+len >= alloced ) {
-					buf = strmem->Realloc(buf, alloced, alloced*2);
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
 					alloced *= 2;
 				}
 				*(long*)buffer = len;
 				buffer += sizeof(long);
+				bufsz += sizeof(long);
 				if( len != 0 ) {
 					memcpy(buffer, p, len);
 					buffer += len;
+					bufsz += len;
 				}
 				continue;
 		}
 	}
 	va_end(args);
 
-	return buf;
+	return bufsz;
 }
 void funpackf( FILE *fp, const char *fmt, ... )
 {

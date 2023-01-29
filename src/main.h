@@ -21,15 +21,22 @@
 #include <errno.h>
 
 #include <set>
+#include <unordered_set>
 
 using namespace std;
 
 
 // lua.cpp
 extern sol::state lua;
+void init_lua(void);
 
 // user.cpp
 typedef class User User;
+typedef struct primitive Primitive;
+typedef void (User::*cmdcall)(char *,long);
+
+
+void init_commands(void);
 
 // pools.cpp
 typedef class StringMemory StringMemory;
@@ -45,6 +52,9 @@ void init_pools(void);
 void *halloc(size_t);
 void hfree(void *, size_t);
 
+// main.cpp
+extern unordered_map<string,Primitive> datamap;
+extern unordered_set<string> dirtyset;
 
 // sockets.cpp
 void InitSocket(int port);
@@ -71,6 +81,8 @@ void funpackf( FILE *fp, const char *fmt, ... );
 void fpackd( int fd, const char *fmt, ... );
 void funpackd( int fd, const char *fmt, ... );
 // Strings
+long spackf(char **target, const char *fmt, ... );
+char *sunpackf(char *buffer, const char *fmt, ... );
 char *str_copy(const char *);
 const char *findfirst( const char *pat, const char *tests[], int cnt, const char **resptr );
 const char *findfrom( const char *pat, const char *tests );
@@ -107,8 +119,15 @@ class User
     char *inbuf, *inbuf_memory;
 	int inbufmax;
 	int inbufsz;
+	vector<char*> messages;
 
     bool bQuitting;
+
+	public:
+	void ProcessMessages(void);
+	void SetKeyValue(char *data, long sz);
+	void RunLuaFile(char *data, long sz);
+	void RunLuaCommand(char *data, long sz);
 };
 
 // pools.cpp
@@ -194,5 +213,20 @@ class StringTrie
 	char *Find( const char *str );
 }
 */
+
+
+struct primitive
+{
+	char type;
+	union {
+		char c;
+		int i;
+		long n;
+		float f;
+		char *s;
+		void *p;
+	} data;
+};
+
 
 #endif
