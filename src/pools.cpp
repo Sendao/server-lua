@@ -67,6 +67,28 @@ StringMemoryItem::StringMemoryItem( const StringMemoryItem2 &a )
 
 }
 
+char *StringMemory::Realloc( char *ptr, size_t orig_sz, size_t new_sz )
+{
+	char *np = Alloc( new_sz );
+
+	if( orig_sz != 0 ) {
+		memcpy( np, ptr, orig_sz );
+		Free( ptr, orig_sz );
+	}
+
+	return np;
+}
+char *StringMemory::ReallocStr( char *ptr, size_t orig_sz, size_t new_sz )
+{
+	char *np = Alloc( new_sz );
+
+	if( orig_sz != 0 ) {
+		strcpy( np, ptr );
+		Free( ptr, orig_sz );
+	}
+
+	return np;
+}
 
 char *StringMemory::Alloc( size_t sz )
 {
@@ -79,29 +101,20 @@ char *StringMemory::Alloc( size_t sz )
 		StringMemoryItem2 newitem;
 
 		ptr = item.ptr;
-		if( item.size == sz ) {
-			items_sz.erase( it );
-			items_ptr.erase( items_ptr.find(StringMemoryItem(item)) );
-		} else {
-			items_ptr.erase( items_ptr.find(StringMemoryItem(item)) );
-			items_sz.erase( it );
-
+		items_sz.erase( it );
+		items_ptr.erase( items_ptr.find(StringMemoryItem(item)) );
+		if( item.size > sz ) {
 			newitem.ptr = item.ptr + sz;
 			newitem.size = item.size - sz;
-
 			items_sz.insert( newitem );
 			items_ptr.insert( StringMemoryItem(newitem) );
 		}
 		return ptr;
 	}
 	// no free block found, allocate new
-	size_t size = 1024*1024;
-	char *zero = (char*)malloc( size );
-	ptr = zero;
-	zero += sz;
-	size -= sz;
-	StringMemoryItem sptr(zero, size);
-	StringMemoryItem2 ssz(zero, size);
+	char *ptr = (char*)malloc( sz );
+	StringMemoryItem sptr(ptr, sz);
+	StringMemoryItem2 ssz(ptr, sz);
 	items_ptr.insert( sptr );
 	items_sz.insert( ssz );
 	return ptr;

@@ -122,28 +122,31 @@ int OutputConnection(User *user)
 {
 	if( !user || user->outbufsz <= 0 )
 		return 0;
-	// Throttle:
-	int sendsize = user->outbufsz > user->outbufmax ? user->outbufmax : user->outbufsz;
+	int outbufoffset = user->outbuf - user->outbuf_memory;
+	int sendsize = user->outbufsz - outbufoffset;
 	
+	// Throttle:
+	sendsize = sendsize > user->outbufmax ? user->outbufmax : sendsize;
+
 	int iSent = send(user->fSock, user->outbuf, sendsize, 0);
 
 	if(iSent>0)
 	{
 		//lprintf("Output %d", iSent);
-		if( iSent >= user->outbufsz )
+		if( iSent+outbufoffset >= user->outbufsz )
 		{
-			strmem->Free( user->outbuf, user->outbufalloc );
+			strmem->Free( user->outbuf_memory, user->outbufalloc );
+			user->outbuf_memory = NULL;
 			user->outbuf = NULL;
 			user->outbufsz = 0;
 			user->outbufalloc = 0;
 		} else {
-			user->outbuf = user->outbuf+iSent;
-			user->outbufsz -= iSent;
+			user->outbuf += iSent;
 		}
 	} else if(iSent<0) {
 		lprintf("Error xmitting: %s", strerror(errno));
 	} else {
-		lprintf("Nothing sent of %d.", user->outbufsz);
+		lprintf("Nothing sent of %d.", sendsize);
 	}
 
 	if(user->bQuitting && user->outbufsz == 0 ) // Output sent, now quit.
@@ -159,7 +162,9 @@ int InputConnection(User *user)
 
 	if( !user ) return 0;
 
-	iSize = recv(user->fSock, user->inbuf+user->inbufsz, user->inbufmax - user->inbufsz, 0);
+	if( user->inbufsz >= user->inbufmax ) return 0;
+
+	iSize = recv(user->fSock, user->inbuf, user->inbufmax - user->inbufsz, 0);
 
 	if( iSize <= 0 ) {
 		lprintf("Read <=0 from recv()");
@@ -167,6 +172,7 @@ int InputConnection(User *user)
 	}
 
 	user->inbufsz += iSize;
+	user->inbuf += iSize;
 
 	// Parse into messages
 	/*
@@ -209,18 +215,10 @@ void Output(User *user, const char *str, uint16_t len)
 
 	if( user->outbufsz + len > user->outbufalloc ) {
 		user->outbufalloc = user->outbufsz + len + 1024;
+		long outbufoffset = user->outbuf - user->outbuf_memory;
+		user->outbuf_memory = strmem->Realloc( user->outbuf, user->outbufsz, user->outbufalloc );
+		user->outbuf = user->outbuf_memory + outbufoffset;
 	}
-	np = (char*)strmem->Alloc( user->outbufalloc );
-
-	if( user->outbufsz != 0 ) {
-		memcpy( np, user->outbuf, user->outbufsz );
-		strmem->Free( user->outbuf_memory, user->outbufalloc );
-	}
-
-	memcpy( np+user->outbufsz, str, len );
+	memcpy( user->outbuf_memory+user->outbufsz, str, len );
 	user->outbufsz += len;
-	user->outbuf = np;
-	user->outbuf_memory = np;
 }
-
-

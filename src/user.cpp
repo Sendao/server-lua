@@ -3,12 +3,12 @@
 User::User(void)
 {
 	bQuitting = false;
-	outbuf = NULL;
+	outbuf = outbuf_memory = NULL;
 	outbufsz = 0;
 	outbufalloc = 0;
 	outbufmax = 1500; // MTU
 	inbufmax = 1500;
-	inbuf = strmem->Alloc(inbufmax);
+	inbuf_memory = inbuf = strmem->Alloc(inbufmax);
 	inbufsz = 0;
 	sHost = NULL;
 	fSock = -1;

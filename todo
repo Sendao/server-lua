@@ -13,7 +13,7 @@ https://answers.unity.com/questions/896763/custom-attributes.html
 -> add new custom attributes: SyncVar and SyncPosition
 -> unity's Update() will send changed parameters to server, if within bandwidth
 -> SyncVar will send changed parameters to all clients
--> SyncPosition does the same, but clients need to use default move functions when syncposition updates to avoid desync
+-> SyncPosition does the same, but clients need to use default move functions when syncposition updates to avoid jitter
 
 -> optionally but prohibitively, we can add get/set properties to member variables, if necessary, using the following:
 https://grahammurray.wordpress.com/tag/reflection-emit/
@@ -27,3 +27,9 @@ we can override methods using the following:
  - the drawback is it's rather complex to wrap all the parameters for various method calls
  - the alternative is to avoid SyncMethod and instead synchronize methods manually. This is probably the best option, as it's more flexible and easier to implement.
 
+actual todo items:
+-> C# spack/sunpack and messaging to server
+-> key-value storage by types on server
+ key: string (id+name)
+ value: object (int, long, string, float, vector3(float))
+-> syncvar: syncs value to all clients

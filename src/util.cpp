@@ -4,8 +4,6 @@ const char *LOGFILE="log.txt";
 
 #define MSL 1024
 
-void qexpand( char **buf, const char *add );
-
 void setlog(const char *p)
 {
 	LOGFILE=p;
@@ -144,6 +142,7 @@ char *substr( const char *src, int start, int end)
 	tgt[end-start]=0;
 	return tgt;
 }
+
 char *str_replace( const char *needle, const char *newform, const char *haystack )
 {
 	char *newbuf=NULL, *tmpbuf;
@@ -154,15 +153,19 @@ char *str_replace( const char *needle, const char *newform, const char *haystack
 	{
 		if( op != ptr ) {
 			tmpbuf = strndupsafe( op, (int)(ptr-op) );
-			qexpand( &newbuf, tmpbuf );
-			free(tmpbuf);
+			newbuf = strmem->ReallocStr( newbuf, strlen(newbuf), strlen(tmpbuf)+strlen(newbuf) );
+			strcat( newbuf, tmpbuf );
+			strmem->Free(tmpbuf, strlen(tmpbuf));
 		}
-		qexpand( &newbuf, newform );
+		newbuf = strmem->ReallocStr( newbuf, strlen(newbuf), strlen(newbuf)+strlen(newform) );
+		strcat(newbuf, newform);
 		op = ptr + needlelen;
 	}
 
-	if( *op )
-		qexpand( &newbuf, op );
+	if( *op ) {
+		newbuf = strmem->ReallocStr( newbuf, strlen(newbuf), strlen(newbuf)+strlen(op) );
+		strcat(newbuf, op);
+	}
 
 	return newbuf;
 }
@@ -237,32 +240,6 @@ int mystrpos( const char *haystack, const char *needle, int start_offset )
 	return -1;
 }
 
-
-void qexpand( char **buf, const char *add )
-{
-	char *tptr;
-
-	if( !buf )
-		return;
-
-	if( !*buf ) {
-		tptr = strmem->Alloc( strlen(add) + 1 );
-		strcpy(tptr, add);
-	} else if( !**buf ) {
-		strmem->Free( *buf, strlen(*buf)+1 );
-		tptr = strmem->Alloc( strlen(add) + 1 );
-		strcpy(tptr, add);
-	} else {
-		tptr = strmem->Alloc( strlen(*buf) + strlen(add) + 1 );
-		strcpy(tptr, *buf);
-		strcat(tptr, add);
-		strmem->Free( *buf, strlen(*buf)+1 );
-	}
-
-	*buf = tptr;
-
-	return;
-}
 void mystrim( char **pbuf )
 {
 	char *buf = *pbuf;
@@ -287,6 +264,161 @@ void mystrim( char **pbuf )
 	}
 }
 
+void sunpackf( const char *buffer, const char *fmt, ... )
+{
+	va_list args;
+	long *len, mylen;
+	float *pf;
+	char *c, **p, **s;
+	union FloatChar {
+		float f;
+    	char  c[sizeof(float)];
+	};
+
+	va_start(args, fmt);
+	while( *fmt )
+	{
+		switch( *fmt++ )
+		{
+			case 'c':
+				c = (char*)va_arg(args, int*);
+				*c = *buffer;
+				buffer++;
+				continue;
+			case 'l':
+				len = (long*)va_arg(args, long*);
+				*len = *(long*)buffer;
+				buffer += sizeof(long);
+				continue;
+			case 'f':
+				FloatChar x;
+				x.c[0] = *buffer;
+				x.c[1] = *(buffer+1);
+				x.c[2] = *(buffer+2);
+				x.c[3] = *(buffer+3);
+				pf = (float*)va_arg(args, float*);
+				*pf = x.f;
+				buffer += 4;
+				continue;
+			case 's':
+				mylen = *(long*)buffer;
+				buffer += sizeof(long);
+				s = (char**)va_arg(args, char**);
+				*s = strmem->Alloc(mylen+1);
+				if( mylen != 0 ) {
+					strncpy(s, buffer, mylen);
+					buffer += mylen;
+				}
+				s[mylen] = '\0';
+				continue;
+			case 'p': case 'v':
+				len = (long*)va_arg(args, long*);
+				*len = *(long*)buffer;
+				buffer += sizeof(long);
+				p = (char**)va_arg(args, char**);
+				*p = strmem->Alloc(*len+1);
+				if( *len != 0 ) {
+					strncpy(p, buffer, *len);
+					buffer += *len;
+				}
+				p[*len] = 0;
+				continue;
+		}
+	}
+	va_end(args);
+}
+char *spackf( const char *fmt, ... )
+{
+	long alloced = 32;
+	char *buf = strmem->Alloc(alloced);
+	char *buffer = buf;
+	long bufsz=0;
+	union FloatChar {
+		float f;
+    	char  c[sizeof(float)];
+	};
+
+	va_list args;
+	long len;
+	char c, *p, *s;
+
+	va_start(args, fmt);
+
+	while( *fmt )
+	{
+		switch( *fmt++ )
+		{
+			case 'c':
+				c = (char)va_arg(args, int);
+				while( bufsz+1 >= alloced ) {
+					buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*buffer = c;
+				buffer++;
+				bufsz++;
+				continue;
+			case 'f':
+				FloatChar x;
+				x.f = va_arg(args, float);
+				while( bufsz+sizeof(float) >= alloced ) {
+					buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*(buffer) = x.c[0];
+				*(buffer+1) = x.c[1];
+				*(buffer+2) = x.c[2];
+				*(buffer+3) = x.c[3];
+				buffer += 4;
+				continue;
+			case 'l':
+				len = va_arg(args, long);
+				while( bufsz+sizeof(long) >= alloced ) {
+					buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*(long*)buffer = len;
+				buffer += sizeof(long);
+				bufsz += sizeof(long);
+				continue;
+			case 's':
+				s = va_arg(args, char*);
+				if( !s || !*s )
+					len = 0;
+				else
+					len = (unsigned long)strlen(s);
+				while( bufsz+sizeof(long)+len >= alloced ) {
+					buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+
+				*(long*)buffer = len;
+				buffer += sizeof(long);
+				if( len != 0 ) {
+					strncpy(buffer, s, len);
+					buffer += len;
+				}
+				continue;
+			case 'v': case 'p':
+				len = va_arg(args, long);
+				p = va_arg(args, char*);
+				while( bufsz+sizeof(long)+len >= alloced ) {
+					buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*(long*)buffer = len;
+				buffer += sizeof(long);
+				if( len != 0 ) {
+					memcpy(buffer, p, len);
+					buffer += len;
+				}
+				continue;
+		}
+	}
+	va_end(args);
+
+	return buf;
+}
 void funpackf( FILE *fp, const char *fmt, ... )
 {
 	va_list args;
@@ -325,6 +457,47 @@ void funpackf( FILE *fp, const char *fmt, ... )
 		}
 	va_end(args);
 }
+void fpackf( FILE *fp, const char *fmt, ... )
+{
+	va_list args;
+	long len;
+	char c, *p, *s;
+
+	va_start(args, fmt);
+
+	while( *fmt )
+	{
+		switch( *fmt++ )
+		{
+			case 'c':
+				c = (char)va_arg(args, int);
+				fwrite( &c, 1, 1, fp );
+				continue;
+			case 'l':
+				len = va_arg(args, long);
+				fwrite( &len, sizeof(long), 1, fp );
+				continue;
+			case 's':
+				s = va_arg(args, char*);
+				if( !s || !*s )
+					len = 0;
+				else
+					len = (unsigned long)strlen(s);
+				fwrite( &len, sizeof(long), 1, fp );
+				if( len != 0 )
+					fwrite( s, sizeof(char), len, fp );
+				continue;
+			case 'v': case 'p':
+				len = va_arg(args, long);
+				p = va_arg(args, char*);
+				fwrite( &len, sizeof(long), 1, fp );
+				if( len != 0 )
+					fwrite( p, sizeof(char), len, fp );
+				continue;
+		}
+	}
+	va_end(args);
+}
 void funpackd( int fd, const char *fmt, ... )
 {
 	va_list args;
@@ -361,48 +534,6 @@ void funpackd( int fd, const char *fmt, ... )
 				p[*len] = 0;
 				continue;
 		}
-	va_end(args);
-}
-void fpackf( FILE *fp, const char *fmt, ... )
-{
-	va_list args;
-	long len;
-	char c, *p, *s;
-
-	va_start(args, fmt);
-
-	while( *fmt )
-	{
-		switch( *fmt++ )
-		{
-			case 'c':
-				c = (char)va_arg(args, int);
-				fwrite( &c, 1, 1, fp );
-				continue;
-			case 'l':
-				len = va_arg(args, long);
-				fwrite( &len, sizeof(long), 1, fp );
-				continue;
-			case 's':
-				s = va_arg(args, char*);
-				if( !s || !*s ) {
-					len=0;
-					fwrite( &len, sizeof(long), 1, fp );
-				} else {
-					len = (unsigned long)strlen(s);
-					fwrite( &len, sizeof(long), 1, fp );
-					fwrite( s, sizeof(char), len, fp );
-				}
-				continue;
-			case 'v': case 'p':
-				len = va_arg(args, long);
-				p = va_arg(args, char*);
-				fwrite( &len, sizeof(long), 1, fp );
-				if( len != 0 )
-					fwrite( p, sizeof(char), len, fp );
-				continue;
-		}
-	}
 	va_end(args);
 }
 void fpackd( int fd, const char *fmt, ... )

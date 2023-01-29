@@ -104,9 +104,9 @@ class User
 	int outbufalloc; // allocation
 	int outbufmax; // bandwidth
 
-    char *inbuf;
+    char *inbuf, *inbuf_memory;
 	int inbufmax;
-	uint32_t inbufsz;
+	int inbufsz;
 
     bool bQuitting;
 };
@@ -172,6 +172,8 @@ class StringMemory
 
 	public:
 	char *Alloc( size_t sz );
+	char *Realloc( char *ptr, size_t orig_sz, size_t new_sz );
+	char *ReallocStr( char *ptr, size_t orig_sz, size_t new_sz );
 	void Free( char *ptr, size_t sz );
 };
 
