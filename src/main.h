@@ -54,6 +54,7 @@ void hfree(void *, size_t);
 
 // main.cpp
 extern unordered_map<string,Primitive> datamap;
+extern unordered_map<string,User*> datamap_whichuser;
 extern unordered_set<string> dirtyset;
 
 // sockets.cpp
@@ -125,9 +126,14 @@ class User
 
 	public:
 	void ProcessMessages(void);
+	void SendMessage( char type, long size, char *data );
+
+	public: // commands (client controlled)
 	void SetKeyValue(char *data, long sz);
 	void RunLuaFile(char *data, long sz);
 	void RunLuaCommand(char *data, long sz);
+	void GetFileList(char *data, long sz);
+	void GetFile(char *data, long sz);
 };
 
 // pools.cpp

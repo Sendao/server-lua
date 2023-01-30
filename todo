@@ -38,3 +38,14 @@ actual todo items:
 Message Distribution:
 - recv update -> key changes -> set dirty flag
 - send updates -> clear all dirty flags
+
+Authentication:
+- authenticate by IP address for now
+- maybe encrypted token system later
+
+File transfer support:
+- file list w/ modification time + name
+- request file [name]
+
+
+

@@ -13,6 +13,8 @@ void init_commands( void )
 	commands[0] = &User::SetKeyValue;
 	commands[1] = &User::RunLuaFile;
 	commands[2] = &User::RunLuaCommand;
+	commands[3] = &User::GetFileList;
+	commands[4] = &User::GetFile;
 }
 
 User::User(void)
@@ -44,6 +46,16 @@ User::~User(void)
 		strmem->Free( ptr, sz );
 	}
 	messages.clear();
+}
+
+void User::SendMessage( char type, long size, char *data )
+{
+	char *buf;
+	
+	spackf(&buf, "clv", type, size, data );
+	Output( this, buf, size+1+sizeof(long) );
+	strmem->Free( buf, size+1+sizeof(long) );
+	
 }
 
 void User::ProcessMessages(void)
@@ -94,6 +106,7 @@ void User::SetKeyValue( char *data, long sz )
 	}
 
 	datamap[name] = obj;
+	datamap_whichuser[name] = this;
 	dirtyset.insert( name );
 
 	strmem->Free( name, strlen(name)+1 );
@@ -105,6 +118,16 @@ void User::RunLuaFile( char *data, long sz )
 }
 
 void User::RunLuaCommand( char *data, long sz )
+{
+
+}
+
+void User::GetFileList( char *data, long sz )
+{
+
+}
+
+void User::GetFile( char *data, long sz )
 {
 
 }

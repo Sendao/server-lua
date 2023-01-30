@@ -3,6 +3,7 @@
 void mainloop(void);
 
 unordered_map<string,Primitive> datamap;
+unordered_map<string,User*> datamap_whichuser;
 unordered_set<string> dirtyset;
 
 int main(int ac, char *av[])
@@ -44,10 +45,15 @@ void mainloop()
 {
 	struct timeval per, next_cycle, zerotime, *usetv;
 	fd_set fdI, fdO, fdE;
+	string key;
+	unordered_set<string>::iterator itset;
 	int iHigh, err, lsock;
 	vector<User*>::iterator ituser;
-	User *user;
-	char *tmpbuf;
+	User *user, *uTarget;
+	long tmpsize, size2;
+	char *tmpbuf, *buf2, *buf3;
+	const char *cstr;
+	Primitive prim;
 
 	gettimeofday(&next_cycle, NULL);
 
@@ -68,7 +74,14 @@ void mainloop()
 			lprintf("No events - waiting for connection");
 		}
 		*/
-		usetv = NULL;
+		if( dirtyset.size() > 0 ) {
+			per.tv_sec = 0; // run immediately if there is data to process
+			per.tv_usec = 0;
+		} else {
+			per.tv_sec = 5; // wait up to 5 seconds if no users are doing anything
+			per.tv_usec = 0;
+		}
+		usetv = &per;
 		FD_ZERO(&fdI);
 		FD_ZERO(&fdO);
 		FD_ZERO(&fdE);
@@ -129,6 +142,49 @@ void mainloop()
 				} else if( user->messages.size() > 0 ) {
 					user->ProcessMessages();
 				}
+			}
+		}
+
+		// Send keyvals
+
+		for( itset = dirtyset.begin(); itset != dirtyset.end(); itset++ ) {
+			key = *itset;
+			cstr = key.c_str();
+			prim = datamap[key];
+			uTarget = datamap_whichuser[key];
+
+			tmpsize = spackf( &tmpbuf, "sc", cstr, prim.type );
+			switch( prim.type ) {
+				case 0: // char
+					size2 = spackf(&buf2, "c", &prim.data.c);
+					break;
+				case 1: // int
+					size2 = spackf(&buf2, "i", &prim.data.i);
+					break;
+				case 2: // float
+					size2 = spackf(&buf2, "f", &prim.data.f);
+					break;
+				case 3: // string
+					size2 = spackf(&buf2, "s", &prim.data.s);
+					break;
+				case 4: // buffer (binary string)
+					size2 = spackf(&buf2, "p", &prim.data.p);
+					break;
+			}
+			buf3 = strmem->Alloc( tmpsize + size2 );
+			memcpy(buf3, tmpbuf, tmpsize);
+			memcpy(buf3+tmpsize, buf2, size2);
+			strmem->Free( tmpbuf, tmpsize );
+			strmem->Free( buf2, size2 );
+			tmpsize += size2;
+			tmpbuf = buf3;
+			buf3 = NULL;
+
+			for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
+			{
+				user = *ituser;
+				if( user != uTarget )
+					user->SendMessage( 0, tmpsize, tmpbuf );
 			}
 		}
 
