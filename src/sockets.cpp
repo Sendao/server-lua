@@ -1,7 +1,6 @@
 #include "main.h"
 
 int fSock;
-#define LINUX
 
 void InitSocket(int port)
 {

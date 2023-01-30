@@ -7,6 +7,8 @@ file(GLOB main_code
 	"src/*.cpp"
 )
 
-include_directories(/home/sendao/sol2/include)
+include_directories(/c/sol/include /c/sol/build/vendor/lua-5.4.4/src)
+link_directories(/c/serv/)
+#set(CMAKE_EXE_LINKER_FLAGS " -static")
 add_executable(server ${main_code})
-target_link_libraries(server lua-5.4)
+target_link_libraries(server lua-5.4.4 ws2_32 winmm pthread -static-libgcc -static-libstdc++)
