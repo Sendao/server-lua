@@ -15,6 +15,7 @@ void init_commands( void )
 	commands[2] = &User::RunLuaCommand;
 	commands[3] = &User::GetFileList;
 	commands[4] = &User::GetFile;
+	commands[5] = &User::IdentifyVar;
 }
 
 User::User(void)
@@ -82,11 +83,11 @@ void User::ProcessMessages(void)
 
 void User::SetKeyValue( char *data, long sz )
 {
-	char *name;
+	ulong key;
 	char *ptr;
 	Primitive obj;
 
-	ptr = sunpackf(data, "sc", &name, &obj.type);
+	ptr = sunpackf(data, "lc", &key, &obj.type);
 	switch( obj.type ) {
 		case 0: // char
 			sunpackf(ptr, "c", &obj.data.c);
@@ -105,11 +106,9 @@ void User::SetKeyValue( char *data, long sz )
 			break;	
 	}
 
-	datamap[name] = obj;
-	datamap_whichuser[name] = this;
-	dirtyset.insert( name );
-
-	strmem->Free( name, strlen(name)+1 );
+	datamap[key] = obj;
+	datamap_whichuser[key] = this;
+	dirtyset.insert( key );
 }
 
 void User::RunLuaFile( char *data, long sz )
@@ -130,4 +129,24 @@ void User::GetFileList( char *data, long sz )
 void User::GetFile( char *data, long sz )
 {
 
+}
+
+void User::IdentifyVar( char *data, long sz )
+{
+	char *name;
+	char *buf;
+	long sz;
+	unordered_map<string,ulong>::iterator it;
+
+	sunpackf(data, "s", &name);
+	it = datamap.find(name);
+	if( it == datamap.end() ) {
+		sz = spackf(&buf, "sl", name, *it );
+	} else {
+		sz = spackf(&buf, "sl", name, top_var_id );
+		datamap[name] = top_var_id;
+		top_var_id++;
+	}
+
+	SendMessage( 0, sz, buf );
 }

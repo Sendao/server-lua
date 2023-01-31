@@ -2,9 +2,11 @@
 
 void mainloop(void);
 
-unordered_map<string,Primitive> datamap;
-unordered_map<string,User*> datamap_whichuser;
-unordered_set<string> dirtyset;
+unordered_map<string,ulong> varmap;
+ulong top_var_id = 1;
+unordered_map<ulong,Primitive> datamap;
+unordered_map<ulong,User*> datamap_whichuser;
+unordered_set<ulong> dirtyset;
 
 int main(int ac, char *av[])
 {
@@ -45,7 +47,7 @@ void mainloop()
 {
 	struct timeval per, next_cycle, zerotime, *usetv;
 	fd_set fdI, fdO, fdE;
-	string key;
+	ulong key;
 	unordered_set<string>::iterator itset;
 	int iHigh, err, lsock;
 	vector<User*>::iterator ituser;
@@ -149,11 +151,10 @@ void mainloop()
 
 		for( itset = dirtyset.begin(); itset != dirtyset.end(); itset++ ) {
 			key = *itset;
-			cstr = key.c_str();
 			prim = datamap[key];
 			uTarget = datamap_whichuser[key];
 
-			tmpsize = spackf( &tmpbuf, "sc", cstr, prim.type );
+			tmpsize = spackf( &tmpbuf, "lc", key, prim.type );
 			switch( prim.type ) {
 				case 0: // char
 					size2 = spackf(&buf2, "c", &prim.data.c);
@@ -186,6 +187,9 @@ void mainloop()
 				if( user != uTarget )
 					user->SendMessage( 0, tmpsize, tmpbuf );
 			}
+			
+			datamap_whichuser.erase(key);
+			datamap.erase(key);
 		}
 
 		// Process output

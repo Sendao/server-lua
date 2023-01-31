@@ -56,6 +56,8 @@ void hfree(void *, size_t);
 extern unordered_map<string,Primitive> datamap;
 extern unordered_map<string,User*> datamap_whichuser;
 extern unordered_set<string> dirtyset;
+extern unordered_map<string,ulong> varmap;
+extern ulong top_var_id;
 
 // sockets.cpp
 void InitSocket(int port);

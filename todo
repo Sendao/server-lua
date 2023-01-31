@@ -27,17 +27,17 @@ we can override methods using the following:
  - the drawback is it's rather complex to wrap all the parameters for various method calls
  - the alternative is to avoid SyncMethod and instead synchronize methods manually. This is probably the best option, as it's more flexible and easier to implement.
 
+
+(wow the network manager for unity is a mess. it's a good thing we're not using it.)
+
 actual todo items:
 -> C# spack/sunpack and messaging to server
--> key-value storage by types on server
- key: string (id+name)
- value: object (int, long, string, float, vector3(float))
--> syncvar: syncs value to all clients
--> message format: [length][type][data]
+ - except we don't have variadics, so we'll have to use a fixed message format eg NetworkStringBuilder::pack_int
+-> C# socket connection to server https://learn.microsoft.com/en-us/dotnet/api/system.net.sockets.socket?view=net-7.0
 
-Message Distribution:
-- recv update -> key changes -> set dirty flag
-- send updates -> clear all dirty flags
+-> syncvar: syncs value to all clients
+- vars should not be named, but id'd
+- name association happens during variable initialization
 
 Authentication:
 - authenticate by IP address for now
