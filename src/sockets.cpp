@@ -125,14 +125,80 @@ int OutputConnection(User *user)
 		return 0;
 	int outbufoffset = user->outbuf - user->outbuf_memory;
 	int sendsize = user->outbufsz - outbufoffset;
+	z_stream strm;
+	int status;
+	unsigned char idbyte;
+	char *tgtbuf = NULL;
+	long tgtsz = 0;
+	char buf[1024];
+	int readsize;
 	
 	// Throttle:
 	sendsize = sendsize > user->outbufmax ? user->outbufmax : sendsize;
 
-	int iSent = send(user->fSock, user->outbuf, sendsize, 0);
+//https://www.lemoda.net/c/zlib-open-write/index.html
+
+	if( sendsize > 128 ) {
+		strm.zalloc = Z_NULL;
+		strm.zfree = Z_NULL;
+		strm.opaque = Z_NULL;
+		strm.avail_in = sendsize;
+		strm.next_in = (Bytef*)user->outbuf;
+		strm.avail_out = 0;
+		status = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+							15 | 16, 8,
+							Z_DEFAULT_STRATEGY));
+		if( status < 0 ) {
+			lprintf("deflateInit() failed: %d", status);
+			return -1;
+		}
+
+		do {
+			strm.avail_out = 1024;
+			strm.next_out = buf;
+			status = deflate(&strm, Z_FINISH);
+			if( status < 0 ) {
+				lprintf("deflate() failed: %d", status);
+				return -1;
+			}
+			readsize = 1024 - strm.avail_out;
+
+			if( tgtbuf ) {
+				tgtbuf = (char*)strmem->Realloc( tgtbuf, tgtsz, tgtsz+readsize );
+				memcpy( tgtbuf + tgtsz, buf, readsize );
+				tgtsz += readsize;
+			} else {
+				tgtbuf = (char*)strmem->Alloc( readsize );
+				memcpy( tgtbuf, buf, readsize );
+			}
+		} while( strm.avail_out == 0 );
+
+		deflateEnd(&strm);
+
+		idbyte = (unsigned char)255;
+	} else {
+		idbyte = (unsigned char)sendsize;
+		tgtbuf = user->outbuf;
+		tgtsz = sendsize;
+	}
+	int iSent = send(user->fSock, &idbyte, 1, 0);
+	if( iSent == 1 ) {
+		iSent = send(user->fSock, tgtbuf, tgtsz, 0);
+	} else if( iSent < 0 ) {
+		lprintf("Error sending idbyte: %s", strerror(errno));
+		return -1;
+	} else {
+		lprintf("Nothing sent of idbyte.");
+		return 0;
+	}
 
 	if(iSent>0)
 	{
+		if( iSent != sendsize ) {
+			lprintf("Sent %d of %d.", iSent, sendsize);
+			lprintf("Aborting.");
+			return -1;
+		}
 		//lprintf("Output %d", iSent);
 		if( iSent+outbufoffset >= user->outbufsz )
 		{
@@ -305,8 +371,9 @@ int InputConnection(User *user)
 	if( p != user->inbuf_memory ) { // we have read some data so we need to trim the input buffer
 		sz = p - user->inbuf_memory;
 		user->inbufsz -= sz;
+		// Note: copying in overlapping buffers is undefined behavior. So we require two copies here.
+		//! An alternative is to copy byte-by-byte
 		tmpbuf = strmem->Alloc( user->inbufsz );
-		//! Todo: test whether one memcpy is sufficient
 		memcpy( tmpbuf, p, user->inbufsz );
 		memcpy( user->inbuf_memory, tmpbuf, user->inbufsz );
 		strmem->Free( tmpbuf, user->inbufsz );
@@ -319,8 +386,6 @@ int InputConnection(User *user)
 void Output(User *user, const char *str, uint16_t len)
 {
 	char *np;
-
-//https://www.lemoda.net/c/zlib-open-write/index.html
 
 	if( user->outbufsz + len > user->outbufalloc ) {
 		user->outbufalloc = user->outbufsz + len + 1024;

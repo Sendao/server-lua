@@ -45,5 +45,11 @@ File transfer support:
 - file list w/ modification time + name
 - request file [name]
 
+Compression:
+ - C# compression/decompression streams and packeting
+
+-ClockSync packets
+
+
 
 
