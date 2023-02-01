@@ -131,18 +131,80 @@ public class NetSocket : MonoBehaviour
 
     public void RecvThread()
     {
+        byte[] readbuffer = new byte[1024];
+        byte[] tmpbuf;
+        long readlen = 0;
+
         while (true)
         {
-            byte[] data = new byte[1024];
-            int recv = ws.Receive(data);
-            byte[] data2 = new byte[recv];
-            Array.Copy(data, data2, recv);
+            if( readlen > 0 ) {
+                tmpbuf = new byte[readlen+1024];
+                Array.Copy(readbuffer, tmpbuf, readlen);
+                delete readbuffer;
+                readbuffer = tmpbuf;
+            }
+            int recv = ws.Receive(readbuffer, readlen, 1024);
 
-            //! Todo: decompose the data into commands!
+            readlen += recv;
+            
+            int ptr, smallSize, endptr;
 
-            lock (_recvQLock)
-            {
-                recvQ.Enqueue(data2);
+            for( ptr=0; ptr<readlen; ptr++ ) {
+                int id = (int)data[ptr];
+                if( id == 255 ) {
+                    compressedSize = (long)data[ptr+1] << 24 | (long)data[ptr+2] << 16 | (long)data[ptr+3] << 8 | (long)data[ptr+4];
+                    if( ptr+4+compressedSize > readlen ) {
+                        break;
+                    }
+                    ptr += 4;
+                    var compressedStream = new MemoryStream(data, ptr, compressedSize);
+                    var zipStream = new GZipStream(compressedStream, CompressionMode.Decompress);
+                    var decompressedStream = new MemoryStream();
+                    zipStream.CopyTo(decompressedStream);
+                    zipStream.Close();
+                    decompressedStream.Close();
+                    byte[] decompressedData = decompressedStream.ToArray();
+
+                    int deptr;
+
+                    for( deptr=0; deptr<decompressedData.Length; deptr++ ) {
+                        smallSize = (int)decompressedData[deptr];
+                        deptr++;
+                        tmpbuf = new byte[smallSize];
+                        Array.Copy(decompressedData, deptr, tmpbuf, 0, smallSize);
+                        lock (_recvQLock)
+                        {
+                            recvQ.Enqueue(tmpbuf);
+                        }
+                        deptr += smallSize;
+                    }
+                } else if( ptr+id < readlen ) {
+                    break;
+                } else {
+                    ptr++;
+                    endptr = ptr+id;
+                    do {
+                        smallSize = (int)data[ptr];
+                        ptr++;
+                        tmpbuf = new byte[smallSize];
+                        Array.Copy(data, ptr, tmpbuf, 0, smallSize);
+                        lock (_recvQLock)
+                        {
+                            recvQ.Enqueue(tmpbuf);
+                        }
+                        ptr += smallSize;
+                    } while( ptr < endptr );
+                }
+            }
+
+            if( ptr < recv ) {
+                tmpbuf = new byte[(recv-ptr)+1024];
+                Array.Copy(data, ptr, tmpbuf, 0, recv-ptr);
+                delete readbuffer;
+                readbuffer = tmpbuf;
+                readlen = recv-ptr;
+            } else {
+                readlen = 0;
             }
         }
     }

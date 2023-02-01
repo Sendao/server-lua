@@ -268,7 +268,8 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 {
 	va_list args;
 	long *len, mylen;
-	int *smol;
+	int *ilen;
+	unsigned char *smol;
 	float *pf;
 	char *c, **p, **s;
 	union FloatChar {
@@ -287,8 +288,8 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				buffer++;
 				continue;
 			case 'i':
-				smol = (int*)va_arg(args, int*);
-				*smol = *(int *)buffer;
+				ilen = (int*)va_arg(args, int*);
+				*ilen = *(int *)buffer;
 				buffer += sizeof(int);
 				continue;
 			case 'l':
@@ -317,7 +318,7 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				}
 				*(s[mylen]) = '\0';
 				continue;
-			case 'p': case 'v':
+			case 'V':
 				len = (long*)va_arg(args, long*);
 				*len = *(long*)buffer;
 				buffer += sizeof(long);
@@ -326,6 +327,28 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				if( *len != 0 ) {
 					memcpy(*p, buffer, *len);
 					buffer += *len;
+				}
+				continue;
+			case 'v': // use an int for length
+				ilen = (int*)va_arg(args, int*);
+				*ilen = *(int*)buffer;
+				buffer += sizeof(int);
+				p = (char**)va_arg(args, char**);
+				*p = strmem->Alloc(*ilen+1);
+				if( *ilen != 0 ) {
+					memcpy(*p, buffer, *ilen);
+					buffer += *ilen;
+				}
+				continue;
+			case 'p': // use unsigned char for length
+				smol = (unsigned char*)va_arg(args, unsigned char*);
+				*smol = *(unsigned char*)buffer;
+				buffer ++;
+				p = (char**)va_arg(args, char**);
+				*p = strmem->Alloc(*smol+1);
+				if( *smol != 0 ) {
+					memcpy(*p, buffer, *smol);
+					buffer += *smol;
 				}
 				continue;
 		}
@@ -347,7 +370,8 @@ long spackf( char **target, const char *fmt, ... )
 
 	va_list args;
 	long len;
-	int smol;
+	int ilen;
+	unsigned char smol;
 	char c, *p, *s;
 
 	va_start(args, fmt);
@@ -380,12 +404,12 @@ long spackf( char **target, const char *fmt, ... )
 				bufsz += sizeof(float);
 				continue;
 			case 'i':
-				smol = (int)va_arg(args, int);
+				ilen = (int)va_arg(args, int);
 				while( bufsz+sizeof(int) >= alloced ) {
 					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
 					alloced *= 2;
 				}
-				*(int *)buffer = smol;
+				*(int *)buffer = ilen;
 				buffer += sizeof(int);
 				bufsz += sizeof(int);
 				continue;
@@ -420,7 +444,7 @@ long spackf( char **target, const char *fmt, ... )
 					bufsz += len;
 				}
 				continue;
-			case 'v': case 'p':
+			case 'V':
 				len = va_arg(args, long);
 				p = va_arg(args, char*);
 				while( bufsz+sizeof(long)+len >= alloced ) {
@@ -434,6 +458,38 @@ long spackf( char **target, const char *fmt, ... )
 					memcpy(buffer, p, len);
 					buffer += len;
 					bufsz += len;
+				}
+				continue;
+			case 'v': // use an int instead
+				ilen = va_arg(args, int);
+				p = va_arg(args, char*);
+				while( bufsz+sizeof(int)+ilen >= alloced ) {
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*(int*)buffer = ilen;
+				buffer += sizeof(int);
+				bufsz += sizeof(int);
+				if( ilen != 0 ) {
+					memcpy(buffer, p, ilen);
+					buffer += ilen;
+					bufsz += ilen;
+				}
+				continue;
+			case 'p': // use an unsigned char for size
+				smol = (unsigned char)va_arg(args, int); // note: va_arg requires this to be int, not unsinged char
+				p = va_arg(args, char*);
+				while( bufsz+sizeof(unsigned char)+smol >= alloced ) {
+					*target = buf = strmem->Realloc(buf, alloced, alloced*2);
+					alloced *= 2;
+				}
+				*(unsigned char*)buffer = smol;
+				buffer ++;
+				bufsz ++;
+				if( smol != 0 ) {
+					memcpy(buffer, p, smol);
+					buffer += smol;
+					bufsz += smol;
 				}
 				continue;
 		}

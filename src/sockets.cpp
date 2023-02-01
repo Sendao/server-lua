@@ -412,7 +412,7 @@ int InputConnection(User *user)
 	return 0;
 }
 
-void Output(User *user, const char *str, uint16_t len)
+void Output(User *user, const char *str, unsigned char len)
 {
 	char *np;
 
@@ -422,7 +422,7 @@ void Output(User *user, const char *str, uint16_t len)
 		user->outbuf_memory = strmem->Realloc( user->outbuf, user->outbufsz, user->outbufalloc );
 		user->outbuf = user->outbuf_memory + outbufoffset;
 	}
-	user->outbuf_memory[user->outbufsz] = (unsigned char)len;
+	user->outbuf_memory[user->outbufsz] = len;
 	memcpy( user->outbuf_memory+user->outbufsz+1, str, len );
 	user->outbufsz += len+1;
 }

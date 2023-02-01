@@ -68,7 +68,7 @@ void sock_close(int lsock);
 User *InitConnection(void);
 int OutputConnection(User *);
 int InputConnection(User *);
-void Output(User *, const char *, uint16_t);
+void Output(User *, const char *, unsigned char);
 void Input(User *);
 extern int fSock;
 
