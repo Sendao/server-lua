@@ -75,28 +75,31 @@ public class NetSocket : MonoBehaviour
         byte[] data;
         var compressedStream = new MemoryStream();
         var zipStream = new GZipStream(compressedStream, CompressionMode.Compress);
+        long totalSize;
 
         while (true)
         {
             _sendQSig.WaitOne();
             lock (_sendQLock)
             {
-                //! Todo: compress that data!
                 while (sendQ.Count > 0)
                 {
-                    // iterate through sendQ
                     totalSize=0;
                     foreach( data in sendQ ) {
                         // measure total size
-                        totalSize += data.Length;
+                        totalSize += data.Length + 1;
                     }
 
                     if( totalSize < 128 ) {
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)totalSize;
                         ws.Send(idhead);
-                        data = sendQ.Dequeue();
-                        ws.Send(data);
+                        while( sendQ.Count > 0 ) {
+                            data = sendQ.Dequeue();
+                            idhead[0] = (byte)data.Length;
+                            ws.Send(idhead);
+                            ws.Send(data);
+                        }
                     } else {
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)255;
@@ -110,6 +113,8 @@ public class NetSocket : MonoBehaviour
 
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
+                            idhead[0] = (byte)data.Length;
+                            zipStream.Write(idhead, 0, 1);
                             zipStream.Write(data, 0, data.Length);
                         }
                         zipStream.Close();
