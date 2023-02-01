@@ -72,6 +72,10 @@ public class NetSocket : MonoBehaviour
 
     public void SendThread()
     {
+        byte[] data;
+        var compressedStream = new MemoryStream();
+        var zipStream = new GZipStream(compressedStream, CompressionMode.Compress);
+
         while (true)
         {
             _sendQSig.WaitOne();
@@ -81,13 +85,40 @@ public class NetSocket : MonoBehaviour
                 while (sendQ.Count > 0)
                 {
                     // iterate through sendQ
-                    // measure total size
+                    totalSize=0;
+                    foreach( data in sendQ ) {
+                        // measure total size
+                        totalSize += data.Length;
+                    }
+
+                    if( totalSize < 128 ) {
+                        byte[] idhead = new byte[1];
+                        idhead[0] = (byte)totalSize;
+                        ws.Send(idhead);
+                        data = sendQ.Dequeue();
+                        ws.Send(data);
+                    } else {
+                        byte[] idhead = new byte[1];
+                        idhead[0] = (byte)255;
+                        ws.Send(idhead);
+                        byte[] sizehead = new byte[4];
+                        sizehead[0] = (byte)(totalSize >> 24);
+                        sizehead[1] = (byte)(totalSize >> 16);
+                        sizehead[2] = (byte)(totalSize >> 8);
+                        sizehead[3] = (byte)(totalSize);
+                        ws.Send(sizehead);
+
+                        while( sendQ.Count > 0 ) {
+                            data = sendQ.Dequeue();
+                            zipStream.Write(data, 0, data.Length);
+                        }
+                        zipStream.Close();
+                        byte[] compressedData = compressedStream.ToArray();
+                        ws.Send(compressedData);
+                    }
 
                     // if total size is greater than 128, compress and send 128 + data
                     // if not, send length + data
-
-                    byte[] data = sendQ.Dequeue();
-                    ws.Send(data);
                 }
             }
         }
