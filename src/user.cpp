@@ -1,5 +1,7 @@
 #include "main.h"
 
+#include <dirent.h>
+
 cmdcall commands[256];
 using namespace std::placeholders; 
 
@@ -49,13 +51,15 @@ User::~User(void)
 	messages.clear();
 }
 
-void User::SendMessage( char type, long size, char *data )
+void User::SendMessage( char cmd, unsigned int size, char *data )
 {
-	char *buf;
+	char *buf=NULL;
+	long bufsz;
+	u_long alloced;
 	
-	spackf(&buf, "clv", type, size, data );
-	Output( this, buf, size+1+sizeof(long) );
-	strmem->Free( buf, size+1+sizeof(long) );
+	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
+	Output( this, buf, bufsz );
+	strmem->Free( buf, alloced );
 	
 }
 
@@ -123,12 +127,28 @@ void User::RunLuaCommand( char *data, long sz )
 
 void User::GetFileList( char *data, long sz )
 {
+	struct dirent *ent;
+	DIR *dirp;
 
+	dirp = opendir(".");
+	if( !dirp ) {
+		this->SendMessage( 2, 0, NULL );
+		return;
+	}
+
+	while( ent=readdir(dirp) ) {
+		if( strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0 )
+			continue;
+		this->SendMessage( 1, strlen(ent->d_name), ent->d_name );
+	}
+
+	this->SendMessage( 2, 0, NULL );
 }
 
 void User::GetFile( char *data, long sz )
 {
-
+	//! Open the file and request first chunk
+	//! Save the open file handle to a map somewhere
 }
 
 void User::IdentifyVar( char *data, long sz )
@@ -140,19 +160,21 @@ void User::IdentifyVar( char *data, long sz )
 	unordered_map<string,u_long>::iterator it;
 	u_long key;
 	char *ptr;
+	u_long alloced;
 
 	ptr = sunpackf(data, "s", &name, &obj.type);
 	it = varmap.find(name);
 	if( it == varmap.end() ) {
 		key = (u_long)it->second;
-		size = spackf(&buf, "csl", (char)4, name, *it );
+		size = spackf(&buf, &alloced, "csl", (char)4, name, *it );
 	} else {
-		size = spackf(&buf, "csl", (char)4, name, top_var_id );
+		size = spackf(&buf, &alloced, "csl", (char)4, name, top_var_id );
 		varmap[name] = top_var_id;
 		key = (u_long)top_var_id;
 		top_var_id++;
 	}
 	this->SendMessage( 0, size, buf );
+	strmem->Free( buf, alloced );
 
 	switch( obj.type ) {
 		case 0: // char
@@ -167,9 +189,11 @@ void User::IdentifyVar( char *data, long sz )
 		case 3: // string
 			sunpackf(ptr, "s", &obj.data.s);
 			break;
-		case 4: // buffer (binary string)
-			sunpackf(ptr, "p", &obj.data.p);
-			break;	
+			/*
+		case 4: // buffer (binary string) -- needs length
+			sunpackf(ptr, "p", /obj.data.plen/, &obj.data.p);
+			break;
+			*/
 	}
 
 	datamap[key] = obj;

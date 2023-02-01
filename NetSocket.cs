@@ -50,6 +50,24 @@ public class NetSocket : MonoBehaviour
         _sendQSig.Set();
     }
 
+    public void Process() {
+        IList<byte[]> res = recv();
+        foreach( byte[] data in res ) {
+            Debug.Log("recv: " + data.Length);
+            switch( data[0] ) {
+                case 0:
+                    Debug.Log("VarInfo");
+                    break;
+                case 1:
+                    Debug.Log("FileInfo");
+                    break;
+                case 2:
+                    Debug.Log("EndOfFileList");
+                    break;
+            }
+        }
+    }
+
     public IList<byte[]> recv() {
         IList<byte[]> res = new List<byte[]>();
         lock (_recvQLock) {
@@ -121,9 +139,6 @@ public class NetSocket : MonoBehaviour
                         byte[] compressedData = compressedStream.ToArray();
                         ws.Send(compressedData);
                     }
-
-                    // if total size is greater than 128, compress and send 128 + data
-                    // if not, send length + data
                 }
             }
         }

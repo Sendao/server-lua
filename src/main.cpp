@@ -52,6 +52,7 @@ void mainloop()
 	int iHigh, err, lsock;
 	vector<User*>::iterator ituser;
 	User *user, *uTarget;
+	u_long packsz, packsz2;
 	long tmpsize, size2;
 	char *tmpbuf, *buf2, *buf3;
 	const char *cstr;
@@ -154,29 +155,31 @@ void mainloop()
 			prim = datamap[key];
 			uTarget = datamap_whichuser[key];
 
-			tmpsize = spackf( &tmpbuf, "lc", key, prim.type );
+			tmpsize = spackf( &tmpbuf, &packsz, "lc", key, prim.type );
 			switch( prim.type ) {
 				case 0: // char
-					size2 = spackf(&buf2, "c", &prim.data.c);
+					size2 = spackf(&buf2, &packsz2, "c", &prim.data.c);
 					break;
 				case 1: // int
-					size2 = spackf(&buf2, "i", &prim.data.i);
+					size2 = spackf(&buf2, &packsz2,  "i", &prim.data.i);
 					break;
 				case 2: // float
-					size2 = spackf(&buf2, "f", &prim.data.f);
+					size2 = spackf(&buf2, &packsz2, "f", &prim.data.f);
 					break;
 				case 3: // string
-					size2 = spackf(&buf2, "s", &prim.data.s);
+					size2 = spackf(&buf2, &packsz2, "s", &prim.data.s);
 					break;
+					/*
 				case 4: // buffer (binary string)
 					size2 = spackf(&buf2, "p", &prim.data.p);
 					break;
+					*/
 			}
 			buf3 = strmem->Alloc( tmpsize + size2 );
 			memcpy(buf3, tmpbuf, tmpsize);
 			memcpy(buf3+tmpsize, buf2, size2);
-			strmem->Free( tmpbuf, tmpsize );
-			strmem->Free( buf2, size2 );
+			strmem->Free( tmpbuf, packsz );
+			strmem->Free( buf2, packsz2 );
 			tmpsize += size2;
 			tmpbuf = buf3;
 			buf3 = NULL;

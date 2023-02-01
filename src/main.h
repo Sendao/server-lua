@@ -85,7 +85,7 @@ void funpackf( FILE *fp, const char *fmt, ... );
 void fpackd( int fd, const char *fmt, ... );
 void funpackd( int fd, const char *fmt, ... );
 // Strings
-long spackf(char **target, const char *fmt, ... );
+long spackf(char **target, unsigned long *alloced, const char *fmt, ... );
 char *sunpackf(char *buffer, const char *fmt, ... );
 char *str_copy(const char *);
 const char *findfirst( const char *pat, const char *tests[], int cnt, const char **resptr );
@@ -129,7 +129,7 @@ class User
 
 	public:
 	void ProcessMessages(void);
-	void SendMessage( char type, long size, char *data );
+	void SendMessage( char cmd, unsigned int size, char *data );
 
 	public: // commands (client controlled)
 	void SetKeyValue(char *data, long sz);

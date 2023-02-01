@@ -15,33 +15,12 @@ https://answers.unity.com/questions/896763/custom-attributes.html
 -> SyncVar will send changed parameters to all clients
 -> SyncPosition does the same, but clients need to use default move functions when syncposition updates to avoid jitter
 
--> optionally but prohibitively, we can add get/set properties to member variables, if necessary, using the following:
-https://grahammurray.wordpress.com/tag/reflection-emit/
- - the 'set' method would be used to send changed parameters to server instantly if bandwidth is available, otherwise in a set queue (updating if the variable is changed again)
- (the other option is to use Update())
-
--> Custom attribute: SyncMethod
-we can override methods using the following:
- https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.typebuilder.definemethodoverride?view=net-7.0
- - this would allow us to send a method call to the server, which would then call the method on all clients
- - the drawback is it's rather complex to wrap all the parameters for various method calls
- - the alternative is to avoid SyncMethod and instead synchronize methods manually. This is probably the best option, as it's more flexible and easier to implement.
-
-
-(wow the network manager for unity is a mess. it's a good thing we're not using it.)
-
-actual todo items:
--> C# spack/sunpack and messaging to server
- - except we don't have variadics, so we'll have to use a fixed message format eg NetworkStringBuilder::pack_int
--> C# socket connection to server https://learn.microsoft.com/en-us/dotnet/api/system.net.sockets.socket?view=net-7.0
-
--> syncvar: syncs value to all clients
-
 Authentication:
 - authenticate by IP address for now
 - maybe encrypted token system later
 
 File transfer support:
+- 
 - file list w/ modification time + name
 - request file [name]
 
@@ -49,7 +28,9 @@ Compression:
  - C# compression/decompression streams and packeting
 
 -ClockSync packets
+-timestamps
 
+- Testing
 
 
 
