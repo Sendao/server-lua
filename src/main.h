@@ -54,11 +54,11 @@ void hfree(void *, size_t);
 
 // main.cpp
 typedef struct _CompressionPacket CompressionPacket;
-extern unordered_map<string,Primitive> datamap;
-extern unordered_map<string,User*> datamap_whichuser;
-extern unordered_set<string> dirtyset;
-extern unordered_map<string,ulong> varmap;
-extern ulong top_var_id;
+extern unordered_map<u_long,Primitive> datamap;
+extern unordered_map<u_long,User*> datamap_whichuser;
+extern unordered_set<u_long> dirtyset;
+extern unordered_map<string,u_long> varmap;
+extern u_long top_var_id;
 
 // sockets.cpp
 void InitSocket(int port);
@@ -137,6 +137,7 @@ class User
 	void RunLuaCommand(char *data, long sz);
 	void GetFileList(char *data, long sz);
 	void GetFile(char *data, long sz);
+	void IdentifyVar(char *data, long sz);
 };
 
 // pools.cpp

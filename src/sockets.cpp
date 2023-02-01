@@ -127,13 +127,14 @@ int OutputConnection(User *user)
 	int sendsize = user->outbufsz - outbufoffset;
 	z_stream strm;
 	int status;
-	unsigned char idbyte;
+	char idbyte;
 	char *tgtbuf = NULL;
 	long tgtsz = 0;
 	char buf[1024];
 	unsigned char bufsz;
 	int readsize;
 	int iSent;
+	char smallbuf[4];
 	
 	// Throttle:
 	sendsize = sendsize > user->outbufmax ? user->outbufmax : sendsize;
@@ -149,7 +150,7 @@ int OutputConnection(User *user)
 		strm.avail_out = 0;
 		status = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
 							15 | 16, 8,
-							Z_DEFAULT_STRATEGY));
+							Z_DEFAULT_STRATEGY);
 		if( status < 0 ) {
 			lprintf("deflateInit() failed: %d", status);
 			return -1;
@@ -157,7 +158,7 @@ int OutputConnection(User *user)
 
 		do {
 			strm.avail_out = 1024;
-			strm.next_out = buf;
+			strm.next_out = (Bytef*)buf;
 			status = deflate(&strm, Z_FINISH);
 			if( status < 0 ) {
 				lprintf("deflate() failed: %d", status);
@@ -189,8 +190,11 @@ int OutputConnection(User *user)
 			lprintf("send() failed: connection closed");
 			return -1;
 		}
-		
-		iSent = send(user->fSock, &sendsize, 4, 0);
+		smallbuf[0] = sendsize<<24;
+		smallbuf[1] = sendsize<<16;
+		smallbuf[2] = sendsize<<8;
+		smallbuf[3] = sendsize&0xFF;
+		iSent = send(user->fSock, smallbuf, 4, 0);
 		if( iSent == 4 ) iSent=1;
 	} else {
 		idbyte = (unsigned char)(sendsize & 0xFF);
@@ -272,7 +276,8 @@ int InputConnection(User *user)
 	unsigned char ctl;
 
 	char *subbuf;
-	unsigned char *subptr, *leftover=NULL;
+	unsigned char *subptr;
+	char *leftover=NULL;
 	unsigned char *subend, *subend2;
 	int leftover_sz=0;
 	bool failed=false;
@@ -294,7 +299,7 @@ int InputConnection(User *user)
 			strm.opaque = Z_NULL;
 			strm.avail_in = 0;
 			strm.next_in = in;
-			status = inflateInit(&strm, 15|ENABLE_ZLIB_GZIP);
+			status = inflateInit2(&strm, 15|16);
 			strm.avail_in = sz;
 			strm.next_in = (unsigned char*)p;
 			do {
@@ -313,8 +318,8 @@ int InputConnection(User *user)
 				if( failed ) break;
 				sz = 1024 - strm.avail_out; // how much is actually in 'out'
 
-				subptr = leftover;
-				subend = leftover + leftover_sz;
+				subptr = (unsigned char*)leftover;
+				subend = (unsigned char*)leftover + leftover_sz;
 				subend2 = out + sz;
 				do {
 

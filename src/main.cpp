@@ -2,11 +2,11 @@
 
 void mainloop(void);
 
-unordered_map<string,ulong> varmap;
-ulong top_var_id = 1;
-unordered_map<ulong,Primitive> datamap;
-unordered_map<ulong,User*> datamap_whichuser;
-unordered_set<ulong> dirtyset;
+unordered_map<string,u_long> varmap;
+u_long top_var_id = 1;
+unordered_map<u_long,Primitive> datamap;
+unordered_map<u_long,User*> datamap_whichuser;
+unordered_set<u_long> dirtyset;
 
 int main(int ac, char *av[])
 {
@@ -47,8 +47,8 @@ void mainloop()
 {
 	struct timeval per, next_cycle, zerotime, *usetv;
 	fd_set fdI, fdO, fdE;
-	ulong key;
-	unordered_set<string>::iterator itset;
+	u_long key;
+	unordered_set<u_long>::iterator itset;
 	int iHigh, err, lsock;
 	vector<User*>::iterator ituser;
 	User *user, *uTarget;

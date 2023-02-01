@@ -83,7 +83,7 @@ void User::ProcessMessages(void)
 
 void User::SetKeyValue( char *data, long sz )
 {
-	ulong key;
+	u_long key;
 	char *ptr;
 	Primitive obj;
 
@@ -135,18 +135,44 @@ void User::IdentifyVar( char *data, long sz )
 {
 	char *name;
 	char *buf;
-	long sz;
-	unordered_map<string,ulong>::iterator it;
+	long size;
+	Primitive obj;
+	unordered_map<string,u_long>::iterator it;
+	u_long key;
+	char *ptr;
 
-	sunpackf(data, "s", &name);
-	it = datamap.find(name);
-	if( it == datamap.end() ) {
-		sz = spackf(&buf, "sl", name, *it );
+	ptr = sunpackf(data, "s", &name, &obj.type);
+	it = varmap.find(name);
+	if( it == varmap.end() ) {
+		key = (u_long)it->second;
+		size = spackf(&buf, "csl", (char)4, name, *it );
 	} else {
-		sz = spackf(&buf, "sl", name, top_var_id );
-		datamap[name] = top_var_id;
+		size = spackf(&buf, "csl", (char)4, name, top_var_id );
+		varmap[name] = top_var_id;
+		key = (u_long)top_var_id;
 		top_var_id++;
 	}
+	this->SendMessage( 0, size, buf );
 
-	SendMessage( 0, sz, buf );
+	switch( obj.type ) {
+		case 0: // char
+			sunpackf(ptr, "c", &obj.data.c);
+			break;
+		case 1: // int
+			sunpackf(ptr, "i", &obj.data.i);
+			break;
+		case 2: // float
+			sunpackf(ptr, "f", &obj.data.f);
+			break;
+		case 3: // string
+			sunpackf(ptr, "s", &obj.data.s);
+			break;
+		case 4: // buffer (binary string)
+			sunpackf(ptr, "p", &obj.data.p);
+			break;	
+	}
+
+	datamap[key] = obj;
+	datamap_whichuser[key] = this;
+	dirtyset.insert( key );	
 }
