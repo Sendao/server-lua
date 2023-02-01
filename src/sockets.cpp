@@ -1,5 +1,7 @@
 #include "main.h"
 
+#include <zlib.h>
+
 int fSock;
 
 void InitSocket(int port)
@@ -158,6 +160,11 @@ int InputConnection(User *user)
 {
 	uintptr_t iSize;
 	char *p, *tmpbuf;
+	z_stream strm = {0};
+	unsigned char in[1024];
+	unsigned char out[1024];
+
+	int status;
 
 	if( !user ) return 0;
 
@@ -174,22 +181,132 @@ int InputConnection(User *user)
 	user->inbuf += iSize;
 
 	// Parse into messages
-	long sz;
+	int sz;
+	unsigned char smallsz;
 	char *msgbuf;
+	char *endpt;
+	unsigned char ctl;
+
+	char *subbuf;
+	unsigned char *subptr, *leftover=NULL;
+	unsigned char *subend, *subend2;
+	int leftover_sz=0;
+	bool failed=false;
+
 	p = user->inbuf_memory;
-	while( p < user->inbuf ) {
-		if( p+sizeof(long) >= user->inbuf ) break;
-		sz = *(long*)p;
-		if( p+sizeof(long)+sz >= user->inbuf ) break;
-		msgbuf = strmem->Alloc(sizeof(long)+sz);
-		memcpy( msgbuf, p, sizeof(long)+sz );
-		user->messages.push_back( msgbuf );
+	while( p+sizeof(int) < user->inbuf ) {
+		ctl = *(unsigned char*)p;
+		if( ctl == 255 ) {
+			p++;
+			sz = *(int*)p;
+			if( p+sizeof(int)+sz >= user->inbuf ) {
+				p--;
+				break;
+			}
+			p += sizeof(int);
+
+			strm.zalloc = Z_NULL;
+			strm.zfree = Z_NULL;
+			strm.opaque = Z_NULL;
+			strm.avail_in = 0;
+			strm.next_in = in;
+			status = inflateInit(&strm, 15|ENABLE_ZLIB_GZIP);
+			strm.avail_in = sz;
+			strm.next_in = (unsigned char*)p;
+			do {
+				strm.avail_out = 1024;
+				strm.next_out = out;
+				status = inflate(&strm, Z_NO_FLUSH);
+				switch( status ) {
+				case Z_OK: case Z_STREAM_END: case Z_BUF_ERROR:
+					break;
+				default:
+					inflateEnd(&strm);
+					lprintf("Error decompressing: %d", status);
+					failed=true;
+					break;
+				}
+				if( failed ) break;
+				sz = 1024 - strm.avail_out; // how much is actually in 'out'
+
+				subptr = leftover;
+				subend = leftover + leftover_sz;
+				subend2 = out + sz;
+				do {
+
+					if( subptr == subend ) {
+						subptr = out;
+						subend = NULL;
+					}
+
+					smallsz = *(unsigned char*)subptr;
+					if( subend != NULL && subptr+1+smallsz > subend ) {
+						int remainder = subend - (subptr+1+smallsz);
+
+						if( sz < remainder ) {
+							msgbuf = strmem->Alloc( subend-subptr + sz );
+							memcpy( msgbuf, subptr, subend-subptr );
+							memcpy( msgbuf+(subend-subptr), out, sz );
+							if( leftover )
+								strmem->Free( leftover, leftover_sz );
+							leftover = msgbuf;
+							leftover_sz = (subend-subptr)+sz;
+							break;
+						} else {
+							msgbuf = strmem->Alloc( subend-subptr + remainder );
+							memcpy( msgbuf, subptr, subend-subptr );
+							memcpy( msgbuf+(subend-subptr), out, remainder );
+							user->messages.push_back( msgbuf );
+							leftover = NULL;
+							leftover_sz = 0;
+							subptr = out + remainder;
+							subend = NULL;
+						}
+						continue;
+					}
+					if( ( subend != NULL && subptr+1+smallsz > subend ) ||
+						( subend == NULL && subptr+1+smallsz > subend2 ) ) {
+						if( leftover )
+							strmem->Free( leftover, leftover_sz );
+						leftover = strmem->Alloc( subend-subptr );
+						memcpy( leftover, subptr, subend-subptr );
+						leftover_sz = subend - subptr;
+						break;
+					} else {
+						subptr++;
+						msgbuf = strmem->Alloc( smallsz );
+						memcpy( msgbuf, subptr, smallsz );
+						subptr += smallsz;
+						user->messages.push_back( msgbuf );
+					}
+				} while( subptr != subend2 );
+
+			} while( strm.avail_out == 0 );
+
+			inflateEnd(&strm);
+
+			msgbuf = strmem->Alloc( strm.total_out );
+			memcpy( msgbuf, out, strm.total_out );
+			p += sz;
+
+		} else if( p+ctl >= user->inbuf ) {
+			break;
+		}
+		endpt = p+ctl;
+		while( p < endpt ) {
+			smallsz = *(unsigned char*)p;
+			msgbuf = strmem->Alloc(1+smallsz); // 1+ is for the size of the char smallsz
+			memcpy( msgbuf, p, 1+smallsz );
+			p += 1+smallsz;
+			user->messages.push_back( msgbuf );
+		}
 	}
 
-	if( p != user->inbuf_memory ) { // trim input
+	if( p != user->inbuf_memory ) { // we have read some data so we need to trim the input buffer
 		sz = p - user->inbuf_memory;
 		user->inbufsz -= sz;
 		tmpbuf = strmem->Alloc( user->inbufsz );
+		//! Todo: test whether one memcpy is sufficient
 		memcpy( tmpbuf, p, user->inbufsz );
 		memcpy( user->inbuf_memory, tmpbuf, user->inbufsz );
 		strmem->Free( tmpbuf, user->inbufsz );
@@ -202,6 +319,8 @@ int InputConnection(User *user)
 void Output(User *user, const char *str, uint16_t len)
 {
 	char *np;
+
+//https://www.lemoda.net/c/zlib-open-write/index.html
 
 	if( user->outbufsz + len > user->outbufalloc ) {
 		user->outbufalloc = user->outbufsz + len + 1024;

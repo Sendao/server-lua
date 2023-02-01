@@ -112,7 +112,7 @@ void mainloop()
 			abort();
 		}
 
-		// Disconnect errored machines:
+		// Disconnect errored machines and process inputs:
 		for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
 		{
 			user = *ituser;

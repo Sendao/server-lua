@@ -53,6 +53,7 @@ void *halloc(size_t);
 void hfree(void *, size_t);
 
 // main.cpp
+typedef struct _CompressionPacket CompressionPacket;
 extern unordered_map<string,Primitive> datamap;
 extern unordered_map<string,User*> datamap_whichuser;
 extern unordered_set<string> dirtyset;
@@ -234,6 +235,10 @@ struct primitive
 		char *s;
 		void *p;
 	} data;
+};
+
+struct _StreamMessage
+{
 };
 
 

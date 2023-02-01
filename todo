@@ -36,8 +36,6 @@ actual todo items:
 -> C# socket connection to server https://learn.microsoft.com/en-us/dotnet/api/system.net.sockets.socket?view=net-7.0
 
 -> syncvar: syncs value to all clients
-- vars should not be named, but id'd
-- name association happens during variable initialization
 
 Authentication:
 - authenticate by IP address for now
