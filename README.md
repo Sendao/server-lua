@@ -3,6 +3,18 @@
 Contains no actual LUA.
 
 
+# Next up:
+
+- add modified-time to fileinfo packet
+- file i/o
+- transfer missing/modified files when client connects
+
+# Completed:
+
+- tcp sockets
+- stream compression
+- file listing
+- basic lua interface
 
 # MinGW Instructions:
 

@@ -50,6 +50,11 @@ public class NetSocket : MonoBehaviour
         Debug.Log("Sent request");
     }
 
+    public void Update()
+    {
+        Process();
+    }
+
     public void SendMessage( char cmd, byte[] data )
     {
         byte[] msg = new byte[3];
@@ -96,6 +101,8 @@ public class NetSocket : MonoBehaviour
 
     public IList<byte[]> recv() {
         IList<byte[]> res = new List<byte[]>();
+        if( recvQ.Count == 0 )
+            return res;
         lock (_recvQLock) {
 
             while (recvQ.Count > 0) {
@@ -195,6 +202,7 @@ public class NetSocket : MonoBehaviour
                 int id = (int)readbuffer[ptr];
                 if( id == 255 ) {
                     ulong compressedSize = (ulong)readbuffer[ptr+1] << 24 | (ulong)readbuffer[ptr+2] << 16 | (ulong)readbuffer[ptr+3] << 8 | (ulong)readbuffer[ptr+4];
+                    Debug.Log("Compressed size: " + compressedSize + ", Read size: " + readlen);
                     if( ptr+5+(int)compressedSize > readlen ) {
                         break;
                     }
@@ -208,17 +216,21 @@ public class NetSocket : MonoBehaviour
                     decompressedStream.Close();
                     byte[] decompressedData = decompressedStream.ToArray();
 
+                    Debug.Log("Decompressed size: " + decompressedData.Length);
+
                     int deptr;
 
-                    for( deptr=0; deptr<decompressedData.Length; deptr++ ) {
+                    for( deptr=0; deptr<decompressedData.Length; ) {
                         cmdByte = decompressedData[deptr];
-                        smallSize = (int)( decompressedData[deptr+1] << 8 ) | (int)decompressedData[deptr+2];
+                        smallSize = (int)( decompressedData[deptr+1] << 8 ) | (int)( decompressedData[deptr+2] & 0xFF );
                         deptr += 3;
                         tmpbuf = new byte[smallSize+3];
                         tmpbuf[0] = cmdByte;
                         tmpbuf[1] = decompressedData[deptr-2];
                         tmpbuf[2] = decompressedData[deptr-1];
-                        Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
+                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + ": " + tmpbuf.Length);
+                        if( smallSize != 0 )
+                            Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                         lock (_recvQLock)
                         {
                             recvQ.Enqueue(tmpbuf);
@@ -226,20 +238,22 @@ public class NetSocket : MonoBehaviour
                         deptr += smallSize;
                     }
                 } else if( ptr+id > readlen ) {
+                    Debug.Log("Not enough data to read: " + ptr + " + " + id + " > " + readlen);
                     break;
                 } else {
                     ptr++;
                     endptr = ptr+id;
                     while( ptr < endptr ) {
                         cmdByte = readbuffer[ptr];
-                        ptr++;
-                        smallSize = (int)readbuffer[ptr]<<8 | (int)readbuffer[ptr+1];
-                        ptr += 2;
+                        smallSize = (int)readbuffer[ptr+1]<<8 | (int)readbuffer[ptr+2];
+                        ptr += 3;
                         tmpbuf = new byte[smallSize+3];
                         tmpbuf[0] = cmdByte;
                         tmpbuf[1] = readbuffer[ptr-2];
                         tmpbuf[2] = readbuffer[ptr-1];
-                        Array.Copy(readbuffer, ptr, tmpbuf, 3, smallSize);
+                        if( smallSize != 0 )
+                            Array.Copy(readbuffer, ptr, tmpbuf, 3, smallSize);
+                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + ": " + tmpbuf.Length);
                         ptr += smallSize;
                         lock (_recvQLock)
                         {

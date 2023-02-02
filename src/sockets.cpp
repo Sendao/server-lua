@@ -155,6 +155,8 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
+		lprintf("Compress %d bytes.", sendsize);
+
 		do {
 			strm.avail_out = 1024;
 			strm.next_out = (Bytef*)buf;
@@ -190,10 +192,10 @@ int OutputConnection(User *user)
 			lprintf("send() failed sending compressed data: connection closed");
 			return -1;
 		}
-		smallbuf[0] = sendsize<<24;
-		smallbuf[1] = sendsize<<16;
-		smallbuf[2] = sendsize<<8;
-		smallbuf[3] = sendsize&0xFF;
+		smallbuf[0] = tgtsz<<24;
+		smallbuf[1] = tgtsz<<16;
+		smallbuf[2] = tgtsz<<8;
+		smallbuf[3] = tgtsz&0xFF;
 		iSent = send(user->fSock, smallbuf, 4, 0);
 		if( iSent == 4 ) iSent=1;
 	} else {
@@ -217,23 +219,27 @@ int OutputConnection(User *user)
 
 	if(iSent>0)
 	{
-		if( iSent != sendsize ) {
-			lprintf("Sent %d of %d.", iSent, sendsize);
+		if( iSent != tgtsz ) {
+			lprintf("Sent %d of %d.", iSent, tgtsz);
 			lprintf("Aborting.");
 			return -1;
 		}
-		lprintf("Output %d bytes", iSent);
-		if( iSent+outbufoffset >= user->outbufsz )
+		lprintf("Output %d bytes from %d", iSent, sendsize);
+		if( iSent+sendsize >= user->outbufsz )
 		{
-			lprintf("release outbuf");
+			lprintf("reset outbuf");
+			user->outbuf = user->outbuf_memory;
+			user->outbufsz = 0;
+			/* Todo: free the memory instead when strmem is fixed.
 			strmem->Free( user->outbuf_memory, user->outbufalloc );
 			user->outbuf_memory = NULL;
 			user->outbuf = NULL;
 			user->outbufsz = 0;
 			user->outbufalloc = 0;
+			*/
 		} else {
 			lprintf("shift bytes");
-			user->outbuf += iSent;
+			user->outbuf += sendsize;
 		}
 	} else if(iSent<0) {
 		lprintf("Error xmitting: %s", strerror(errno));
@@ -421,10 +427,12 @@ int InputConnection(User *user)
 		user->inbufsz -= sz;
 		// Note: copying in overlapping buffers is undefined behavior. So we require two copies here.
 		//! An alternative is to copy byte-by-byte
-		tmpbuf = strmem->Alloc( user->inbufsz );
-		memcpy( tmpbuf, p, user->inbufsz );
-		memcpy( user->inbuf_memory, tmpbuf, user->inbufsz );
-		strmem->Free( tmpbuf, user->inbufsz );
+		if( user->inbufsz != 0 ) {
+			tmpbuf = strmem->Alloc( user->inbufsz );
+			memcpy( tmpbuf, p, user->inbufsz );
+			memcpy( user->inbuf_memory, tmpbuf, user->inbufsz );
+			strmem->Free( tmpbuf, user->inbufsz );
+		}
 		user->inbuf = user->inbuf_memory + user->inbufsz;
 	}
 

@@ -1,0 +1,50 @@
+Unity:
+https://dev.to/ibmdeveloper/creating-our-multiplayer-game-using-unity3d-creating-a-multiplayer-game-server-part-5-4587
+
+Do something like SyncVars:
+https://mirror-networking.gitbook.io/docs/guides/synchronization/syncvars
+
+Registering properties with get/set:
+https://stackoverflow.com/questions/65809801/trigger-a-function-when-array-values-are-changed
+
+How to use custom attributes:
+https://answers.unity.com/questions/896763/custom-attributes.html
+
+-> add new custom attributes: SyncVar and SyncPosition
+-> unity's Update() will send changed parameters to server, if within bandwidth
+-> SyncVar will send changed parameters to all clients
+-> SyncPosition does the same, but clients need to use default move functions when syncposition updates to avoid jitter
+
+Authentication:
+- authenticate by IP address for now
+- maybe encrypted token system later
+- after getting file list, get files
+
+-ClockSync packets
+-timestamps
+
+
+Fixes:
+- there's a (big) memory leak in strmem (it does not free allocated memory)
+
+Next up:
+- add modified-time to fileinfo packet
+- file i/o
+- transfer missing/modified files when client connects
+
+Completed:
+
+- tcp sockets
+- stream compression
+- file listing
+- basic lua interface
+
+Packet syntax:
+Layer0:
+[size-byte] [layer1 data]...
+255 [size-long] [compressed layer1 data]...
+# Todo: change it to size-int for compressed data. we can't support the longs anyway
+
+Layer1:
+[cmd-byte][size-2byte][data]...
+

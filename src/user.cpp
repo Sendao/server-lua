@@ -132,7 +132,7 @@ void User::GetFileList( char *data, long sz )
 	struct dirent *ent;
 	DIR *dirp;
 
-	dirp = opendir(".");
+	dirp = opendir("./server");
 	if( !dirp ) {
 		this->SendMessage( 2, 0, NULL );
 		return;
@@ -141,6 +141,7 @@ void User::GetFileList( char *data, long sz )
 	while( ent=readdir(dirp) ) {
 		if( strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0 )
 			continue;
+		lprintf("List directory entry: %s", ent->d_name);
 		this->SendMessage( 1, strlen(ent->d_name), ent->d_name );
 	}
 

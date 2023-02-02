@@ -117,7 +117,7 @@ char *StringMemory::Alloc( size_t sz )
 		sz1 = (unsigned int)item1.size;
 		it1 = items_ptr.find(item1);
 		if( it1 == items_ptr.end() ) {
-			lprintf("Error: unmatched memory");
+			lprintf("Error: unmatched memory: cannot find size %u at %p", sz1, item1.ptr);
 			abort();
 		}
 		if( item1.size > sz ) {
@@ -150,7 +150,7 @@ void StringMemory::Free( char *ptr, size_t sz )
 	StringMemoryItem srch(ptr, sz);
 
 	unsigned int sz1 = (unsigned int)sz;
-	//lprintf("Release %u bytes", sz1);
+	lprintf("Release %u bytes", sz1);
 	
 	it = items_ptr.lower_bound( srch );
 	if( it != items_ptr.end() && it != items_ptr.begin() ) {
