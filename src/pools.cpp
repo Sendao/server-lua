@@ -64,7 +64,7 @@ StringMemory::~StringMemory()
 StringMemoryItem::StringMemoryItem( const StringMemoryItem2 &a )
 : ptr(a.ptr), size(a.size)
 {
-
+//	lprintf("Built %p from %p", ptr, a.ptr);
 }
 
 char *StringMemory::Realloc( char *ptr, size_t orig_sz, size_t new_sz )
@@ -94,21 +94,37 @@ char *StringMemory::Alloc( size_t sz )
 {
 	set<StringMemoryItem2>::iterator it;
 	char *ptr;
+	unsigned int sz1, sz2;
+
+	sz1 = (unsigned int) items_sz.size();
+	//lprintf("Alloc: Searching in %u blocks", sz1);
 
 	it = items_sz.lower_bound( StringMemoryItem2(NULL, sz) );
 	if( it != items_sz.end() ) {
 		const StringMemoryItem2 &item = *it;
+		sz1 = (unsigned int)item.size;
+		sz2 = (unsigned int)sz;
+		//lprintf("Found matching memory block %p of size %u looking for %u", item.ptr, sz1, sz2);
 		StringMemoryItem2 newitem;
+		StringMemoryItem item1;
+		set<StringMemoryItem>::iterator it1;
 
 		ptr = item.ptr;
+		item1 = StringMemoryItem(item);
 		items_sz.erase( it );
-		items_ptr.erase( items_ptr.find(StringMemoryItem(item)) );
-		if( item.size > sz ) {
-			newitem.ptr = item.ptr + sz;
-			newitem.size = item.size - sz;
+		sz1 = (unsigned int)item1.size;
+		it1 = items_ptr.find(item1);
+		if( it1 == items_ptr.end() ) {
+			lprintf("Error: unmatched memory");
+			abort();
+		}
+		if( item1.size > sz ) {
+			newitem.ptr = item1.ptr + sz;
+			newitem.size = item1.size - sz;
 			items_sz.insert( newitem );
 			items_ptr.insert( StringMemoryItem(newitem) );
 		}
+		items_ptr.erase( it1 );
 		return ptr;
 	}
 	
@@ -125,14 +141,19 @@ void StringMemory::Free( char *ptr, size_t sz )
 {
 	set<StringMemoryItem>::iterator it;
 	StringMemoryItem srch(ptr, sz);
+
+	unsigned int sz1 = (unsigned int)sz;
+	//lprintf("Release %u bytes", sz1);
 	
 	it = items_ptr.lower_bound( srch );
 	if( it != items_ptr.end() && it != items_ptr.begin() ) {
 		const StringMemoryItem &item = *it;
 		if( ptr + sz == item.ptr ) {
+			StringMemoryItem newitem(item);
+
 			items_sz.erase( items_sz.find( item ) );
 			items_ptr.erase( it );
-			StringMemoryItem newitem(item);
+
 			newitem.ptr = ptr;
 			newitem.size += sz;
 			items_sz.insert( StringMemoryItem2(newitem) );
@@ -142,9 +163,11 @@ void StringMemory::Free( char *ptr, size_t sz )
 		it--;
 		const StringMemoryItem &itemb = *it;
 		if( itemb.ptr + itemb.size == ptr ) {
+			StringMemoryItem newitem(itemb);
+
 			items_sz.erase( items_sz.find( itemb ) );
 			items_ptr.erase( it );
-			StringMemoryItem newitem(itemb);
+
 			newitem.size += sz;
 			items_sz.insert( StringMemoryItem2(newitem) );
 			items_ptr.insert( newitem );

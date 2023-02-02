@@ -114,7 +114,7 @@ void mainloop()
 		}
 
 		// Disconnect errored machines and process inputs:
-		for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
+		for( ituser = userL.begin(); ituser != userL.end(); )
 		{
 			user = *ituser;
 			if( FD_ISSET(user->fSock, &fdE) )
@@ -125,10 +125,9 @@ void mainloop()
 				sock_close(lsock);
 				FD_CLR(lsock, &fdI);
 				FD_CLR(lsock, &fdO);
-				userL.erase(ituser);
+				ituser = userL.erase(ituser);
 				hfree(user, sizeof(User));
 				continue;
-
 			}
 			if( FD_ISSET(user->fSock, &fdI) )
 			{
@@ -136,16 +135,18 @@ void mainloop()
 				{	// user broke connection
 					lprintf("Input<0: client dropped connection");
 					lprintf("socket error: %s", GetSocketError(user->fSock));
+					/* No need apparently for this:
 					lsock = user->fSock;
-					sock_close(lsock);
+					sock_close(lsock);*/
 					FD_CLR(lsock, &fdO);
-					userL.erase(ituser);
+					ituser = userL.erase(ituser);
 					hfree(user, sizeof(User));
 					continue;
 				} else if( user->messages.size() > 0 ) {
 					user->ProcessMessages();
 				}
 			}
+			ituser++;
 		}
 
 		// Send keyvals
@@ -198,7 +199,7 @@ void mainloop()
 		// Process output
 		zerotime.tv_usec = zerotime.tv_sec = 0;
 		select(iHigh, NULL, &fdO, NULL, &zerotime);
-		for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
+		for( ituser = userL.begin(); ituser != userL.end(); )
 		{
 			user = *ituser;
 			if( FD_ISSET(user->fSock, &fdO) ) {
@@ -210,17 +211,19 @@ void mainloop()
 						lsock = user->fSock;
 						sock_close(lsock);
 
-						userL.erase(ituser);
+						ituser = userL.erase(ituser);
 						hfree(user, sizeof(User));
+						continue;
 					}
 				}
 			}
+			ituser++;
 		}
 
 		if( FD_ISSET(fSock, &fdI) ) // New Connection Available
 		{
-			lprintf("InitConnection.");
 			user = InitConnection();
+			lprintf("InitConnection %u", user->fSock);
 			//TransmitWorld(user);
 			userL.push_back(user);
 		}

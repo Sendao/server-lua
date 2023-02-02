@@ -7,6 +7,9 @@ file(GLOB main_code
 	"src/*.cpp"
 )
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ggdb")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb")
+
 include_directories(/c/sol/include /c/sol/build/vendor/lua-5.4.4/src)
 link_directories(/c/serv/)
 #set(CMAKE_EXE_LINKER_FLAGS " -static")

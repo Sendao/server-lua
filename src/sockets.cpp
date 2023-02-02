@@ -112,7 +112,6 @@ User *InitConnection(void)
 	char *ntoa = inet_ntoa(saConn.sin_addr);
 	user->sHost = strmem->Alloc( strlen(ntoa)+1 );
 	strcpy(user->sHost, ntoa);
-
 	sscanf(user->sHost, "%d.%d.%d.%d", &user->iHost[0], &user->iHost[1], &user->iHost[2], &user->iHost[3]);
 	lprintf("Got connection from %d.%d.%d.%d", user->iHost[0], user->iHost[1], user->iHost[2], user->iHost[3]);
 

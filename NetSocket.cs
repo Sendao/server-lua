@@ -5,6 +5,8 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.IO;
+using System.IO.Compression;
 
 public class NetSocket : MonoBehaviour
 {
@@ -36,18 +38,32 @@ public class NetSocket : MonoBehaviour
         _recvThread = new Thread(new ThreadStart(RecvThread));
         _recvThread.IsBackground = true;
 
+        Debug.Log("Connecting to server...");
         ws.Connect(localEnd);
         Debug.Log("Socket connected to " + ws.RemoteEndPoint.ToString());
 
         _sendThread.Start();
         _recvThread.Start();
+
+        // For testing purposes, let's request a file list
+        SendMessage( (char)3, null );
+    }
+
+    public void SendMessage( char cmd, byte[] data )
+    {
+        byte[] msg = new byte[1];
+        msg[0] = (byte)cmd;
+        send(msg);
+
+        if( data != null )
+            send(data);
+        _sendQSig.Set();
     }
 
     public void send(byte[] data) {
         lock (_sendQLock) {
             sendQ.Enqueue(data);
         }
-        _sendQSig.Set();
     }
 
     public void Process() {
@@ -90,10 +106,8 @@ public class NetSocket : MonoBehaviour
 
     public void SendThread()
     {
-        byte[] data;
-        var compressedStream = new MemoryStream();
-        var zipStream = new GZipStream(compressedStream, CompressionMode.Compress);
         long totalSize;
+        byte[] data;
 
         while (true)
         {
@@ -103,9 +117,9 @@ public class NetSocket : MonoBehaviour
                 while (sendQ.Count > 0)
                 {
                     totalSize=0;
-                    foreach( data in sendQ ) {
+                    foreach( byte[] dataitem in sendQ ) {
                         // measure total size
-                        totalSize += data.Length + 1;
+                        totalSize += dataitem.Length + 1;
                     }
 
                     if( totalSize < 128 ) {
@@ -114,14 +128,14 @@ public class NetSocket : MonoBehaviour
                         ws.Send(idhead);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
-                            idhead[0] = (byte)data.Length;
-                            ws.Send(idhead);
                             ws.Send(data);
                         }
+                        data = null;  // don't hold onto the data
                     } else {
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)255;
                         ws.Send(idhead);
+
                         byte[] sizehead = new byte[4];
                         sizehead[0] = (byte)(totalSize >> 24);
                         sizehead[1] = (byte)(totalSize >> 16);
@@ -129,12 +143,15 @@ public class NetSocket : MonoBehaviour
                         sizehead[3] = (byte)(totalSize);
                         ws.Send(sizehead);
 
+                        var compressedStream = new MemoryStream();
+                        var zipStream = new GZipStream(compressedStream, CompressionMode.Compress);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
                             idhead[0] = (byte)data.Length;
                             zipStream.Write(idhead, 0, 1);
                             zipStream.Write(data, 0, data.Length);
                         }
+                        data = null;  // don't hold onto the data
                         zipStream.Close();
                         byte[] compressedData = compressedStream.ToArray();
                         ws.Send(compressedData);
@@ -148,31 +165,26 @@ public class NetSocket : MonoBehaviour
     {
         byte[] readbuffer = new byte[1024];
         byte[] tmpbuf;
-        long readlen = 0;
+        int readlen = 0;
 
         while (true)
         {
-            if( readlen > 0 ) {
-                tmpbuf = new byte[readlen+1024];
-                Array.Copy(readbuffer, tmpbuf, readlen);
-                delete readbuffer;
-                readbuffer = tmpbuf;
-            }
-            int recv = ws.Receive(readbuffer, readlen, 1024);
+            int recv = ws.Receive(readbuffer, readlen, 1024, SocketFlags.None);
 
             readlen += recv;
             
             int ptr, smallSize, endptr;
 
             for( ptr=0; ptr<readlen; ptr++ ) {
-                int id = (int)data[ptr];
+                int id = (int)readbuffer[ptr];
                 if( id == 255 ) {
-                    compressedSize = (long)data[ptr+1] << 24 | (long)data[ptr+2] << 16 | (long)data[ptr+3] << 8 | (long)data[ptr+4];
-                    if( ptr+4+compressedSize > readlen ) {
+                    ulong compressedSize = (ulong)readbuffer[ptr+1] << 24 | (ulong)readbuffer[ptr+2] << 16 | (ulong)readbuffer[ptr+3] << 8 | (ulong)readbuffer[ptr+4];
+                    if( ptr+5+(int)compressedSize > readlen ) {
                         break;
                     }
-                    ptr += 4;
-                    var compressedStream = new MemoryStream(data, ptr, compressedSize);
+                    ptr += 5;
+
+                    var compressedStream = new MemoryStream(readbuffer, ptr, (int)compressedSize);
                     var zipStream = new GZipStream(compressedStream, CompressionMode.Decompress);
                     var decompressedStream = new MemoryStream();
                     zipStream.CopyTo(decompressedStream);
@@ -193,29 +205,29 @@ public class NetSocket : MonoBehaviour
                         }
                         deptr += smallSize;
                     }
-                } else if( ptr+id < readlen ) {
+                } else if( ptr+id > readlen ) {
                     break;
                 } else {
                     ptr++;
                     endptr = ptr+id;
-                    do {
-                        smallSize = (int)data[ptr];
+                    while( ptr < endptr ) {
+                        smallSize = (int)readbuffer[ptr];
                         ptr++;
                         tmpbuf = new byte[smallSize];
-                        Array.Copy(data, ptr, tmpbuf, 0, smallSize);
+                        Array.Copy(readbuffer, ptr, tmpbuf, 0, smallSize);
+                        ptr += smallSize;
                         lock (_recvQLock)
                         {
                             recvQ.Enqueue(tmpbuf);
                         }
-                        ptr += smallSize;
-                    } while( ptr < endptr );
+                    }
                 }
             }
 
             if( ptr < recv ) {
                 tmpbuf = new byte[(recv-ptr)+1024];
-                Array.Copy(data, ptr, tmpbuf, 0, recv-ptr);
-                delete readbuffer;
+                Array.Copy(readbuffer, ptr, tmpbuf, 0, recv-ptr);
+                // free(readbuffer);
                 readbuffer = tmpbuf;
                 readlen = recv-ptr;
             } else {
