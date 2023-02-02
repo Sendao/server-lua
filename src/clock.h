@@ -3,6 +3,8 @@
 
 #include <ctime>
 
+using namespace std;
+
 class Clock
 {
 public:
@@ -24,8 +26,8 @@ public:
 	void SetHour(int newHour);
 	void SetMin(int newMin);
 	void SetCalendar(int newDay, int newMonth, int newYear);
-	std::tuple<int, int> GetClock(void);
-	std::tuple<int, int, int> GetCalendar(void);
+	tuple<int, int> GetClock(void);
+	tuple<int, int, int> GetCalendar(void);
 	int GetHour(void);
 	int GetMin(void);
 	int GetDay(void);
@@ -36,7 +38,7 @@ public:
 	void PassDays(int days);
 	void SetTotalDaySec(int secs);
 	void SetDaySpeed(float speed);
-	std::tuple<int, int, int> GetGameClockMinutesUntil();
+	tuple<int, int, int> GetGameClockMinutesUntil();
 };
 
 
