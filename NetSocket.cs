@@ -25,7 +25,10 @@ public class NetSocket : MonoBehaviour
     private readonly object _localIpEndLock = new object();
     private IPEndPoint localEnd;
 
-    void Start()
+    //private List<FileInfo> fileList = new List<FileInfo>(); // holds read files
+    //private Queue<FileInfo> fileQ = new Queue<FileInfo>(); // holds files to be read
+
+    public void Start()
     {
         //IPHostEntry ipHost = Dns.GetHostEntry("127.0.0.1");
         IPAddress ipAddr = IPAddress.Parse("127.0.0.1"); //ipHost.AddressList[0];
@@ -83,17 +86,41 @@ public class NetSocket : MonoBehaviour
 
     public void Process() {
         IList<byte[]> res = recv();
+        NetStringReader stream;
+        int cmd;
+        string filename;
+        long filesize;
+        long filetime;
+
         foreach( byte[] data in res ) {
+            stream = new NetStringReader(data);
             Debug.Log("recv: " + data.Length);
-            switch( data[0] ) {
+            cmd = stream.ReadByte();
+            switch( cmd ) {
                 case 0:
                     Debug.Log("VarInfo");
                     break;
                 case 1:
                     Debug.Log("FileInfo");
+                    filename = stream.ReadString();
+                    filesize = stream.ReadLongLong();
+                    filetime = stream.ReadLongLong();
+                    Debug.Log("FileInfo " + filename + ": size=" + filesize + ", time=" + filetime);
                     break;
                 case 2:
                     Debug.Log("EndOfFileList");
+                    break;
+                case 3:
+                    Debug.Log("FileData");
+                    break;
+                case 4:
+                    Debug.Log("EndOfFile");
+                    break;
+                case 5:
+                    Debug.Log("ObjInfo");
+                    break;
+                case 6:
+                    Debug.Log("TimeSyncTo");
                     break;
             }
         }
@@ -116,7 +143,7 @@ public class NetSocket : MonoBehaviour
         ws.Close();
     }
 
-    private void OnDestroy() {
+    public void OnDestroy() {
         close();
     }
 

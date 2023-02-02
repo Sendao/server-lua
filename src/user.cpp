@@ -1,7 +1,5 @@
 #include "main.h"
 
-#include <dirent.h>
-
 cmdcall commands[256];
 using namespace std::placeholders; 
 
@@ -18,6 +16,7 @@ void init_commands( void )
 	commands[3] = &User::GetFileList;
 	commands[4] = &User::GetFile;
 	commands[5] = &User::IdentifyVar;
+	commands[6] = &User::IdentifyObj;
 }
 
 User::User(void)
@@ -129,20 +128,23 @@ void User::RunLuaCommand( char *data, long sz )
 
 void User::GetFileList( char *data, long sz )
 {
-	struct dirent *ent;
-	DIR *dirp;
+	unordered_map<string, FileInfo*>::iterator it;
 
-	dirp = opendir("./server");
-	if( !dirp ) {
+	it = files.begin();
+	if( it == files.end() ) {
 		this->SendMessage( 2, 0, NULL );
 		return;
 	}
+	u_long alloced, size;
+	char *buf;
 
-	while( ent=readdir(dirp) ) {
-		if( strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0 )
-			continue;
-		lprintf("List directory entry: %s", ent->d_name);
-		this->SendMessage( 1, strlen(ent->d_name), ent->d_name );
+	while( it != files.end() ) {
+		FileInfo *fi = (it->second);
+
+		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
+		this->SendMessage( 1, size, buf );
+
+		it++;
 	}
 
 	this->SendMessage( 2, 0, NULL );
@@ -150,31 +152,56 @@ void User::GetFileList( char *data, long sz )
 
 void User::GetFile( char *data, long sz )
 {
-	char *buf;
-	char *filename = strmem->Alloc( sz+1 );
+	char *filename = strmem->Alloc( sz + 1 );
 	memcpy( filename, data, sz );
+	filename[sz] = '\0';
+	GetFileS(filename);
+	strmem->Free( filename, sz+1 );
+}
 
-	fReading = fopen( filename, "rb" );
-	if( !fReading ) {
-		this->SendMessage( 4, 0, NULL ); // eof
-		fReading = NULL; // just to make sure
+void User::GetFileS( char *filename )
+{	
+	if( this->fReading || this->reading_ptr ) {
+		this->reading_file_q.push( filename );
 		return;
 	}
 
-	buf = strmem->Alloc( 1024 );
-	// Open the file and request first chunk
-	int status = fread( buf, 1, 1024, fReading );
-	if( status == 0 ) {
-		// File is empty, send EOF
-		fclose( fReading );
-		fReading = NULL;
+	unordered_map<string, FileInfo*>::iterator it;
+	it = files.find( filename );
+	if( it == files.end() ) {
 		this->SendMessage( 4, 0, NULL );
 		return;
 	}
+	FileInfo *fi = it->second;
 
+	if( fi->contents ) {
+		this->reading_ptr = fi->contents;
+		this->reading_sz = fi->size;
+ 	} else {
+		char *buf;
+
+		this->fReading = fopen( filename, "rb" );
+		if( !fReading ) {
+			this->SendMessage( 4, 0, NULL ); // eof
+			fReading = NULL; // just to make sure
+			return;
+		}
+
+		buf = strmem->Alloc( 1024 );
+		// Open the file and request first chunk
+		int status = fread( buf, 1, 1024, fReading );
+		if( status == 0 ) {
+			// File is empty, send EOF
+			fclose( fReading );
+			fReading = NULL;
+			this->SendMessage( 4, 0, NULL );
+			return;
+		}
+
+		this->SendMessage( 3, status, buf );
+		strmem->Free( buf, 1024 );
+	}
 	reading_files = true;
-	this->SendMessage( 3, status, buf );
-	strmem->Free( buf, 1024 );
 }
 
 void User::IdentifyVar( char *data, long sz )
@@ -190,7 +217,7 @@ void User::IdentifyVar( char *data, long sz )
 
 	ptr = sunpackf(data, "s", &name, &obj.type);
 	it = varmap.find(name);
-	if( it == varmap.end() ) {
+	if( it != varmap.end() ) {
 		key = (u_long)it->second;
 		size = spackf(&buf, &alloced, "csl", (char)4, name, *it );
 	} else {
@@ -225,4 +252,30 @@ void User::IdentifyVar( char *data, long sz )
 	datamap[key] = obj;
 	datamap_whichuser[key] = this;
 	dirtyset.insert( key );	
+}
+
+void User::IdentifyObj( char *data, long sz )
+{
+	char *name;
+	char *buf;
+	long size;
+	unordered_map<string,u_int>::iterator it;
+	u_int key;
+	char *ptr;
+	u_long alloced;
+
+	ptr = sunpackf(data, "s", &name);
+	it = objmap.find(name);
+	if( it != objmap.end() ) {
+		key = (u_int)it->second;
+		size = spackf(&buf, &alloced, "si", name, key );
+	} else {
+		size = spackf(&buf, &alloced, "si", name, top_var_id );
+		objmap[name] = top_var_id;
+		key = (u_int)top_var_id;
+		top_var_id++;
+	}
+	this->SendMessage( 5, size, buf );
+	strmem->Free( buf, alloced );
+	strmem->Free( name, strlen(name)+1 );
 }

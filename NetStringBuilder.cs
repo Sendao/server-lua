@@ -12,7 +12,7 @@ public class NetStringBuilder
     public int alloced;
     public int used;
 
-    NetStringBuilder(int size) {
+    public NetStringBuilder(int size) {
         alloced = size;
         used = 0;
         unsafe
@@ -22,14 +22,14 @@ public class NetStringBuilder
         }
     }
 
-    void Dispose() {
+    public void Dispose() {
         unsafe
         {
             UnsafeUtility.Free(memory, Allocator.Persistent);
         }
     }
 
-    void AllocMore() {
+    public void AllocMore() {
         int old = alloced;
         alloced *= 2;
         unsafe
@@ -42,7 +42,7 @@ public class NetStringBuilder
         }
     }
 
-    void AddLong(long value) {
+    public void AddLong(long value) {
         if( used+sizeof(long) > alloced ) {
             AllocMore();
         }
@@ -53,18 +53,20 @@ public class NetStringBuilder
         }
         used += sizeof(long);
     }
-    void AddInt(int value) {
+    public void AddInt(int value) {
         if( used+sizeof(int) > alloced ) {
             AllocMore();
         }
         unsafe
         {
-            *(int*)ptr = value;
-            ptr += sizeof(int);
+            *ptr = (byte)((value>>8) & 0xff);
+            ptr++;
+            *ptr = (byte)(value&0xFF);
+            ptr++;
         }
-        used += sizeof(int);
+        used += 2;
     }
-    void AddFloat(float value) {
+    public void AddFloat(float value) {
         if( used+sizeof(float) > alloced ) {
             AllocMore();
         }
@@ -76,15 +78,16 @@ public class NetStringBuilder
         used += sizeof(float);
     }
 
-    void AddString(string str) {
+    public void AddString(string str) {
         int len = str.Length;
         if( used+sizeof(int)+len > alloced ) {
             AllocMore();
         }
         unsafe
         {
-            *(int*)ptr = len;
-            ptr += sizeof(int);
+            *ptr = (byte)((len>>8) & 0xff);
+            *(ptr+1) = (byte)(len&0xFF);
+            ptr += 2;
             fixed (char* p = str)
             {
                 UnsafeUtility.MemCpy(ptr, p, len * 2);

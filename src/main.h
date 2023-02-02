@@ -22,6 +22,8 @@
 
 #include <set>
 #include <unordered_set>
+#include <queue>
+#include "system.h"
 
 using namespace std;
 
@@ -58,6 +60,7 @@ extern unordered_map<u_long,Primitive> datamap;
 extern unordered_map<u_long,User*> datamap_whichuser;
 extern unordered_set<u_long> dirtyset;
 extern unordered_map<string,u_long> varmap;
+extern unordered_map<string,u_int> objmap;
 extern u_long top_var_id;
 extern bool reading_files;
 
@@ -73,6 +76,9 @@ void Output(User *, const char *, unsigned long);
 void Input(User *);
 extern int fSock;
 
+// system.cpp
+extern unordered_map<string, FileInfo*> files;
+void GetFileList(void);
 
 // util.cpp
 void lprintf(const char *fmt, ...);
@@ -127,7 +133,11 @@ class User
 	vector<char*> messages;
 
     bool bQuitting;
+	
+	char *reading_ptr;
+	long reading_sz;
 	FILE *fReading;
+	queue<char*> reading_file_q; // todo: this should be a queue (FIFO)
 
 	public:
 	void ProcessMessages(void);
@@ -139,7 +149,9 @@ class User
 	void RunLuaCommand(char *data, long sz);
 	void GetFileList(char *data, long sz);
 	void GetFile(char *data, long sz);
+	void GetFileS(char *filename);
 	void IdentifyVar(char *data, long sz);
+	void IdentifyObj(char *data, long sz);
 };
 
 // pools.cpp

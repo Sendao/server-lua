@@ -4,9 +4,6 @@ https://dev.to/ibmdeveloper/creating-our-multiplayer-game-using-unity3d-creating
 Do something like SyncVars:
 https://mirror-networking.gitbook.io/docs/guides/synchronization/syncvars
 
-Registering properties with get/set:
-https://stackoverflow.com/questions/65809801/trigger-a-function-when-array-values-are-changed
-
 How to use custom attributes:
 https://answers.unity.com/questions/896763/custom-attributes.html
 
@@ -38,7 +35,8 @@ https://answers.unity.com/questions/896763/custom-attributes.html
 - Heartbeat command
 -> big timestamp
 
-- small timestamps on update commands
+- small timestamps on update commands (inside data)
+- objectid as first element of packet, extract and send the rest of data to the obj for object commands
 
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
@@ -54,6 +52,10 @@ Completed:
 - stream compression
 - file listing
 - basic lua interface
+- keyvalue interface
+- obj lookup
+
+
 
 Packet syntax:
 Layer0:

@@ -270,6 +270,7 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 	unsigned long *len, mylen;
 	unsigned int *ilen;
 	long *lptr;
+	long long *llptr;
 	int *iptr;
 	unsigned char *smol;
 	float *pf;
@@ -294,6 +295,11 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				*iptr = *buffer << 8 | *(buffer+1);
 				buffer += sizeof(int);
 				continue;
+			case 'L':
+				llptr = va_arg(args, long long*);
+				*llptr = *(long long*)buffer;
+				buffer += sizeof(long long);
+				break;
 			case 'l':
 				lptr = va_arg(args, long*);
 				*lptr = *(long*)buffer;
@@ -310,8 +316,8 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				buffer += 4;
 				continue;
 			case 's':
-				mylen = *(int*)buffer;
-				buffer += sizeof(int);
+				mylen = *buffer << 8 | *(buffer+1);
+				buffer += 2;
 				s = (char**)va_arg(args, char**);
 				*s = strmem->Alloc(mylen+1);
 				if( mylen != 0 ) {
@@ -372,6 +378,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 
 	va_list args;
 	long l;
+	long long ll;
 	int i;
 	unsigned long len;
 	unsigned int ilen;
@@ -418,6 +425,16 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				buffer += 2;
 				bufsz += 2;
 				continue;
+			case 'L':
+				ll = va_arg(args, long long);
+				while( bufsz+sizeof(long long) >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*alloced *= 2;
+				}
+				*(long long*)buffer = l;
+				buffer += sizeof(long long);
+				bufsz += sizeof(long long);
+				continue;
 			case 'l':
 				l = va_arg(args, long);
 				while( bufsz+sizeof(long) >= *alloced ) {
@@ -438,9 +455,10 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
 				}
-				*(unsigned int*)buffer = ilen;
-				buffer += sizeof(int);
-				bufsz += sizeof(int);
+				*buffer = (i >> 8) & 0xFF;
+				*(buffer+1) = (i) & 0xFF;
+				buffer += 2;
+				bufsz += 2;
 				if( len != 0 ) {
 					strncpy(buffer, s, len);
 					buffer += len;

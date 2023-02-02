@@ -3,6 +3,7 @@
 void mainloop(void);
 
 unordered_map<string,u_long> varmap;
+unordered_map<string,u_int> objmap;
 u_long top_var_id = 1;
 unordered_map<u_long,Primitive> datamap;
 unordered_map<u_long,User*> datamap_whichuser;
@@ -14,6 +15,8 @@ int main(int ac, char *av[])
 	init_pools();
 	init_commands();
 	init_lua();
+
+	GetFileList();
 
 	//! Process arguments
 
@@ -55,7 +58,7 @@ void mainloop()
 	User *user, *uTarget;
 	u_long packsz, packsz2;
 	long tmpsize, size2;
-	char *tmpbuf, *buf, *buf2, *buf3, *packed;
+	char *tmpbuf, *buf, *buf2, *buf3, *packed, *fname;
 	const char *cstr;
 	Primitive prim;
 
@@ -210,11 +213,33 @@ void mainloop()
 						fclose( user->fReading );
 						user->fReading = NULL;
 						user->SendMessage( 4, 0, NULL );
+						if( user->reading_file_q.size() > 0 ) {
+							fname = user->reading_file_q.front();
+							user->GetFileS(fname);
+							strmem->Free(fname, strlen(fname)+1);
+							user->reading_file_q.pop();
+						}
 						return;
 					}
 					found_file = true;
 					user->SendMessage( 3, status, buf );
+				} else if( reading_files && user->reading_ptr && user->reading_sz > 0 ) {
+					int status = user->reading_sz > 1024 ? 1024 : user->reading_sz;
+					user->SendMessage( 3, status, user->reading_ptr );
+					user->reading_ptr += status;
+					user->reading_sz -= status;
+					if( user->reading_sz == 0 ) {
+						user->reading_ptr = NULL;
+						user->SendMessage( 4, 0, NULL );
+						if( user->reading_file_q.size() > 0 ) {
+							fname = user->reading_file_q.front();
+							user->GetFileS(fname);
+							strmem->Free(fname, strlen(fname)+1);
+							user->reading_file_q.pop();
+						}
+					}
 				}
+
 				if( user->outbufsz > 0 )
 				{
 					if( OutputConnection(user) < 0 || user->bQuitting )
