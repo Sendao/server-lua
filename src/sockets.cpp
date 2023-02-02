@@ -164,6 +164,7 @@ int OutputConnection(User *user)
 				return -1;
 			}
 			readsize = 1024 - strm.avail_out;
+			lprintf("Compression: readsize=%d", readsize);
 
 			if( tgtbuf ) {
 				tgtbuf = (char*)strmem->Realloc( tgtbuf, tgtsz, tgtsz+readsize );
@@ -183,10 +184,10 @@ int OutputConnection(User *user)
 		idbyte = (unsigned char)255;
 		iSent = send(user->fSock, &idbyte, 1, 0);
 		if( iSent < 0 ) {
-			lprintf("send() failed: %s", strerror(errno));
+			lprintf("send() failed sending compressed data: %s", strerror(errno));
 			return -1;
 		} else if( iSent == 0 ) {
-			lprintf("send() failed: connection closed");
+			lprintf("send() failed sending compressed data: connection closed");
 			return -1;
 		}
 		smallbuf[0] = sendsize<<24;
@@ -200,6 +201,7 @@ int OutputConnection(User *user)
 		tgtbuf = user->outbuf;
 		tgtsz = sendsize;
 
+		lprintf("Compile and send %d+1 bytes", (int)idbyte);
 		iSent = send(user->fSock, &idbyte, 1, 0);
 	}
 
@@ -220,15 +222,17 @@ int OutputConnection(User *user)
 			lprintf("Aborting.");
 			return -1;
 		}
-		//lprintf("Output %d", iSent);
+		lprintf("Output %d bytes", iSent);
 		if( iSent+outbufoffset >= user->outbufsz )
 		{
+			lprintf("release outbuf");
 			strmem->Free( user->outbuf_memory, user->outbufalloc );
 			user->outbuf_memory = NULL;
 			user->outbuf = NULL;
 			user->outbufsz = 0;
 			user->outbufalloc = 0;
 		} else {
+			lprintf("shift bytes");
 			user->outbuf += iSent;
 		}
 	} else if(iSent<0) {
@@ -259,6 +263,8 @@ int InputConnection(User *user)
 
 	iSize = recv(user->fSock, user->inbuf, user->inbufmax - user->inbufsz, 0);
 
+	lprintf("Received %d bytes", iSize);
+
 	if( iSize <= 0 ) {
 		lprintf("Read <=0 from recv()");
 		return -1;
@@ -269,10 +275,11 @@ int InputConnection(User *user)
 
 	// Parse into messages
 	long sz, compsize;
+	int ilen;
 	unsigned char smallsz;
 	char *msgbuf;
 	char *endpt;
-	unsigned char ctl;
+	unsigned char ctl, cmdByte;
 
 	char *subbuf;
 	unsigned char *subptr;
@@ -282,7 +289,7 @@ int InputConnection(User *user)
 	bool failed=false;
 
 	p = user->inbuf_memory;
-	while( p+sizeof(int) < user->inbuf ) {
+	while( p+2 < user->inbuf ) {
 		ctl = *(unsigned char*)p;
 		if( ctl == 255 ) {
 			p++;
@@ -297,7 +304,7 @@ int InputConnection(User *user)
 			strm.zfree = Z_NULL;
 			strm.opaque = Z_NULL;
 			strm.avail_in = 0;
-			strm.next_in = in;
+			strm.next_in = (unsigned char*)p;
 			status = inflateInit2(&strm, 15|16);
 			strm.avail_in = sz;
 			strm.next_in = (unsigned char*)p;
@@ -305,6 +312,7 @@ int InputConnection(User *user)
 				strm.avail_out = 1024;
 				strm.next_out = out;
 				status = inflate(&strm, Z_NO_FLUSH);
+
 				switch( status ) {
 				case Z_OK: case Z_STREAM_END: case Z_BUF_ERROR:
 					break;
@@ -327,11 +335,12 @@ int InputConnection(User *user)
 						subend = NULL;
 					}
 
-					smallsz = *(unsigned char*)subptr;
-					if( subend != NULL && subptr+1+smallsz > subend ) {
-						int remainder = subend - (subptr+1+smallsz);
+					cmdByte = *subptr;
+					ilen = (int)( (*subptr+1)<<8 | (*(subptr+2)&0xFF) );
+					if( subend != NULL && subptr+3+ilen > subend ) {
+						int remainder = subend - (subptr+3+ilen);
 
-						if( sz < remainder ) {
+						if( sz < remainder ) { // not enough data in this packet, we'll need the next one
 							msgbuf = strmem->Alloc( subend-subptr + sz );
 							memcpy( msgbuf, subptr, subend-subptr );
 							memcpy( msgbuf+(subend-subptr), out, sz );
@@ -341,7 +350,7 @@ int InputConnection(User *user)
 							leftover_sz = (subend-subptr)+sz;
 							break;
 						} else {
-							msgbuf = strmem->Alloc( subend-subptr + remainder );
+							msgbuf = strmem->Alloc( (subend-subptr) + remainder );
 							memcpy( msgbuf, subptr, subend-subptr );
 							memcpy( msgbuf+(subend-subptr), out, remainder );
 							user->messages.push_back( msgbuf );
@@ -352,8 +361,8 @@ int InputConnection(User *user)
 						}
 						continue;
 					}
-					if( ( subend != NULL && subptr+1+smallsz > subend ) ||
-						( subend == NULL && subptr+1+smallsz > subend2 ) ) {
+					if( ( subend != NULL && subptr+3+ilen > subend ) ||
+						( subend == NULL && subptr+3+ilen > subend2 ) ) {
 						if( leftover )
 							strmem->Free( leftover, leftover_sz );
 						leftover = strmem->Alloc( subend-subptr );
@@ -361,10 +370,9 @@ int InputConnection(User *user)
 						leftover_sz = subend - subptr;
 						break;
 					} else {
-						subptr++;
-						msgbuf = strmem->Alloc( smallsz );
-						memcpy( msgbuf, subptr, smallsz );
-						subptr += smallsz;
+						msgbuf = strmem->Alloc( ilen+3 );
+						memcpy( msgbuf, subptr, ilen+3 );
+						subptr += ilen + 3;
 						user->messages.push_back( msgbuf );
 					}
 				} while( subptr != subend2 );
@@ -378,21 +386,33 @@ int InputConnection(User *user)
 				leftover_sz = 0;
 			}
 
-			msgbuf = strmem->Alloc( strm.total_out );
-			memcpy( msgbuf, out, strm.total_out );
+			//dunno why this was here:
+			//msgbuf = strmem->Alloc( strm.total_out );
+			//memcpy( msgbuf, out, strm.total_out );
 			p += sz;
 
 		} else if( p+ctl >= user->inbuf ) {
+			lprintf("Packet size %d is too large for buffer %d", (int)ctl, user->inbufsz);
 			break;
+		} else {
+			p++;
 		}
+		lprintf("Got %d packet size", (int)ctl);
 		endpt = p+ctl;
 		while( p < endpt ) {
-			smallsz = *(unsigned char*)p;
-			p++;
-			msgbuf = strmem->Alloc(smallsz);
-			memcpy( msgbuf, p, smallsz );
-			p += smallsz;
-			user->messages.push_back( msgbuf );
+			cmdByte = *p;
+			ilen = (int)((*(p+1)<<8) | (*(p+2)&0xFF));
+			if( ilen == 0 ) {
+				msgbuf = strmem->Alloc(3);
+				memcpy( msgbuf, p, 3 );
+				user->messages.push_back(msgbuf);
+				p += 3;
+			} else {
+				msgbuf = strmem->Alloc(ilen);
+				memcpy( msgbuf, p, ilen+3 );
+				p += 3 + ilen;
+				user->messages.push_back( msgbuf );
+			}
 		}
 	}
 
@@ -411,17 +431,17 @@ int InputConnection(User *user)
 	return 0;
 }
 
-void Output(User *user, const char *str, unsigned char len)
+void Output(User *user, const char *str, unsigned long len)
 {
 	char *np;
 
-	if( user->outbufsz + len + 1 > user->outbufalloc ) {
+	if( user->outbufsz + len > user->outbufalloc ) {
 		user->outbufalloc = user->outbufsz + len + 1024;
 		long outbufoffset = user->outbuf - user->outbuf_memory;
 		user->outbuf_memory = strmem->Realloc( user->outbuf, user->outbufsz, user->outbufalloc );
 		user->outbuf = user->outbuf_memory + outbufoffset;
 	}
-	user->outbuf_memory[user->outbufsz] = len;
-	memcpy( user->outbuf_memory+user->outbufsz+1, str, len );
-	user->outbufsz += len+1;
+	
+	memcpy( user->outbuf_memory+user->outbufsz, str, len );
+	user->outbufsz += len;
 }

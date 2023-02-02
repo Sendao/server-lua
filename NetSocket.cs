@@ -47,12 +47,22 @@ public class NetSocket : MonoBehaviour
 
         // For testing purposes, let's request a file list
         SendMessage( (char)3, null );
+        Debug.Log("Sent request");
     }
 
     public void SendMessage( char cmd, byte[] data )
     {
-        byte[] msg = new byte[1];
+        byte[] msg = new byte[3];
+        int len;
         msg[0] = (byte)cmd;
+        if( data == null ) {
+            len = 0;
+        } else {
+            len = data.Length;
+        }
+        msg[1] = (byte)(len >> 8);
+        msg[2] = (byte)(len & 0xFF);
+        Debug.Log("Encode len: " + len + " " + msg[1] + " " + msg[2]);
         send(msg);
 
         if( data != null )
@@ -119,7 +129,7 @@ public class NetSocket : MonoBehaviour
                     totalSize=0;
                     foreach( byte[] dataitem in sendQ ) {
                         // measure total size
-                        totalSize += dataitem.Length + 1;
+                        totalSize += dataitem.Length;
                     }
 
                     if( totalSize < 128 ) {
@@ -128,6 +138,7 @@ public class NetSocket : MonoBehaviour
                         ws.Send(idhead);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
+                            Debug.Log("Sending: " + data.Length + ": " + data[0] + " " + data[1] + " " + data[2]);
                             ws.Send(data);
                         }
                         data = null;  // don't hold onto the data
@@ -166,11 +177,16 @@ public class NetSocket : MonoBehaviour
         byte[] readbuffer = new byte[1024];
         byte[] tmpbuf;
         int readlen = 0;
+        byte cmdByte;
 
         while (true)
         {
             int recv = ws.Receive(readbuffer, readlen, 1024, SocketFlags.None);
-
+            Debug.Log("Received " + recv + " bytes");
+            if( recv == 0 ) {
+                Debug.Log("Connection closed");
+                break;
+            }
             readlen += recv;
             
             int ptr, smallSize, endptr;
@@ -195,10 +211,14 @@ public class NetSocket : MonoBehaviour
                     int deptr;
 
                     for( deptr=0; deptr<decompressedData.Length; deptr++ ) {
-                        smallSize = (int)decompressedData[deptr];
-                        deptr++;
-                        tmpbuf = new byte[smallSize];
-                        Array.Copy(decompressedData, deptr, tmpbuf, 0, smallSize);
+                        cmdByte = decompressedData[deptr];
+                        smallSize = (int)( decompressedData[deptr+1] << 8 ) | (int)decompressedData[deptr+2];
+                        deptr += 3;
+                        tmpbuf = new byte[smallSize+3];
+                        tmpbuf[0] = cmdByte;
+                        tmpbuf[1] = decompressedData[deptr-2];
+                        tmpbuf[2] = decompressedData[deptr-1];
+                        Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                         lock (_recvQLock)
                         {
                             recvQ.Enqueue(tmpbuf);
@@ -211,10 +231,15 @@ public class NetSocket : MonoBehaviour
                     ptr++;
                     endptr = ptr+id;
                     while( ptr < endptr ) {
-                        smallSize = (int)readbuffer[ptr];
+                        cmdByte = readbuffer[ptr];
                         ptr++;
-                        tmpbuf = new byte[smallSize];
-                        Array.Copy(readbuffer, ptr, tmpbuf, 0, smallSize);
+                        smallSize = (int)readbuffer[ptr]<<8 | (int)readbuffer[ptr+1];
+                        ptr += 2;
+                        tmpbuf = new byte[smallSize+3];
+                        tmpbuf[0] = cmdByte;
+                        tmpbuf[1] = readbuffer[ptr-2];
+                        tmpbuf[2] = readbuffer[ptr-1];
+                        Array.Copy(readbuffer, ptr, tmpbuf, 3, smallSize);
                         ptr += smallSize;
                         lock (_recvQLock)
                         {

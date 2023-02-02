@@ -59,6 +59,7 @@ extern unordered_map<u_long,User*> datamap_whichuser;
 extern unordered_set<u_long> dirtyset;
 extern unordered_map<string,u_long> varmap;
 extern u_long top_var_id;
+extern bool reading_files;
 
 // sockets.cpp
 void InitSocket(int port);
@@ -68,7 +69,7 @@ void sock_close(int lsock);
 User *InitConnection(void);
 int OutputConnection(User *);
 int InputConnection(User *);
-void Output(User *, const char *, unsigned char);
+void Output(User *, const char *, unsigned long);
 void Input(User *);
 extern int fSock;
 
@@ -126,6 +127,7 @@ class User
 	vector<char*> messages;
 
     bool bQuitting;
+	FILE *fReading;
 
 	public:
 	void ProcessMessages(void);

@@ -7,6 +7,7 @@ u_long top_var_id = 1;
 unordered_map<u_long,Primitive> datamap;
 unordered_map<u_long,User*> datamap_whichuser;
 unordered_set<u_long> dirtyset;
+bool reading_files = false;
 
 int main(int ac, char *av[])
 {
@@ -54,7 +55,7 @@ void mainloop()
 	User *user, *uTarget;
 	u_long packsz, packsz2;
 	long tmpsize, size2;
-	char *tmpbuf, *buf2, *buf3;
+	char *tmpbuf, *buf, *buf2, *buf3, *packed;
 	const char *cstr;
 	Primitive prim;
 
@@ -77,7 +78,7 @@ void mainloop()
 			lprintf("No events - waiting for connection");
 		}
 		*/
-		if( dirtyset.size() > 0 ) {
+		if( reading_files || dirtyset.size() > 0 ) {
 			per.tv_sec = 0; // run immediately if there is data to process
 			per.tv_usec = 0;
 		} else {
@@ -170,11 +171,6 @@ void mainloop()
 				case 3: // string
 					size2 = spackf(&buf2, &packsz2, "s", &prim.data.s);
 					break;
-					/*
-				case 4: // buffer (binary string)
-					size2 = spackf(&buf2, "p", &prim.data.p);
-					break;
-					*/
 			}
 			buf3 = strmem->Alloc( tmpsize + size2 );
 			memcpy(buf3, tmpbuf, tmpsize);
@@ -193,16 +189,32 @@ void mainloop()
 			}
 			
 			datamap_whichuser.erase(key);
-			datamap.erase(key);
 		}
+		dirtyset.clear();
 
 		// Process output
 		zerotime.tv_usec = zerotime.tv_sec = 0;
 		select(iHigh, NULL, &fdO, NULL, &zerotime);
+		if( reading_files ) {
+			buf = strmem->Alloc( 1024 );
+		}
+		bool found_file = false;
 		for( ituser = userL.begin(); ituser != userL.end(); )
 		{
 			user = *ituser;
 			if( FD_ISSET(user->fSock, &fdO) ) {
+				if( reading_files && user->fReading ) {
+					int status = fread( buf, 1, 1024, user->fReading );
+					if( status == 0 ) {
+						// File is empty, send EOF
+						fclose( user->fReading );
+						user->fReading = NULL;
+						user->SendMessage( 4, 0, NULL );
+						return;
+					}
+					found_file = true;
+					user->SendMessage( 3, status, buf );
+				}
 				if( user->outbufsz > 0 )
 				{
 					if( OutputConnection(user) < 0 || user->bQuitting )
@@ -218,6 +230,11 @@ void mainloop()
 				}
 			}
 			ituser++;
+		}
+		if( reading_files ) {
+			strmem->Free( buf, 1024 );
+			if( !found_file )
+				reading_files = false;
 		}
 
 		if( FD_ISSET(fSock, &fdI) ) // New Connection Available

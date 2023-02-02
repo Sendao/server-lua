@@ -23,6 +23,7 @@ void init_commands( void )
 User::User(void)
 {
 	bQuitting = false;
+	fReading = NULL;
 	outbuf = outbuf_memory = NULL;
 	outbufsz = 0;
 	outbufalloc = 0;
@@ -67,20 +68,21 @@ void User::ProcessMessages(void)
 {
 	vector<char*>::iterator it;
 	char *ptr;
-	long sz;
+	int sz;
 	char code;
+
+	lprintf("Process %d messages", (int)messages.size());
 
 	for( it=messages.begin(); it != messages.end(); it++ ) {
 		ptr = *it;
-		sz = *(long *)ptr + sizeof(long);
-		ptr += sizeof(long);
 		code = *(char *)ptr;
-		ptr ++;
-
+		sz = (*(ptr+1) << 8) | (*(ptr+2)&0xFF);
+		ptr += 3;
 		if( commands[code] != NULL ) {
-			std::bind( commands[code], this, _1, _2 )( ptr, sz - (1+sizeof(long)) );
+			lprintf("Found code %d", (int)code);
+			std::bind( commands[code], this, _1, _2 )( ptr, sz );
 		}
-		strmem->Free( *it, sz );
+		strmem->Free( *it, sz+3 );
 	}
 	messages.clear();
 }
@@ -147,8 +149,31 @@ void User::GetFileList( char *data, long sz )
 
 void User::GetFile( char *data, long sz )
 {
-	//! Open the file and request first chunk
-	//! Save the open file handle to a map somewhere
+	char *buf;
+	char *filename = strmem->Alloc( sz+1 );
+	memcpy( filename, data, sz );
+
+	fReading = fopen( filename, "rb" );
+	if( !fReading ) {
+		this->SendMessage( 4, 0, NULL ); // eof
+		fReading = NULL; // just to make sure
+		return;
+	}
+
+	buf = strmem->Alloc( 1024 );
+	// Open the file and request first chunk
+	int status = fread( buf, 1, 1024, fReading );
+	if( status == 0 ) {
+		// File is empty, send EOF
+		fclose( fReading );
+		fReading = NULL;
+		this->SendMessage( 4, 0, NULL );
+		return;
+	}
+
+	reading_files = true;
+	this->SendMessage( 3, status, buf );
+	strmem->Free( buf, 1024 );
 }
 
 void User::IdentifyVar( char *data, long sz )

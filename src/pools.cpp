@@ -90,6 +90,8 @@ char *StringMemory::ReallocStr( char *ptr, size_t orig_sz, size_t new_sz )
 	return np;
 }
 
+// TODO: Support freeing memory by tracking which blocks are allocated and which are from the middle of another pool.
+// Then we can deallocate things that are allocated to restore memory.
 char *StringMemory::Alloc( size_t sz )
 {
 	set<StringMemoryItem2>::iterator it;
@@ -121,8 +123,13 @@ char *StringMemory::Alloc( size_t sz )
 		if( item1.size > sz ) {
 			newitem.ptr = item1.ptr + sz;
 			newitem.size = item1.size - sz;
-			items_sz.insert( newitem );
-			items_ptr.insert( StringMemoryItem(newitem) );
+			if( newitem.size < 24 ) {
+				lprintf("drop small block");
+				// free( newitem.ptr ); no. we can't free it, it's in the middle of a block. we'll just let it go.
+			} else {
+				items_sz.insert( newitem );
+				items_ptr.insert( StringMemoryItem(newitem) );
+			}
 		}
 		items_ptr.erase( it1 );
 		return ptr;

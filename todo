@@ -20,12 +20,7 @@ Authentication:
 - maybe encrypted token system later
 
 File transfer support:
-- 
-- file list w/ modification time + name
 - request file [name]
-
-Compression:
- - C# compression/decompression streams and packeting
 
 -ClockSync packets
 -timestamps
@@ -33,4 +28,11 @@ Compression:
 - Testing
 
 
+Packet syntax:
+Layer0:
+[size-byte] [layer1 data]...
+255 [size-long] [compressed layer1 data]...
+
+Layer1:
+[cmd-byte][size-2byte][data]...
 
