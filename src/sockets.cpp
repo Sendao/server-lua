@@ -140,11 +140,15 @@ int OutputConnection(User *user)
 
 //https://www.lemoda.net/c/zlib-open-write/index.html
 
-	if( sendsize > 128 ) {
+	if( user->compbuf ) {
+		tgtbuf = user->compbuf;
+		tgtsz = user->compbufalloc - user->compbufsz;
+		sendsize = tgtsz > user->outbufmax ? user->outbufmax : tgtsz;
+	} else if( sendsize > 128 ) {
 		strm.zalloc = Z_NULL;
 		strm.zfree = Z_NULL;
 		strm.opaque = Z_NULL;
-		strm.avail_in = sendsize;
+		strm.avail_in = user->outbufsz;
 		strm.next_in = (Bytef*)user->outbuf;
 		strm.avail_out = 0;
 		status = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
@@ -155,7 +159,7 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
-		lprintf("Compress %d bytes.", sendsize);
+		lprintf("Compress %d bytes.", user->outbufsz);
 
 		do {
 			strm.avail_out = 1024;
@@ -181,6 +185,15 @@ int OutputConnection(User *user)
 
 		deflateEnd(&strm);
 
+		// reset the outbuf
+		user->outbuf = user->outbuf_memory;
+		user->outbufsz = 0;
+
+		// save the compressed data
+		user->compbuf = user->compbuf_memory = tgtbuf;
+		user->compbufsz = 0;
+		user->compbufalloc = tgtsz;
+
 		// first send the size of the compressed data
 
 		idbyte = (unsigned char)255;
@@ -198,6 +211,9 @@ int OutputConnection(User *user)
 		smallbuf[3] = tgtsz&0xFF;
 		iSent = send(user->fSock, smallbuf, 4, 0);
 		if( iSent == 4 ) iSent=1;
+
+		// reduce the size of the data to send
+		sendsize = tgtsz > user->outbufmax ? user->outbufmax : tgtsz;
 	} else {
 		idbyte = (unsigned char)(sendsize & 0xFF);
 		tgtbuf = user->outbuf;
@@ -208,7 +224,7 @@ int OutputConnection(User *user)
 	}
 
 	if( iSent == 1 ) {
-		iSent = send(user->fSock, tgtbuf, tgtsz, 0);
+		iSent = send(user->fSock, tgtbuf, sendsize, 0);
 	} else if( iSent < 0 ) {
 		lprintf("Error sending idbyte: %s", strerror(errno));
 		return -1;
@@ -219,18 +235,28 @@ int OutputConnection(User *user)
 
 	if(iSent>0)
 	{
-		if( iSent != tgtsz ) {
-			lprintf("Sent %d of %d.", iSent, tgtsz);
+		if( iSent != sendsize ) {
+			lprintf("Sent %d of %d.", iSent, sendsize);
 			lprintf("Aborting.");
 			return -1;
 		}
 		lprintf("Output %d bytes from %d", iSent, sendsize);
-		if( iSent+sendsize >= user->outbufsz )
-		{
+		if( user->compbuf ) {
+			user->compbuf += iSent;
+			user->compbufsz += iSent;
+			if( user->compbufsz >= user->compbufalloc ) {
+				lprintf("reset compbuf");
+				strmem->Free( user->compbuf_memory, user->compbufalloc );
+				user->compbuf_memory = NULL;
+				user->compbuf = NULL;
+				user->compbufalloc = 0;
+				user->compbufsz = 0;
+			}
+		} else if( iSent+sendsize >= user->outbufsz ) {
 			lprintf("reset outbuf");
 			user->outbuf = user->outbuf_memory;
 			user->outbufsz = 0;
-			/* Todo: free the memory instead when strmem is fixed.
+			/* Leave the memory allocated. To delete it:
 			strmem->Free( user->outbuf_memory, user->outbufalloc );
 			user->outbuf_memory = NULL;
 			user->outbuf = NULL;

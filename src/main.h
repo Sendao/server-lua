@@ -127,6 +127,10 @@ class User
 	int outbufalloc; // allocation
 	int outbufmax; // bandwidth
 
+	char *compbuf, *compbuf_memory;
+	int compbufsz; // usage
+	int compbufalloc; // allocation
+
     char *inbuf, *inbuf_memory;
 	int inbufmax;
 	int inbufsz;

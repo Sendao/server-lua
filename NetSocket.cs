@@ -25,8 +25,18 @@ public class NetSocket : MonoBehaviour
     private readonly object _localIpEndLock = new object();
     private IPEndPoint localEnd;
 
-    //private List<FileInfo> fileList = new List<FileInfo>(); // holds read files
-    //private Queue<FileInfo> fileQ = new Queue<FileInfo>(); // holds files to be read
+    struct FileData {
+        public string filename;
+        public long filesize;
+        public long filetime;
+        public string contents;
+    };
+
+    private Dictionary<String, FileData> localAssets = new Dictionary<String, FileData>(); // file data for local files
+    private bool readingFiles = false;
+    private FileData readingFile; // file currently being read from server
+    private StreamWriter fileWriter;
+    private Queue<FileData> fileQ = new Queue<FileData>(); // files to be read
 
     public void Start()
     {
@@ -51,6 +61,23 @@ public class NetSocket : MonoBehaviour
         // For testing purposes, let's request a file list
         SendMessage( (char)3, null );
         Debug.Log("Sent request");
+    }
+
+    public void ReadCurrentFileList()
+    {
+        // read directory
+        string[] files = Directory.GetFiles("Assets/StreamingAssets");
+        foreach( string file in files ) {
+            FileInfo fx = new System.IO.FileInfo(file);
+
+            FileData fi = new FileData();
+            fi.filename = file;
+            fi.filesize = fx.Length;
+            fi.filetime = fx.LastWriteTime.Ticks;
+            fi.contents = null;
+
+            localAssets[file] = fi;
+        }
     }
 
     public void Update()
@@ -88,9 +115,6 @@ public class NetSocket : MonoBehaviour
         IList<byte[]> res = recv();
         NetStringReader stream;
         int cmd;
-        string filename;
-        long filesize;
-        long filetime;
 
         foreach( byte[] data in res ) {
             stream = new NetStringReader(data);
@@ -101,20 +125,17 @@ public class NetSocket : MonoBehaviour
                     Debug.Log("VarInfo");
                     break;
                 case 1:
-                    Debug.Log("FileInfo");
-                    filename = stream.ReadString();
-                    filesize = stream.ReadLongLong();
-                    filetime = stream.ReadLongLong();
-                    Debug.Log("FileInfo " + filename + ": size=" + filesize + ", time=" + filetime);
+                    GotFileInfo(stream);
                     break;
                 case 2:
-                    Debug.Log("EndOfFileList");
+                    GotEndOfFileList(stream);
                     break;
                 case 3:
-                    Debug.Log("FileData");
+                    GotFileData(stream);
                     break;
                 case 4:
-                    Debug.Log("EndOfFile");
+                    GotNextFile(stream);
+                    //! Step to next file in queue
                     break;
                 case 5:
                     Debug.Log("ObjInfo");
@@ -123,6 +144,94 @@ public class NetSocket : MonoBehaviour
                     Debug.Log("TimeSyncTo");
                     break;
             }
+        }
+    }
+
+    public void GotEndOfFileList(NetStringReader stream)
+    {
+        Debug.Log("EndOfFileList");
+    }
+
+    public void GotNextFile(NetStringReader stream)
+    {
+        Debug.Log("Total length: " + readingFile.contents.Length);
+        Debug.Log("EndOfFile");
+        if( fileQ.Count > 0 ) {
+            readingFile = fileQ.Dequeue();
+            Debug.Log("Next: file " + readingFile.filename);
+            // open the streamwriter
+            fileWriter = new StreamWriter("Assets\\StreamingAssets\\" + readingFile.filename);
+        } else {
+            readingFiles = false;
+            Debug.Log("End of files");
+        }
+    }
+
+    public void GotFileData(NetStringReader stream)
+    {
+        Debug.Log("FileData");
+        if( !readingFiles ) {
+            Debug.Log("Got file data but no file is being read");
+            return;
+        }
+        string str = System.Text.Encoding.ASCII.GetString(stream.data, 0, stream.data.Length);
+        Debug.Log("data length: " + stream.data.Length + ", string length: " + str.Length);
+        fileWriter.Write(str);
+        readingFile.contents += str;
+    }
+
+    public void GotFileInfo(NetStringReader stream)
+    {
+        string filename;
+        long filesize;
+        long filetime;
+        //NetStringBuilder sb;
+        byte[] buf;
+
+        Debug.Log("FileInfo");
+        filename = stream.ReadString();
+        filesize = stream.ReadLongLong();
+        filetime = stream.ReadLongLong();
+        Debug.Log("FileInfo " + filename + ": size=" + filesize + ", time=" + filetime);
+
+        if( localAssets.ContainsKey(filename) ) {
+            FileData fi = localAssets[filename];
+            if( fi.filesize != filesize || fi.filetime != filetime ) {
+                // file has changed, request it
+                Debug.Log("File " + filename + " has changed from filetime " + fi.filetime + ", requesting");
+                buf = new byte[filename.Length];
+                System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
+                if( !readingFiles ) {
+                    readingFile = fi;
+                    fileWriter = new StreamWriter("Assets\\StreamingAssets\\" + readingFile.filename);
+                    readingFiles = true;
+                } else {
+                    fileQ.Enqueue(fi);
+                }
+                SendMessage( (char)4, buf );
+                fi.contents = null;
+            } else {
+                Debug.Log("Duplicate file " + filename + " found, skipping");
+            }
+        } else {
+            // file is new, request it + save info
+            FileData fi = new FileData();
+            fi.filename = filename;
+            fi.filesize = filesize;
+            fi.filetime = filetime;
+            fi.contents = null;
+            localAssets[filename] = fi;
+            Debug.Log("File " + filename + " is new, requesting");
+            buf = new byte[filename.Length];
+            System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
+            if( !readingFiles ) {
+                readingFile = fi;
+                fileWriter = new StreamWriter("Assets\\StreamingAssets\\" + readingFile.filename);
+                readingFiles = true;
+            } else {
+                fileQ.Enqueue(fi);
+            }
+            SendMessage( (char)4, buf );
         }
     }
 
@@ -249,13 +358,13 @@ public class NetSocket : MonoBehaviour
 
                     for( deptr=0; deptr<decompressedData.Length; ) {
                         cmdByte = decompressedData[deptr];
-                        smallSize = (int)( decompressedData[deptr+1] << 8 ) | (int)( decompressedData[deptr+2] & 0xFF );
+                        smallSize = (int)( decompressedData[deptr+1] << 8 ) | (int)( decompressedData[deptr+2] );
                         deptr += 3;
                         tmpbuf = new byte[smallSize+3];
                         tmpbuf[0] = cmdByte;
                         tmpbuf[1] = decompressedData[deptr-2];
                         tmpbuf[2] = decompressedData[deptr-1];
-                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + ": " + tmpbuf.Length);
+                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + (decompressedData.Length-deptr));
                         if( smallSize != 0 )
                             Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                         lock (_recvQLock)

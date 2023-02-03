@@ -53,11 +53,6 @@ StringMemory::StringMemory()
 
 StringMemory::~StringMemory()
 {
-	set<StringMemoryItem>::iterator it;
-	for( it=items_ptr.begin(); it!=items_ptr.end(); it++ ) {
-		const StringMemoryItem &x = *it;
-		free( (void*)x.ptr );
-	}
 }
 
 
@@ -147,18 +142,23 @@ char *StringMemory::Alloc( size_t sz )
 void StringMemory::Free( char *ptr, size_t sz )
 {
 	set<StringMemoryItem>::iterator it;
+	set<StringMemoryItem2>::iterator it2;
 	StringMemoryItem srch(ptr, sz);
 
 	unsigned int sz1 = (unsigned int)sz;
-	lprintf("Release %u bytes", sz1);
+	lprintf("Release %u bytes from %p", sz1, ptr);
 	
 	it = items_ptr.lower_bound( srch );
-	if( it != items_ptr.end() && it != items_ptr.begin() ) {
+	if( it != items_ptr.end() ) {
 		const StringMemoryItem &item = *it;
 		if( ptr + sz == item.ptr ) {
 			StringMemoryItem newitem(item);
-
-			items_sz.erase( items_sz.find( item ) );
+			it2 = items_sz.find( item );
+			if( it2 == items_sz.end() ) {
+				lprintf("Error: unmatched memory: cannot find size %lu at %p", item.size, item.ptr);
+				abort();
+			}
+			items_sz.erase( it2 );
 			items_ptr.erase( it );
 
 			newitem.ptr = ptr;
@@ -167,18 +167,27 @@ void StringMemory::Free( char *ptr, size_t sz )
 			items_ptr.insert( newitem );
 			return;
 		}
-		it--;
-		const StringMemoryItem &itemb = *it;
-		if( itemb.ptr + itemb.size == ptr ) {
-			StringMemoryItem newitem(itemb);
+		if( it != items_ptr.begin() ) {
+			it--;
+			if( it != items_ptr.end() ) {
+				const StringMemoryItem &itemb = *it;
+				if( itemb.ptr + itemb.size == ptr ) {
+					StringMemoryItem newitem(itemb);
 
-			items_sz.erase( items_sz.find( itemb ) );
-			items_ptr.erase( it );
+					it2 = items_sz.find(itemb);
+					if( it2 == items_sz.end() ) {
+						lprintf("Error: unmatched memory: cannot find size %lu at %p", itemb.size, itemb.ptr);
+						abort();
+					}
+					items_sz.erase( it2 );
+					items_ptr.erase( it );
 
-			newitem.size += sz;
-			items_sz.insert( StringMemoryItem2(newitem) );
-			items_ptr.insert( newitem );
-			return;
+					newitem.size += sz;
+					items_sz.insert( StringMemoryItem2(newitem) );
+					items_ptr.insert( newitem );
+					return;
+				}
+			}
 		}
 	}
 	items_ptr.insert( srch );

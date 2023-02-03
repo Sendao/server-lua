@@ -17,13 +17,11 @@ https://answers.unity.com/questions/896763/custom-attributes.html
 -> maybe encrypted token system later
 -> after getting file list, get files
 
-- File transfer:
--> get file list on server boot instead of on command
--> send modified-time
+TcpCompressedStream:
+ - compress larger blocks into temporary storage (per user)
 
 - Clientside file i/o:
--> get file list and modified times
--> FileTransfer class
+-> build and store FileTransfer list
 -> compare to server file list on endoflist command and build List<FileTransfer>
 -> monitor status of file transfers and list
 -> write files
@@ -40,11 +38,11 @@ https://answers.unity.com/questions/896763/custom-attributes.html
 
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
+- 
 
 Next up:
-- add modified-time to fileinfo packet
-- file i/o
-- transfer missing/modified files when client connects
+- finish transfer missing/modified files when client connects
+- how does clock sync work
 
 Completed:
 

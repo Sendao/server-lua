@@ -455,14 +455,14 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
 				}
-				*buffer = (i >> 8) & 0xFF;
-				*(buffer+1) = (i) & 0xFF;
+				*buffer = (ilen >> 8) & 0xFF;
+				*(buffer+1) = (ilen) & 0xFF;
 				buffer += 2;
 				bufsz += 2;
-				if( len != 0 ) {
-					strncpy(buffer, s, len);
-					buffer += len;
-					bufsz += len;
+				if( ilen != 0 ) {
+					strncpy(buffer, s, ilen);
+					buffer += ilen;
+					bufsz += ilen;
 				}
 				continue;
 			case 'V':
@@ -490,6 +490,8 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				}
 				*buffer = (ilen >> 8) & 0xFF;
 				*(buffer+1) = (ilen) & 0xFF;
+				lprintf("Length bytes: %d %d for %d", (int)*buffer, (int)*(buffer+1), ilen);
+
 				buffer += 2;
 				bufsz += 2;
 				if( ilen != 0 ) {

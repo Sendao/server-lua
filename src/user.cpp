@@ -27,6 +27,9 @@ User::User(void)
 	outbufsz = 0;
 	outbufalloc = 0;
 	outbufmax = 1500; // MTU
+	compbuf = compbuf_memory = NULL;
+	compbufsz = 0;
+	compbufalloc = 0;
 	inbufmax = 1500;
 	inbuf_memory = inbuf = strmem->Alloc(inbufmax);
 	inbufsz = 0;
@@ -141,8 +144,11 @@ void User::GetFileList( char *data, long sz )
 	while( it != files.end() ) {
 		FileInfo *fi = (it->second);
 
+		lprintf("Send fileinfo %s", fi->name);
 		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
+		lprintf("Packed: %ld", size);
 		this->SendMessage( 1, size, buf );
+		strmem->Free( buf, alloced );
 
 		it++;
 	}
@@ -153,8 +159,14 @@ void User::GetFileList( char *data, long sz )
 void User::GetFile( char *data, long sz )
 {
 	char *filename = strmem->Alloc( sz + 1 );
+
 	memcpy( filename, data, sz );
 	filename[sz] = '\0';
+	if( strstr(filename, "..") != NULL ) {
+		strmem->Free( filename, sz+1 );
+		this->SendMessage( 4, 0, NULL );
+		return;
+	}
 	GetFileS(filename);
 	strmem->Free( filename, sz+1 );
 }
