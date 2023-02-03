@@ -38,7 +38,6 @@ TcpCompressedStream:
 
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
-- 
 
 Next up:
 - finish transfer missing/modified files when client connects

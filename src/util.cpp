@@ -293,17 +293,17 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 			case 'i':
 				iptr = va_arg(args, int*);
 				*iptr = *buffer << 8 | *(buffer+1);
-				buffer += sizeof(int);
+				buffer += 2;
 				continue;
 			case 'L':
 				llptr = va_arg(args, long long*);
-				*llptr = *(long long*)buffer;
-				buffer += sizeof(long long);
+				*llptr = *buffer << 56 | *(buffer+1) << 48 | *(buffer+2) << 40 | *(buffer+3) << 32 | *(buffer+4) << 24 | *(buffer+5) << 16 | *(buffer+6) << 8 | *(buffer+7);
+				buffer += 8;
 				break;
 			case 'l':
 				lptr = va_arg(args, long*);
-				*lptr = *(long*)buffer;
-				buffer += sizeof(long);
+				*lptr = *buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3);
+				buffer += 4;
 				continue;
 			case 'f':
 				FloatChar x;
@@ -328,8 +328,8 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'V':
 				len = va_arg(args, unsigned long*);
-				*len = *(long*)buffer;
-				buffer += sizeof(long);
+				*len = *buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3);
+				buffer += 4;
 				p = (char**)va_arg(args, char**);
 				*p = strmem->Alloc(*len+1);
 				if( *len != 0 ) {
@@ -435,7 +435,14 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
-				*(long long*)buffer = l;
+				*(buffer) = (ll >> 56) & 0xFF;
+				*(buffer+1) = (ll >> 48) & 0xFF;
+				*(buffer+2) = (ll >> 40) & 0xFF;
+				*(buffer+3) = (ll >> 32) & 0xFF;
+				*(buffer+4) = (ll >> 24) & 0xFF;
+				*(buffer+5) = (ll >> 16) & 0xFF;
+				*(buffer+6) = (ll >> 8) & 0xFF;
+				*(buffer+7) = (ll) & 0xFF;
 				buffer += sizeof(long long);
 				bufsz += sizeof(long long);
 				continue;
@@ -446,9 +453,12 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
-				*(long*)buffer = l;
-				buffer += sizeof(long);
-				bufsz += sizeof(long);
+				*(buffer) = (l >> 24) & 0xFF;
+				*(buffer+1) = (l >> 16) & 0xFF;
+				*(buffer+2) = (l >> 8) & 0xFF;
+				*(buffer+3) = (l) & 0xFF;
+				buffer += 4;
+				bufsz += 4;
 				continue;
 			case 's':
 				s = va_arg(args, char*);
@@ -474,14 +484,17 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 			case 'V':
 				len = va_arg(args, unsigned long);
 				p = va_arg(args, char*);
-				while( bufsz+sizeof(long)+len >= *alloced ) {
+				while( bufsz+4+len >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
-				*(long*)buffer = len;
-				buffer += sizeof(long);
-				bufsz += sizeof(long);
+				*(buffer) = (len >> 24) & 0xFF;
+				*(buffer+1) = (len >> 16) & 0xFF;
+				*(buffer+2) = (len >> 8) & 0xFF;
+				*(buffer+3) = (len) & 0xFF;
+				buffer += 4;
+				bufsz += 4;
 				if( len != 0 ) {
 					memcpy(buffer, p, len);
 					buffer += len;

@@ -147,7 +147,7 @@ void User::GetFileList( char *data, long sz )
 	while( it != files.end() ) {
 		FileInfo *fi = (it->second);
 
-		lprintf("Send fileinfo %s", fi->name);
+		lprintf("Send fileinfo %s %llu %llu", fi->name, fi->size, fi->mtime);
 		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
 		lprintf("Packed: %ld", size);
 		this->SendMsg( 1, size, buf );
