@@ -54,12 +54,15 @@ User::~User(void)
 	messages.clear();
 }
 
-void User::SendMessage( char cmd, unsigned int size, char *data )
+void User::SendMsg( char cmd, unsigned int size, char *data )
 {
 	char *buf=NULL;
 	long bufsz;
 	u_long alloced;
 	
+	if( outbufsz < 202 && outbufsz + 10 > 202 ) {
+		lprintf("Sending 202 byte packet");
+	}
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	Output( this, buf, bufsz );
 	strmem->Free( buf, alloced );
@@ -135,7 +138,7 @@ void User::GetFileList( char *data, long sz )
 
 	it = files.begin();
 	if( it == files.end() ) {
-		this->SendMessage( 2, 0, NULL );
+		this->SendMsg( 2, 0, NULL );
 		return;
 	}
 	u_long alloced, size;
@@ -147,13 +150,13 @@ void User::GetFileList( char *data, long sz )
 		lprintf("Send fileinfo %s", fi->name);
 		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
 		lprintf("Packed: %ld", size);
-		this->SendMessage( 1, size, buf );
+		this->SendMsg( 1, size, buf );
 		strmem->Free( buf, alloced );
 
 		it++;
 	}
 
-	this->SendMessage( 2, 0, NULL );
+	this->SendMsg( 2, 0, NULL );
 }
 
 void User::GetFile( char *data, long sz )
@@ -164,7 +167,7 @@ void User::GetFile( char *data, long sz )
 	filename[sz] = '\0';
 	if( strstr(filename, "..") != NULL ) {
 		strmem->Free( filename, sz+1 );
-		this->SendMessage( 4, 0, NULL );
+		this->SendMsg( 4, 0, NULL );
 		return;
 	}
 	GetFileS(filename);
@@ -181,7 +184,7 @@ void User::GetFileS( char *filename )
 	unordered_map<string, FileInfo*>::iterator it;
 	it = files.find( filename );
 	if( it == files.end() ) {
-		this->SendMessage( 4, 0, NULL );
+		this->SendMsg( 4, 0, NULL );
 		return;
 	}
 	FileInfo *fi = it->second;
@@ -194,7 +197,7 @@ void User::GetFileS( char *filename )
 
 		this->fReading = fopen( filename, "rb" );
 		if( !fReading ) {
-			this->SendMessage( 4, 0, NULL ); // eof
+			this->SendMsg( 4, 0, NULL ); // eof
 			fReading = NULL; // just to make sure
 			return;
 		}
@@ -206,11 +209,11 @@ void User::GetFileS( char *filename )
 			// File is empty, send EOF
 			fclose( fReading );
 			fReading = NULL;
-			this->SendMessage( 4, 0, NULL );
+			this->SendMsg( 4, 0, NULL );
 			return;
 		}
 
-		this->SendMessage( 3, status, buf );
+		this->SendMsg( 3, status, buf );
 		strmem->Free( buf, 1024 );
 	}
 	reading_files = true;
@@ -238,7 +241,7 @@ void User::IdentifyVar( char *data, long sz )
 		key = (u_long)top_var_id;
 		top_var_id++;
 	}
-	this->SendMessage( 0, size, buf );
+	this->SendMsg( 0, size, buf );
 	strmem->Free( buf, alloced );
 
 	switch( obj.type ) {
@@ -287,7 +290,7 @@ void User::IdentifyObj( char *data, long sz )
 		key = (u_int)top_var_id;
 		top_var_id++;
 	}
-	this->SendMessage( 5, size, buf );
+	this->SendMsg( 5, size, buf );
 	strmem->Free( buf, alloced );
 	strmem->Free( name, strlen(name)+1 );
 }

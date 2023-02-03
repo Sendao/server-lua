@@ -160,6 +160,8 @@ int OutputConnection(User *user)
 		}
 
 		lprintf("Compress %d bytes.", user->outbufsz);
+		lprintf("CRC32: %u", crc32(user->outbuf, user->outbufsz));
+		lprintf("Byte check: %d %d %d %d", (int)user->outbuf[200], (int)user->outbuf[201], (int)user->outbuf[202], (int)user->outbuf[203]);
 
 		do {
 			strm.avail_out = 1024;
@@ -467,8 +469,6 @@ int InputConnection(User *user)
 
 void Output(User *user, const char *str, unsigned long len)
 {
-	char *np;
-
 	if( user->outbufsz + len > user->outbufalloc ) {
 		user->outbufalloc = user->outbufsz + len + 1024;
 		long outbufoffset = user->outbuf - user->outbuf_memory;
@@ -477,5 +477,8 @@ void Output(User *user, const char *str, unsigned long len)
 	}
 	
 	memcpy( user->outbuf_memory+user->outbufsz, str, len );
+	if( user->outbufsz < 202 && user->outbufsz+len > 202 ) {
+		lprintf("Byte check 1: %d %d %d %d", (int)user->outbuf_memory[200], (int)user->outbuf_memory[201], (int)user->outbuf_memory[202], (int)user->outbuf_memory[203]);
+	}
 	user->outbufsz += len;
 }

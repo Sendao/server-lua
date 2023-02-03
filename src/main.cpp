@@ -188,7 +188,7 @@ void mainloop()
 			{
 				user = *ituser;
 				if( user != uTarget )
-					user->SendMessage( 0, tmpsize, tmpbuf );
+					user->SendMsg( 0, tmpsize, tmpbuf );
 			}
 			
 			datamap_whichuser.erase(key);
@@ -212,7 +212,7 @@ void mainloop()
 						// File is empty, send EOF
 						fclose( user->fReading );
 						user->fReading = NULL;
-						user->SendMessage( 4, 0, NULL );
+						user->SendMsg( 4, 0, NULL );
 						if( user->reading_file_q.size() > 0 ) {
 							fname = user->reading_file_q.front();
 							user->GetFileS(fname);
@@ -222,15 +222,15 @@ void mainloop()
 						return;
 					}
 					found_file = true;
-					user->SendMessage( 3, status, buf );
+					user->SendMsg( 3, status, buf );
 				} else if( reading_files && user->reading_ptr && user->reading_sz > 0 ) {
 					int status = user->reading_sz > 1024 ? 1024 : user->reading_sz;
-					user->SendMessage( 3, status, user->reading_ptr );
+					user->SendMsg( 3, status, user->reading_ptr );
 					user->reading_ptr += status;
 					user->reading_sz -= status;
 					if( user->reading_sz == 0 ) {
 						user->reading_ptr = NULL;
-						user->SendMessage( 4, 0, NULL );
+						user->SendMsg( 4, 0, NULL );
 						if( user->reading_file_q.size() > 0 ) {
 							fname = user->reading_file_q.front();
 							user->GetFileS(fname);

@@ -72,6 +72,8 @@ public class NetStringReader
 		int p;
 		string s; // this is bad, todo: fix it
 
+		Debug.Log("ReadString length: " + len);
+
 		if( offset+len > data.Length ) {
 			Debug.Log("ReadString: out of range");
 			return "";
@@ -80,6 +82,7 @@ public class NetStringReader
 		for(p=0; p<len; p++) {
 			s += (char)data[offset+p];
 		}
+		offset += len;
 
 		return s;
     }

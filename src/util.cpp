@@ -395,6 +395,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+1 >= *alloced ) {
 					*target =buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*buffer = c;
 				buffer++;
@@ -406,6 +407,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+sizeof(float) >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*(buffer) = x.c[0];
 				*(buffer+1) = x.c[1];
@@ -416,9 +418,10 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				continue;
 			case 'i':
 				i = (int)va_arg(args, int);
-				while( bufsz+sizeof(int) >= *alloced ) {
+				while( bufsz+2 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*buffer = (i >> 8) & 0xFF;
 				*(buffer+1) = (i) & 0xFF;
@@ -430,6 +433,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+sizeof(long long) >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*(long long*)buffer = l;
 				buffer += sizeof(long long);
@@ -440,6 +444,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+sizeof(long) >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*(long*)buffer = l;
 				buffer += sizeof(long);
@@ -454,6 +459,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+sizeof(int)+ilen >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*buffer = (ilen >> 8) & 0xFF;
 				*(buffer+1) = (ilen) & 0xFF;
@@ -471,6 +477,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+sizeof(long)+len >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*(long*)buffer = len;
 				buffer += sizeof(long);
@@ -487,6 +494,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+2+ilen >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*buffer = (ilen >> 8) & 0xFF;
 				*(buffer+1) = (ilen) & 0xFF;
@@ -506,6 +514,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				while( bufsz+sizeof(unsigned char)+smol >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
+					buffer = buf + bufsz;
 				}
 				*(unsigned char*)buffer = smol;
 				buffer ++;
@@ -717,4 +726,15 @@ long stringhash( const char *ptr )
 		ptr++;
 	}
 	return key;
+}
+
+unsigned int crc32( const char *ptr, int len )
+{
+	int i;
+	unsigned int crc=0;
+
+	for( i=0; i<len; i++ ) {
+		crc += (unsigned int)*(ptr+i);
+	}
+	return crc;
 }

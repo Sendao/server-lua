@@ -109,6 +109,7 @@ char *htmlspecialchars_decode( char *ptr );
 void mystrim( char **pbuf );
 char *strdupsafe( const char * );
 char *strndupsafe( const char *, int );
+unsigned int crc32( const char *ptr, int len );
 
 
 class User
@@ -145,7 +146,7 @@ class User
 
 	public:
 	void ProcessMessages(void);
-	void SendMessage( char cmd, unsigned int size, char *data );
+	void SendMsg( char cmd, unsigned int size, char *data );
 
 	public: // commands (client controlled)
 	void SetKeyValue(char *data, long sz);

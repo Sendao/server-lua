@@ -120,6 +120,7 @@ public class NetSocket : MonoBehaviour
             stream = new NetStringReader(data);
             Debug.Log("recv: " + data.Length);
             cmd = stream.ReadByte();
+            stream.ReadInt();
             switch( cmd ) {
                 case 0:
                     Debug.Log("VarInfo");
@@ -315,6 +316,18 @@ public class NetSocket : MonoBehaviour
         }
     }
 
+    public uint crc32( byte[] data )
+    {
+        int i;
+        uint crc=0;
+
+        for( i=0; i<data.Length; i++ ) {
+            crc += (uint)data[i];
+        }
+        return crc;
+    }
+
+
     public void RecvThread()
     {
         byte[] readbuffer = new byte[1024];
@@ -352,7 +365,12 @@ public class NetSocket : MonoBehaviour
                     decompressedStream.Close();
                     byte[] decompressedData = decompressedStream.ToArray();
 
-                    Debug.Log("Decompressed size: " + decompressedData.Length);
+                    //Debug.Log("Decompressed CRC32: " + crc32(decompressedData));
+
+                    ptr += (int)compressedSize;
+
+                    //Debug.Log("Decompressed size: " + decompressedData.Length);                    
+		            //Debug.Log("Byte check: " + (int)decompressedData[200] + "," + (int)decompressedData[201] + "," + (int)decompressedData[202] + "," + (int)decompressedData[203]);
 
                     int deptr;
 
@@ -364,7 +382,7 @@ public class NetSocket : MonoBehaviour
                         tmpbuf[0] = cmdByte;
                         tmpbuf[1] = decompressedData[deptr-2];
                         tmpbuf[2] = decompressedData[deptr-1];
-                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + (decompressedData.Length-deptr));
+                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
                         if( smallSize != 0 )
                             Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                         lock (_recvQLock)
