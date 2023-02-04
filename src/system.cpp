@@ -2,8 +2,6 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
-unordered_map<string,FileInfo*> files;
-
 void GetFileList( void )
 {
 	struct dirent *ent;
@@ -29,7 +27,7 @@ void GetFileList( void )
 		fi->mtime = statbuf.st_mtime;
 		fi->size = statbuf.st_size;
 
-		if( fi->size < 1024*1024*1024 ) {
+		if( fi->size < 256*1024*1024 ) {
 			fi->contents = (char*)halloc(fi->size);
 			FILE *f = fopen( fn, "rb" );
 			if( f ) {
@@ -42,7 +40,7 @@ void GetFileList( void )
 		} else {
 			fi->contents = NULL;
 		}
-		files[ent->d_name] = fi;
+		game->files[ent->d_name] = fi;
 		lprintf("Record file %s", ent->d_name);
 	}
 

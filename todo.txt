@@ -8,27 +8,13 @@ How to use custom attributes:
 https://answers.unity.com/questions/896763/custom-attributes.html
 
 -> add new custom attributes: SyncVar and SyncPosition
--> unity's Update() will send changed parameters to server, if within bandwidth
 -> SyncVar will send changed parameters to all clients
 -> SyncPosition does the same, but clients need to use default move functions when syncposition updates to avoid jitter
 
 - Authentication:
 -> authenticate by IP address for now
 -> maybe encrypted token system later
--> after getting file list, get files
 
-TcpCompressedStream:
- - compress larger blocks into temporary storage (per user)
-
-- Clientside file i/o:
--> build and store FileTransfer list
--> compare to server file list on endoflist command and build List<FileTransfer>
--> monitor status of file transfers and list
--> write files
-
-- Clock Sync commands
--> server sync to authoritative client
--> other clients sync to server
 
 - Heartbeat command
 -> big timestamp
@@ -38,19 +24,28 @@ TcpCompressedStream:
 
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
+ (currently disabled)
+
 
 Next up:
-- finish transfer missing/modified files when client connects
-- how does clock sync work
+ - clock sync and position updates on clientside
+ - distribute position updates
+ - initial position messaging
 
-Completed:
 
+Completed/working:
 - tcp sockets
 - stream compression
 - file listing
+- var lookup
+
+In progress:
 - basic lua interface
 - keyvalue interface
 - obj lookup
+- obj positions
+- clock sync
+
 
 
 

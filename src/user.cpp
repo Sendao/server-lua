@@ -3,7 +3,6 @@
 cmdcall commands[256];
 using namespace std::placeholders; 
 
-
 void init_commands( void )
 {
 	User *p=NULL;
@@ -17,6 +16,8 @@ void init_commands( void )
 	commands[4] = &User::GetFile;
 	commands[5] = &User::IdentifyVar;
 	commands[6] = &User::IdentifyObj;
+	commands[7] = &User::ClockSync;
+	commands[8] = &User::SetPosition;
 }
 
 User::User(void)
@@ -60,7 +61,7 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 	char *buf=NULL;
 	long bufsz;
 	u_long alloced;
-	
+
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	Output( this, buf, bufsz );
 	strmem->Free( buf, alloced );
@@ -117,9 +118,9 @@ void User::SetKeyValue( char *data, long sz )
 			break;	
 	}
 
-	datamap[key] = obj;
-	datamap_whichuser[key] = this;
-	dirtyset.insert( key );
+	game->datamap[key] = obj;
+	game->datamap_whichuser[key] = this;
+	game->dirtyset.insert( key );
 }
 
 void User::RunLuaFile( char *data, long sz )
@@ -136,20 +137,18 @@ void User::GetFileList( char *data, long sz )
 {
 	unordered_map<string, FileInfo*>::iterator it;
 
-	it = files.begin();
-	if( it == files.end() ) {
+	it = game->files.begin();
+	if( it == game->files.end() ) {
 		this->SendMsg( 2, 0, NULL );
 		return;
 	}
 	u_long alloced, size;
 	char *buf;
 
-	while( it != files.end() ) {
+	while( it != game->files.end() ) {
 		FileInfo *fi = (it->second);
 
-		lprintf("Send fileinfo %s %llu %llu", fi->name, fi->size, fi->mtime);
 		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
-		lprintf("Packed: %ld", size);
 		this->SendMsg( 1, size, buf );
 		strmem->Free( buf, alloced );
 
@@ -186,8 +185,8 @@ void User::GetFileS( char *filename )
 	}
 
 	unordered_map<string, FileInfo*>::iterator it;
-	it = files.find( filename );
-	if( it == files.end() ) {
+	it = game->files.find( filename );
+	if( it == game->files.end() ) {
 		lprintf("Not found %s", filename);
 		this->SendMsg( 4, 0, NULL );
 		return;
@@ -195,13 +194,11 @@ void User::GetFileS( char *filename )
 	FileInfo *fi = it->second;
 
 	if( fi->contents ) {
-		lprintf("Set reading_ptr to read %llu", fi->size);
 		this->reading_ptr = fi->contents;
 		this->reading_sz = fi->size;
  	} else {
 		char *buf;
 
-		lprintf("Open file %s", filename);
 		this->fReading = fopen( filename, "rb" );
 		if( !fReading ) {
 			this->SendMsg( 4, 0, NULL ); // eof
@@ -214,6 +211,7 @@ void User::GetFileS( char *filename )
 		int status = fread( buf, 1, 1024, fReading );
 		if( status == 0 ) {
 			// File is empty, send EOF
+			strmem->Free( buf, 1024 );
 			fclose( fReading );
 			fReading = NULL;
 			this->SendMsg( 4, 0, NULL );
@@ -223,7 +221,7 @@ void User::GetFileS( char *filename )
 		this->SendMsg( 3, status, buf );
 		strmem->Free( buf, 1024 );
 	}
-	reading_files = true;
+	game->reading_files = true;
 }
 
 void User::IdentifyVar( char *data, long sz )
@@ -238,15 +236,15 @@ void User::IdentifyVar( char *data, long sz )
 	u_long alloced;
 
 	ptr = sunpackf(data, "s", &name, &obj.type);
-	it = varmap.find(name);
-	if( it != varmap.end() ) {
+	it = game->varmap.find(name);
+	if( it != game->varmap.end() ) {
 		key = (u_long)it->second;
-		size = spackf(&buf, &alloced, "csl", (char)4, name, *it );
+		size = spackf(&buf, &alloced, "csl", (char)4, name, key );
 	} else {
-		size = spackf(&buf, &alloced, "csl", (char)4, name, top_var_id );
-		varmap[name] = top_var_id;
-		key = (u_long)top_var_id;
-		top_var_id++;
+		size = spackf(&buf, &alloced, "csl", (char)4, name, game->top_var_id );
+		game->varmap[name] = game->top_var_id;
+		key = (u_long)game->top_var_id;
+		game->top_var_id++;
 	}
 	this->SendMsg( 0, size, buf );
 	strmem->Free( buf, alloced );
@@ -271,9 +269,9 @@ void User::IdentifyVar( char *data, long sz )
 			*/
 	}
 
-	datamap[key] = obj;
-	datamap_whichuser[key] = this;
-	dirtyset.insert( key );	
+	game->datamap[key] = obj;
+	game->datamap_whichuser[key] = this;
+	game->dirtyset.insert( key );
 }
 
 void User::IdentifyObj( char *data, long sz )
@@ -287,17 +285,52 @@ void User::IdentifyObj( char *data, long sz )
 	u_long alloced;
 
 	ptr = sunpackf(data, "s", &name);
-	it = objmap.find(name);
-	if( it != objmap.end() ) {
+	it = game->objmap.find(name);
+	if( it != game->objmap.end() ) {
 		key = (u_int)it->second;
 		size = spackf(&buf, &alloced, "si", name, key );
 	} else {
-		size = spackf(&buf, &alloced, "si", name, top_var_id );
-		objmap[name] = top_var_id;
-		key = (u_int)top_var_id;
-		top_var_id++;
+		size = spackf(&buf, &alloced, "si", name, game->top_var_id );
+		game->objmap[name] = game->top_var_id;
+		key = (u_int)game->top_var_id;
+		game->top_var_id++;
 	}
 	this->SendMsg( 5, size, buf );
 	strmem->Free( buf, alloced );
 	strmem->Free( name, strlen(name)+1 );
 }
+
+void User::ClockSync( char *data, long sz )
+{
+	long long time, userclock;
+
+	sunpackf(data, "L", &userclock);
+	time = game->GetTime();
+
+	this->clocksync = time - userclock;
+	lprintf("Set clocksync for user to %llu", this->clocksync);
+}
+
+void User::SetPosition( char *data, long sz )
+{
+	u_long objid;
+	float x, y, z;
+	float r0, r1, r2, r3;
+
+	sunpackf(data, "lfffffff", &objid, &x, &y, &z, &r0, &r1, &r2, &r3);
+	game->SetPosition( objid, x, y, z, r0, r1, r2, r3 );
+	lprintf("Position updated");
+
+}
+
+void User::CreateObject( char *data, long sz )
+{
+	u_long objid;
+	char *name;
+
+	sunpackf(data, "ls", &objid, &name);
+	game->CreateObject( objid, name );
+	lprintf("Created %llu", objid);
+	
+}
+

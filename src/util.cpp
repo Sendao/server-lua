@@ -429,6 +429,20 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				buffer += 2;
 				bufsz += 2;
 				continue;
+			case 'l':
+				l = va_arg(args, long);
+				while( bufsz+sizeof(long) >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*alloced *= 2;
+					buffer = buf + bufsz;
+				}
+				*(buffer) = (l >> 24) & 0xFF;
+				*(buffer+1) = (l >> 16) & 0xFF;
+				*(buffer+2) = (l >> 8) & 0xFF;
+				*(buffer+3) = (l) & 0xFF;
+				buffer += 4;
+				bufsz += 4;
+				continue;
 			case 'L':
 				ll = va_arg(args, long long);
 				while( bufsz+sizeof(long long) >= *alloced ) {
@@ -446,20 +460,6 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				*(buffer+7) = (ll) & 0xFF;
 				buffer += sizeof(long long);
 				bufsz += sizeof(long long);
-				continue;
-			case 'l':
-				l = va_arg(args, long);
-				while( bufsz+sizeof(long) >= *alloced ) {
-					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
-					*alloced *= 2;
-					buffer = buf + bufsz;
-				}
-				*(buffer) = (l >> 24) & 0xFF;
-				*(buffer+1) = (l >> 16) & 0xFF;
-				*(buffer+2) = (l >> 8) & 0xFF;
-				*(buffer+3) = (l) & 0xFF;
-				buffer += 4;
-				bufsz += 4;
 				continue;
 			case 's':
 				s = va_arg(args, char*);
@@ -545,166 +545,6 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 
 	return bufsz;
 }
-void funpackf( FILE *fp, const char *fmt, ... )
-{
-	va_list args;
-	long *len, mylen;
-	char *c, **p, **s;
-
-	va_start(args, fmt);
-	while( *fmt )
-		switch( *fmt++ )
-		{
-			case 'c':
-				c = (char*)va_arg(args, int*);
-				fread( c, 1, 1, fp );
-				continue;
-			case 'l':
-				len = (long*)va_arg(args, long*);
-				fread( len, sizeof(long), 1, fp );
-				continue;
-			case 's':
-				fread( &mylen, sizeof(long), 1, fp );
-				s = (char**)va_arg(args, char**);
-				*s = strmem->Alloc(mylen+1);
-				if( mylen != 0 )
-					fread( *s, sizeof(char), mylen, fp );
-				s[mylen] = 0;
-				continue;
-			case 'p': case 'v':
-				len = (long*)va_arg(args, long*);
-				fread( len, sizeof(long), 1, fp );
-				p = (char**)va_arg(args, char**);
-				*p = strmem->Alloc(*len+1);
-				if( *len != 0 )
-					fread( *p, sizeof(char), *len, fp );
-				p[*len] = 0;
-				continue;
-		}
-	va_end(args);
-}
-void fpackf( FILE *fp, const char *fmt, ... )
-{
-	va_list args;
-	long len;
-	char c, *p, *s;
-
-	va_start(args, fmt);
-
-	while( *fmt )
-	{
-		switch( *fmt++ )
-		{
-			case 'c':
-				c = (char)va_arg(args, int);
-				fwrite( &c, 1, 1, fp );
-				continue;
-			case 'l':
-				len = va_arg(args, long);
-				fwrite( &len, sizeof(long), 1, fp );
-				continue;
-			case 's':
-				s = va_arg(args, char*);
-				if( !s || !*s )
-					len = 0;
-				else
-					len = (unsigned long)strlen(s);
-				fwrite( &len, sizeof(long), 1, fp );
-				if( len != 0 )
-					fwrite( s, sizeof(char), len, fp );
-				continue;
-			case 'v': case 'p':
-				len = va_arg(args, long);
-				p = va_arg(args, char*);
-				fwrite( &len, sizeof(long), 1, fp );
-				if( len != 0 )
-					fwrite( p, sizeof(char), len, fp );
-				continue;
-		}
-	}
-	va_end(args);
-}
-void funpackd( int fd, const char *fmt, ... )
-{
-	va_list args;
-	long *len, mylen;
-	char *c, **p, **s;
-
-	va_start(args, fmt);
-	while( *fmt )
-		switch( *fmt++ )
-		{
-			case 'c':
-				c = (char*)va_arg(args, int*);
-				read( fd, c, 1 );
-				continue;
-			case 'l':
-				len = (long*)va_arg(args, long*);
-				read( fd, len, sizeof(long));
-				continue;
-			case 's':
-				s = (char**)va_arg(args, char**);
-				read( fd, &mylen, sizeof(long) );
-				*s = strmem->Alloc(mylen+1);
-				if( mylen != 0 )
-					read( fd, *s, mylen );
-				s[mylen] = 0;
-				continue;
-			case 'p': case 'v':
-				len = (long*)va_arg(args, long*);
-				read( fd, len, sizeof(long) );
-				p = (char**)va_arg(args, char**);
-				*p = strmem->Alloc(*len+1);
-				if( *len != 0 )
-					read( fd, *p, *len );
-				p[*len] = 0;
-				continue;
-		}
-	va_end(args);
-}
-void fpackd( int fd, const char *fmt, ... )
-{
-	va_list args;
-	long len;
-	char c, *p, *s;
-
-	va_start(args, fmt);
-
-	while( *fmt )
-	{
-		switch( *fmt++ )
-		{
-			case 'c':
-				c = (char)va_arg(args, int);
-				write( fd, &c, 1 );
-				continue;
-			case 'l':
-				len = va_arg(args, long);
-				write( fd, &len, sizeof(long) );
-				continue;
-			case 's':
-				s = va_arg(args, char*);
-				if( !s || !*s ) {
-					len=0;
-					write( fd, &len, sizeof(long) );
-				} else {
-					len = (unsigned long)strlen(s);
-					write( fd, &len, sizeof(long) );
-					write( fd, s, len );
-				}
-				continue;
-			case 'v': case 'p':
-				len = va_arg(args, long);
-				p = va_arg(args, char*);
-				write( fd, &len, sizeof(long) );
-				if( len != 0 )
-					write( fd, p, len );
-				continue;
-		}
-	}
-	va_end(args);
-}
-
 
 long myatoi( const char *src, long *offset )
 {

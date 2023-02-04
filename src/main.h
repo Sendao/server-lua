@@ -17,6 +17,8 @@
 #include <unistd.h>
 #endif
 
+#include <ctime>
+
 #include <fcntl.h>
 #include <errno.h>
 
@@ -28,12 +30,15 @@
 using namespace std;
 
 
+typedef class User User;
+typedef class Object Object;
+typedef class Game Game;
+
 // lua.cpp
 extern sol::state lua;
 void init_lua(void);
 
 // user.cpp
-typedef class User User;
 typedef struct primitive Primitive;
 typedef void (User::*cmdcall)(char *,long);
 
@@ -56,13 +61,6 @@ void hfree(void *, size_t);
 
 // main.cpp
 typedef struct _CompressionPacket CompressionPacket;
-extern unordered_map<u_long,Primitive> datamap;
-extern unordered_map<u_long,User*> datamap_whichuser;
-extern unordered_set<u_long> dirtyset;
-extern unordered_map<string,u_long> varmap;
-extern unordered_map<string,u_int> objmap;
-extern u_long top_var_id;
-extern bool reading_files;
 
 // sockets.cpp
 void InitSocket(int port);
@@ -77,7 +75,6 @@ void Input(User *);
 extern int fSock;
 
 // system.cpp
-extern unordered_map<string, FileInfo*> files;
 void GetFileList(void);
 
 // util.cpp
@@ -86,11 +83,6 @@ void setlog(const char *p);
 void debuglogflags(int16_t fla); // I suggest DBG_TOGGLE, not DBG_MAIN :L=)
 void lprintfx(uint16_t flx, const char *fmt, ...); // for use with USER_BUG
 bool strprefix( const char *longstr, const char *shortstr );
-// File ops
-void fpackf( FILE *fp, const char *fmt, ... );
-void funpackf( FILE *fp, const char *fmt, ... );
-void fpackd( int fd, const char *fmt, ... );
-void funpackd( int fd, const char *fmt, ... );
 // Strings
 long spackf(char **target, unsigned long *alloced, const char *fmt, ... );
 char *sunpackf(char *buffer, const char *fmt, ... );
@@ -110,6 +102,46 @@ void mystrim( char **pbuf );
 char *strdupsafe( const char * );
 char *strndupsafe( const char *, int );
 unsigned int crc32( const char *ptr, int len );
+
+class Game
+{
+	public:
+	Game();
+	~Game();
+
+	public:
+	unordered_map<string,u_long> varmap;
+	unordered_map<string,u_int> objmap;
+	u_long top_var_id = 1;
+	unordered_map<u_long,Primitive> datamap;
+	unordered_map<u_long,User*> datamap_whichuser;
+	unordered_set<u_long> dirtyset;
+	bool reading_files = false;
+	unordered_map<string, FileInfo*> files;
+	vector<User*> userL;
+	unordered_map<u_long, Object*> objects;
+
+	public:
+	void mainloop(void);
+	long long GetTime(void);
+	void SetPosition( u_long id, float x, float y, float z, float r0, float r1, float r2, float r3 );
+	void CreateObject( u_long uid, char *name );
+	void SendMsg( char cmd, unsigned int size, char *data, User *exclude );
+};
+extern Game *game;
+
+class Object
+{
+	public:
+	Object();
+	~Object();
+
+	public:
+	u_long uid;
+	float x, y, z;
+	float r0, r1, r2, r3;
+	char *name;
+};
 
 
 class User
@@ -143,6 +175,7 @@ class User
 	long reading_sz;
 	FILE *fReading;
 	queue<char*> reading_file_q; // todo: this should be a queue (FIFO)
+	long long clocksync;
 
 	public:
 	void ProcessMessages(void);
@@ -157,7 +190,11 @@ class User
 	void GetFileS(char *filename);
 	void IdentifyVar(char *data, long sz);
 	void IdentifyObj(char *data, long sz);
+	void ClockSync(char *data, long sz);
+	void SetPosition(char *data, long sz);
+	void CreateObject(char *data, long sz);
 };
+
 
 // pools.cpp
 void *halloc( size_t sz );

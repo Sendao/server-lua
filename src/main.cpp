@@ -2,17 +2,15 @@
 
 void mainloop(void);
 
-unordered_map<string,u_long> varmap;
-unordered_map<string,u_int> objmap;
-u_long top_var_id = 1;
-unordered_map<u_long,Primitive> datamap;
-unordered_map<u_long,User*> datamap_whichuser;
-unordered_set<u_long> dirtyset;
-bool reading_files = false;
+Game *game;
 
 int main(int ac, char *av[])
 {
 	init_pools();
+	
+	game = (Game*)halloc(sizeof(Game));
+	new(game) Game();
+
 	init_commands();
 	init_lua();
 
@@ -25,7 +23,7 @@ int main(int ac, char *av[])
 	InitSocket(2038);
 
 	// Main loop
-	mainloop();
+	game->mainloop();
 
 	// End
 	ExitSocket();
@@ -33,7 +31,6 @@ int main(int ac, char *av[])
 	return 0;
 }
 
-vector<User*> userL;
 struct timeval now;
 time_t currentTime;
 
@@ -47,7 +44,7 @@ int gettimeofday(struct timeval* tp, void* tzp) {
 }
 #endif
 
-void mainloop()
+void Game::mainloop()
 {
 	struct timeval per, next_cycle, zerotime, *usetv;
 	fd_set fdI, fdO, fdE;
@@ -81,7 +78,7 @@ void mainloop()
 			lprintf("No events - waiting for connection");
 		}
 		*/
-		if( reading_files || dirtyset.size() > 0 ) {
+		if( game->reading_files || game->dirtyset.size() > 0 ) {
 			per.tv_sec = 0; // run immediately if there is data to process
 			per.tv_usec = 0;
 		} else {
@@ -155,10 +152,10 @@ void mainloop()
 
 		// Send keyvals
 
-		for( itset = dirtyset.begin(); itset != dirtyset.end(); itset++ ) {
+		for( itset = game->dirtyset.begin(); itset != game->dirtyset.end(); itset++ ) {
 			key = *itset;
-			prim = datamap[key];
-			uTarget = datamap_whichuser[key];
+			prim = game->datamap[key];
+			uTarget = game->datamap_whichuser[key];
 
 			tmpsize = spackf( &tmpbuf, &packsz, "lc", key, prim.type );
 			switch( prim.type ) {
@@ -191,14 +188,14 @@ void mainloop()
 					user->SendMsg( 0, tmpsize, tmpbuf );
 			}
 			
-			datamap_whichuser.erase(key);
+			game->datamap_whichuser.erase(key);
 		}
-		dirtyset.clear();
+		game->dirtyset.clear();
 
 		// Process output
 		zerotime.tv_usec = zerotime.tv_sec = 0;
 		select(iHigh, NULL, &fdO, NULL, &zerotime);
-		if( reading_files ) {
+		if( game->reading_files ) {
 			buf = strmem->Alloc( 1024 );
 		}
 		bool found_file = false;
@@ -206,7 +203,7 @@ void mainloop()
 		{
 			user = *ituser;
 			if( FD_ISSET(user->fSock, &fdO) ) {
-				if( reading_files && user->fReading ) {
+				if( game->reading_files && user->fReading ) {
 					int status = fread( buf, 1, 1024, user->fReading );
 					if( status == 0 ) {
 						// File is empty, send EOF
@@ -223,7 +220,7 @@ void mainloop()
 					}
 					found_file = true;
 					user->SendMsg( 3, status, buf );
-				} else if( reading_files && user->reading_ptr && user->reading_sz > 0 ) {
+				} else if( game->reading_files && user->reading_ptr && user->reading_sz > 0 ) {
 					int status = user->reading_sz > user->inbufmax ? user->inbufmax : user->reading_sz;
 					user->SendMsg( 3, status, user->reading_ptr );
 					user->reading_ptr += status;
@@ -257,10 +254,10 @@ void mainloop()
 			}
 			ituser++;
 		}
-		if( reading_files ) {
+		if( game->reading_files ) {
 			strmem->Free( buf, 1024 );
 			if( !found_file )
-				reading_files = false;
+				game->reading_files = false;
 		}
 
 		if( FD_ISSET(fSock, &fdI) ) // New Connection Available
@@ -278,3 +275,82 @@ inline long compare_usec( struct timeval *high, struct timeval *low ) {
 }
 
 
+Game::Game()
+{
+
+}
+Game::~Game()
+{
+}
+
+long long Game::GetTime()
+{
+	time_t ms = time(NULL);
+	return (long long)ms;
+}
+
+void Game::SetPosition( u_long objid, float x, float y, float z, float r0, float r1, float r2, float r3 )
+{
+	unordered_map<u_long, Object*>::iterator itobj;
+	Object *obj;
+
+	itobj = objects.find(objid);
+	if( itobj == objects.end() ) {
+		obj = (Object*)halloc(sizeof(Object));
+		new(obj) Object();
+		obj->uid = objid;
+		objects[objid] = obj;
+	} else {
+		obj = itobj->second;
+	}
+
+	obj->x = x;
+	obj->y = y;
+	obj->z = z;
+	
+	obj->r0 = r0;
+	obj->r1 = r1;
+	obj->r2 = r2;
+	obj->r3 = r3;
+
+	//! Distribute package update
+
+}
+
+void Game::CreateObject( u_long objid, char *name )
+{
+	unordered_map<u_long, Object*>::iterator itobj;
+	Object *obj;
+
+	itobj = objects.find(objid);
+	if( itobj == objects.end() ) {
+		obj = (Object*)halloc(sizeof(Object));
+		new(obj) Object();
+		obj->uid = objid;
+		objects[objid] = obj;
+		obj->name = name;
+	}
+}
+
+
+
+void Game::SendMsg( char cmd, unsigned int size, char *data, User *exclude )
+{
+	User *user;
+	vector<User*>::iterator ituser;
+	char *buf=NULL;
+	long bufsz;
+	u_long alloced;
+
+	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
+	for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
+	{
+		user = *ituser;
+		if( user != exclude )
+		{
+			Output(user, buf, bufsz);
+		}
+	}
+	strmem->Free(buf, alloced);
+	
+}
