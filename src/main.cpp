@@ -224,7 +224,7 @@ void mainloop()
 					found_file = true;
 					user->SendMsg( 3, status, buf );
 				} else if( reading_files && user->reading_ptr && user->reading_sz > 0 ) {
-					int status = user->reading_sz > 1024 ? 1024 : user->reading_sz;
+					int status = user->reading_sz > user->inbufmax ? user->inbufmax : user->reading_sz;
 					user->SendMsg( 3, status, user->reading_ptr );
 					user->reading_ptr += status;
 					user->reading_sz -= status;
@@ -238,6 +238,7 @@ void mainloop()
 							user->reading_file_q.pop();
 						}
 					}
+					found_file = true;
 				}
 
 				if( user->outbufsz > 0 )

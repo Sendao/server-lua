@@ -89,8 +89,9 @@ char *StringMemory::ReallocStr( char *ptr, size_t orig_sz, size_t new_sz )
 // Then we can deallocate things that are allocated to restore memory.
 char *StringMemory::Alloc( size_t sz )
 {
-	set<StringMemoryItem2>::iterator it;
 	char *ptr;
+	/*
+	set<StringMemoryItem2>::iterator it;
 	unsigned int sz1, sz2;
 
 	sz1 = (unsigned int) items_sz.size();
@@ -129,6 +130,7 @@ char *StringMemory::Alloc( size_t sz )
 		items_ptr.erase( it1 );
 		return ptr;
 	}
+	*/
 	
 	// no free block found, allocate new
 	ptr = (char*)malloc( sz );
@@ -141,6 +143,7 @@ char *StringMemory::Alloc( size_t sz )
 
 void StringMemory::Free( char *ptr, size_t sz )
 {
+	/*
 	set<StringMemoryItem>::iterator it;
 	set<StringMemoryItem2>::iterator it2;
 	StringMemoryItem srch(ptr, sz);
@@ -192,6 +195,8 @@ void StringMemory::Free( char *ptr, size_t sz )
 	}
 	items_ptr.insert( srch );
 	items_sz.insert( StringMemoryItem2(srch) );
+	*/
+	free(ptr);
 }
 
 /*

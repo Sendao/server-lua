@@ -159,9 +159,7 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
-		lprintf("Compress %d bytes.", user->outbufsz);
-		lprintf("CRC32: %u", crc32(user->outbuf, user->outbufsz));
-		lprintf("Byte check: %d %d %d %d", (int)user->outbuf[200], (int)user->outbuf[201], (int)user->outbuf[202], (int)user->outbuf[203]);
+		lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
 
 		do {
 			strm.avail_out = 1024;
@@ -172,7 +170,7 @@ int OutputConnection(User *user)
 				return -1;
 			}
 			readsize = 1024 - strm.avail_out;
-			lprintf("Compression: readsize=%d", readsize);
+			//lprintf("Compression: readsize=%d", readsize);
 
 			if( tgtbuf ) {
 				tgtbuf = (char*)strmem->Realloc( tgtbuf, tgtsz, tgtsz+readsize );
@@ -186,6 +184,7 @@ int OutputConnection(User *user)
 		} while( strm.avail_out == 0 );
 
 		deflateEnd(&strm);
+		//lprintf("Compressed to %d bytes.", tgtsz);
 
 		// reset the outbuf
 		user->outbuf = user->outbuf_memory;
@@ -207,21 +206,24 @@ int OutputConnection(User *user)
 			lprintf("send() failed sending compressed data: connection closed");
 			return -1;
 		}
-		smallbuf[0] = tgtsz<<24;
-		smallbuf[1] = tgtsz<<16;
-		smallbuf[2] = tgtsz<<8;
-		smallbuf[3] = tgtsz&0xFF;
+		unsigned int redsz = tgtsz;
+		smallbuf[0] = (redsz>>24) & 0xFF;
+		smallbuf[1] = (redsz>>16) & 0xFF;
+		smallbuf[2] = (redsz>>8) & 0xFF;
+		smallbuf[3] = (unsigned char)(redsz&0xFF);
+		//lprintf("Compression size buffer: %u %u %u %d", smallbuf[0], smallbuf[1], smallbuf[2], (unsigned char)smallbuf[3]);
 		iSent = send(user->fSock, smallbuf, 4, 0);
 		if( iSent == 4 ) iSent=1;
 
 		// reduce the size of the data to send
 		sendsize = tgtsz > user->outbufmax ? user->outbufmax : tgtsz;
+		lprintf("Send %d compressed bytes", sendsize);
 	} else {
 		idbyte = (unsigned char)(sendsize & 0xFF);
 		tgtbuf = user->outbuf;
 		tgtsz = sendsize;
 
-		lprintf("Compile and send %d+1 bytes", (int)idbyte);
+		//lprintf("Compile and send %d+1 bytes", (int)idbyte);
 		iSent = send(user->fSock, &idbyte, 1, 0);
 	}
 
@@ -242,12 +244,12 @@ int OutputConnection(User *user)
 			lprintf("Aborting.");
 			return -1;
 		}
-		lprintf("Output %d bytes from %d", iSent, sendsize);
+		//lprintf("Output %d bytes from %d", iSent, sendsize);
 		if( user->compbuf ) {
 			user->compbuf += iSent;
 			user->compbufsz += iSent;
 			if( user->compbufsz >= user->compbufalloc ) {
-				lprintf("reset compbuf");
+				//lprintf("reset compbuf");
 				strmem->Free( user->compbuf_memory, user->compbufalloc );
 				user->compbuf_memory = NULL;
 				user->compbuf = NULL;
@@ -255,7 +257,7 @@ int OutputConnection(User *user)
 				user->compbufsz = 0;
 			}
 		} else if( iSent+sendsize >= user->outbufsz ) {
-			lprintf("reset outbuf");
+			//lprintf("reset outbuf");
 			user->outbuf = user->outbuf_memory;
 			user->outbufsz = 0;
 			/* Leave the memory allocated. To delete it:
@@ -266,7 +268,7 @@ int OutputConnection(User *user)
 			user->outbufalloc = 0;
 			*/
 		} else {
-			lprintf("shift bytes");
+			//lprintf("shift bytes");
 			user->outbuf += sendsize;
 		}
 	} else if(iSent<0) {
@@ -283,7 +285,7 @@ int OutputConnection(User *user)
 
 int InputConnection(User *user)
 {
-	uintptr_t iSize;
+	int iSize;
 	char *p, *tmpbuf;
 	z_stream strm = {0};
 	unsigned char in[1024];
@@ -419,19 +421,15 @@ int InputConnection(User *user)
 				leftover = NULL;
 				leftover_sz = 0;
 			}
-
-			//dunno why this was here:
-			//msgbuf = strmem->Alloc( strm.total_out );
-			//memcpy( msgbuf, out, strm.total_out );
 			p += sz;
 
 		} else if( p+ctl >= user->inbuf ) {
-			lprintf("Packet size %d is too large for buffer %d", (int)ctl, user->inbufsz);
+			// not enough data in the buffer to read the packet
 			break;
 		} else {
 			p++;
 		}
-		lprintf("Got %d packet size", (int)ctl);
+		//lprintf("Got %d packet size", (int)ctl);
 		endpt = p+ctl;
 		while( p < endpt ) {
 			cmdByte = *p;
@@ -442,7 +440,7 @@ int InputConnection(User *user)
 				user->messages.push_back(msgbuf);
 				p += 3;
 			} else {
-				msgbuf = strmem->Alloc(ilen);
+				msgbuf = strmem->Alloc(ilen+3);
 				memcpy( msgbuf, p, ilen+3 );
 				p += 3 + ilen;
 				user->messages.push_back( msgbuf );
@@ -477,8 +475,5 @@ void Output(User *user, const char *str, unsigned long len)
 	}
 	
 	memcpy( user->outbuf_memory+user->outbufsz, str, len );
-	if( user->outbufsz < 202 && user->outbufsz+len > 202 ) {
-		lprintf("Byte check 1: %d %d %d %d", (int)user->outbuf_memory[200], (int)user->outbuf_memory[201], (int)user->outbuf_memory[202], (int)user->outbuf_memory[203]);
-	}
 	user->outbufsz += len;
 }

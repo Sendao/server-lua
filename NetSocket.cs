@@ -35,7 +35,7 @@ public class NetSocket : MonoBehaviour
     private Dictionary<String, FileData> localAssets = new Dictionary<String, FileData>(); // file data for local files
     private bool readingFiles = false;
     private FileData readingFile; // file currently being read from server
-    private StreamWriter fileWriter;
+    private BinaryWriter fileWriter;
     private Queue<FileData> fileQ = new Queue<FileData>(); // files to be read
 
     public void Start()
@@ -120,7 +120,7 @@ public class NetSocket : MonoBehaviour
             stream = new NetStringReader(data);
             Debug.Log("recv: " + data.Length);
             cmd = stream.ReadByte();
-            stream.ReadInt();
+            stream.ReadInt(); // size
             switch( cmd ) {
                 case 0:
                     Debug.Log("VarInfo");
@@ -155,13 +155,14 @@ public class NetSocket : MonoBehaviour
 
     public void GotNextFile(NetStringReader stream)
     {
-        Debug.Log("Total length: " + readingFile.contents.Length);
         Debug.Log("EndOfFile");
         if( fileQ.Count > 0 ) {
             readingFile = fileQ.Dequeue();
             Debug.Log("Next: file " + readingFile.filename);
             // open the streamwriter
-            fileWriter = new StreamWriter("Assets\\StreamingAssets\\" + readingFile.filename);
+            if( File.Exists("Assets\\StreamingAssets\\" + readingFile.filename) )
+                File.Delete("Assets\\StreamingAssets\\" + readingFile.filename);
+            fileWriter = new BinaryWriter(File.Create("Assets\\StreamingAssets\\" + readingFile.filename));
         } else {
             readingFiles = false;
             Debug.Log("End of files");
@@ -175,10 +176,10 @@ public class NetSocket : MonoBehaviour
             Debug.Log("Got file data but no file is being read");
             return;
         }
-        string str = System.Text.Encoding.ASCII.GetString(stream.data, 0, stream.data.Length);
-        Debug.Log("data length: " + stream.data.Length + ", string length: " + str.Length);
-        fileWriter.Write(str);
-        readingFile.contents += str;
+        //string str = System.Text.Encoding.ASCII.GetString(stream.data, 0, stream.data.Length);
+        //Debug.Log("data length: " + stream.data.Length + ", string length: " + str.Length);
+        fileWriter.Write(stream.data, 3, stream.data.Length-3);
+        //readingFile.contents += str;
     }
 
     public void GotFileInfo(NetStringReader stream)
@@ -204,7 +205,8 @@ public class NetSocket : MonoBehaviour
                 System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
                 if( !readingFiles ) {
                     readingFile = fi;
-                    fileWriter = new StreamWriter("Assets\\StreamingAssets\\" + readingFile.filename);
+                    File.Delete("Assets\\StreamingAssets\\" + readingFile.filename);
+                    fileWriter = new BinaryWriter(File.Create("Assets\\StreamingAssets\\" + readingFile.filename));
                     readingFiles = true;
                 } else {
                     fileQ.Enqueue(fi);
@@ -227,7 +229,7 @@ public class NetSocket : MonoBehaviour
             System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
             if( !readingFiles ) {
                 readingFile = fi;
-                fileWriter = new StreamWriter("Assets\\StreamingAssets\\" + readingFile.filename);
+                fileWriter = new BinaryWriter(File.Create("Assets\\StreamingAssets\\" + readingFile.filename));
                 readingFiles = true;
             } else {
                 fileQ.Enqueue(fi);
@@ -282,11 +284,17 @@ public class NetSocket : MonoBehaviour
                         ws.Send(idhead);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
-                            Debug.Log("Sending: " + data.Length + ": " + data[0] + " " + data[1] + " " + data[2]);
+                            int i;
+                            string str = "";
+                            for( i=0; i<data.Length; i++ ) {
+                                str += (int)data[i] + " ";
+                            }
+                            Debug.Log("Sending: " + data.Length + ": " + str);
                             ws.Send(data);
                         }
                         data = null;  // don't hold onto the data
                     } else {
+                        Debug.Log("Compressing " + totalSize + " bytes");
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)255;
                         ws.Send(idhead);
@@ -302,13 +310,12 @@ public class NetSocket : MonoBehaviour
                         var zipStream = new GZipStream(compressedStream, CompressionMode.Compress);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
-                            idhead[0] = (byte)data.Length;
-                            zipStream.Write(idhead, 0, 1);
                             zipStream.Write(data, 0, data.Length);
                         }
                         data = null;  // don't hold onto the data
                         zipStream.Close();
                         byte[] compressedData = compressedStream.ToArray();
+                        Debug.Log("Compressed to " + compressedData.Length + " bytes");
                         ws.Send(compressedData);
                     }
                 }
@@ -322,7 +329,7 @@ public class NetSocket : MonoBehaviour
         uint crc=0;
 
         for( i=0; i<data.Length; i++ ) {
-            crc += (uint)data[i];
+            crc = (crc+data[i]) & 0xFFFFFFFF;
         }
         return crc;
     }
@@ -339,7 +346,7 @@ public class NetSocket : MonoBehaviour
         {
             int recv = ws.Receive(readbuffer, readlen, 1024, SocketFlags.None);
             Debug.Log("Received " + recv + " bytes");
-            if( recv == 0 ) {
+            if( recv <= 0 ) {
                 Debug.Log("Connection closed");
                 break;
             }
@@ -347,17 +354,24 @@ public class NetSocket : MonoBehaviour
             
             int ptr, smallSize, endptr;
 
-            for( ptr=0; ptr<readlen; ptr++ ) {
+            ptr=0;
+            while( ptr < readlen ) {
                 int id = (int)readbuffer[ptr];
                 if( id == 255 ) {
-                    ulong compressedSize = (ulong)readbuffer[ptr+1] << 24 | (ulong)readbuffer[ptr+2] << 16 | (ulong)readbuffer[ptr+3] << 8 | (ulong)readbuffer[ptr+4];
-                    Debug.Log("Compressed size: " + compressedSize + ", Read size: " + readlen);
-                    if( ptr+5+(int)compressedSize > readlen ) {
+                    if( ptr+5 > readlen ) break;
+                    int compressedSize =
+                        readbuffer[ptr+1] << 24 |
+                        readbuffer[ptr+2] << 16 |
+                        readbuffer[ptr+3] << 8 |
+                        readbuffer[ptr+4];
+                    if( ptr+5+compressedSize > readlen ) {
+                        Debug.Log("Compressed size: " + compressedSize + " not ready yet.");
                         break;
                     }
+                    Debug.Log("Compressed size: " + compressedSize + ", buffer size: " + readlen + ", readbuffers: " + readbuffer[ptr+1] + ", " + readbuffer[ptr+2] + ", " + readbuffer[ptr+3] + ", " + readbuffer[ptr+4] + ", " + readbuffer[ptr+5] + ", " + readbuffer[ptr+6]);
                     ptr += 5;
 
-                    var compressedStream = new MemoryStream(readbuffer, ptr, (int)compressedSize);
+                    var compressedStream = new MemoryStream(readbuffer, ptr, compressedSize);
                     var zipStream = new GZipStream(compressedStream, CompressionMode.Decompress);
                     var decompressedStream = new MemoryStream();
                     zipStream.CopyTo(decompressedStream);
@@ -365,7 +379,7 @@ public class NetSocket : MonoBehaviour
                     decompressedStream.Close();
                     byte[] decompressedData = decompressedStream.ToArray();
 
-                    //Debug.Log("Decompressed CRC32: " + crc32(decompressedData));
+                    Debug.Log("Decompressed, Size: " + decompressedData.Length + ", CRC32: " + crc32(decompressedData));
 
                     ptr += (int)compressedSize;
 
@@ -417,12 +431,12 @@ public class NetSocket : MonoBehaviour
                 }
             }
 
-            if( ptr < recv ) {
-                tmpbuf = new byte[(recv-ptr)+1024];
-                Array.Copy(readbuffer, ptr, tmpbuf, 0, recv-ptr);
+            if( ptr < readlen ) {
+                tmpbuf = new byte[(readlen-ptr)+1024];
+                Array.Copy(readbuffer, ptr, tmpbuf, 0, readlen-ptr);
                 // free(readbuffer);
                 readbuffer = tmpbuf;
-                readlen = recv-ptr;
+                readlen = readlen-ptr;
             } else {
                 readlen = 0;
             }

@@ -43,6 +43,7 @@ void GetFileList( void )
 			fi->contents = NULL;
 		}
 		files[ent->d_name] = fi;
+		lprintf("Record file %s", ent->d_name);
 	}
 
 }

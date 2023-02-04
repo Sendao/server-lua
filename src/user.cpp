@@ -36,6 +36,7 @@ User::User(void)
 	sHost = NULL;
 	fSock = -1;
 	state = 0;
+	reading_ptr = NULL;
 }
 
 User::~User(void)
@@ -60,9 +61,6 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 	long bufsz;
 	u_long alloced;
 	
-	if( outbufsz < 202 && outbufsz + 10 > 202 ) {
-		lprintf("Sending 202 byte packet");
-	}
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	Output( this, buf, bufsz );
 	strmem->Free( buf, alloced );
@@ -74,7 +72,9 @@ void User::ProcessMessages(void)
 	vector<char*>::iterator it;
 	char *ptr;
 	int sz;
-	char code;
+	char code, *data;
+	string buf;
+	int x;
 
 	lprintf("Process %d messages", (int)messages.size());
 
@@ -84,7 +84,7 @@ void User::ProcessMessages(void)
 		sz = (*(ptr+1) << 8) | (*(ptr+2)&0xFF);
 		ptr += 3;
 		if( commands[code] != NULL ) {
-			lprintf("Found code %d", (int)code);
+			lprintf("Found code %d length %lld", (int)code, sz);
 			std::bind( commands[code], this, _1, _2 )( ptr, sz );
 		}
 		strmem->Free( *it, sz+3 );
@@ -162,10 +162,12 @@ void User::GetFileList( char *data, long sz )
 void User::GetFile( char *data, long sz )
 {
 	char *filename = strmem->Alloc( sz + 1 );
-
 	memcpy( filename, data, sz );
 	filename[sz] = '\0';
+	lprintf("Request file %lld %s", sz, filename);
+
 	if( strstr(filename, "..") != NULL ) {
+		lprintf("Found ..");
 		strmem->Free( filename, sz+1 );
 		this->SendMsg( 4, 0, NULL );
 		return;
@@ -177,24 +179,29 @@ void User::GetFile( char *data, long sz )
 void User::GetFileS( char *filename )
 {	
 	if( this->fReading || this->reading_ptr ) {
-		this->reading_file_q.push( filename );
+//		lprintf("Already reading file: %s", this->fReading ? "fp" : "mem");
+		char *bufcopy = str_copy(filename);
+		this->reading_file_q.push( bufcopy );
 		return;
 	}
 
 	unordered_map<string, FileInfo*>::iterator it;
 	it = files.find( filename );
 	if( it == files.end() ) {
+		lprintf("Not found %s", filename);
 		this->SendMsg( 4, 0, NULL );
 		return;
 	}
 	FileInfo *fi = it->second;
 
 	if( fi->contents ) {
+		lprintf("Set reading_ptr to read %llu", fi->size);
 		this->reading_ptr = fi->contents;
 		this->reading_sz = fi->size;
  	} else {
 		char *buf;
 
+		lprintf("Open file %s", filename);
 		this->fReading = fopen( filename, "rb" );
 		if( !fReading ) {
 			this->SendMsg( 4, 0, NULL ); // eof

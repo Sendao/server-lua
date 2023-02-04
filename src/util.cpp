@@ -297,7 +297,8 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'L':
 				llptr = va_arg(args, long long*);
-				*llptr = *buffer << 56 | *(buffer+1) << 48 | *(buffer+2) << 40 | *(buffer+3) << 32 | *(buffer+4) << 24 | *(buffer+5) << 16 | *(buffer+6) << 8 | *(buffer+7);
+				// note we have to convert first 4 to long long. others don't have to be.
+				*llptr = (long long)*buffer << 56 | (long long)*(buffer+1) << 48 | (long long)*(buffer+2) << 40 | (long long)*(buffer+3) << 32 | *(buffer+4) << 24 | *(buffer+5) << 16 | *(buffer+6) << 8 | *(buffer+7);
 				buffer += 8;
 				break;
 			case 'l':
@@ -511,7 +512,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				}
 				*buffer = (ilen >> 8) & 0xFF;
 				*(buffer+1) = (ilen) & 0xFF;
-				lprintf("Length bytes: %d %d for %d", (int)*buffer, (int)*(buffer+1), ilen);
+				//lprintf("Length bytes: %d %d for %d", (int)*buffer, (int)*(buffer+1), ilen);
 
 				buffer += 2;
 				bufsz += 2;
@@ -747,7 +748,7 @@ unsigned int crc32( const char *ptr, int len )
 	unsigned int crc=0;
 
 	for( i=0; i<len; i++ ) {
-		crc += (unsigned int)*(ptr+i);
+		crc = (crc + (unsigned char)*(ptr+i)) & 0xFFFFFFFF;
 	}
 	return crc;
 }
