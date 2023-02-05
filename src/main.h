@@ -34,12 +34,21 @@ typedef class User User;
 typedef class Object Object;
 typedef class Game Game;
 
+typedef struct _VarData VarData;
+typedef struct _Primitive Primitive;
+
+struct _VarData
+{
+	u_long objid;
+	char *name;
+	int type;
+};
+
 // lua.cpp
 extern sol::state lua;
 void init_lua(void);
 
 // user.cpp
-typedef struct primitive Primitive;
 typedef void (User::*cmdcall)(char *,long);
 
 
@@ -110,23 +119,30 @@ class Game
 	~Game();
 
 	public:
-	unordered_map<string,u_long> varmap;
-	unordered_map<string,u_int> objmap;
+	unordered_map<string,VarData*> varmap;
 	u_long top_var_id = 1;
-	unordered_map<u_long,Primitive> datamap;
+	unordered_map<u_long,VarData*> varmap_by_id;
+
+	unordered_map<u_long,Primitive*> datamap;
 	unordered_map<u_long,User*> datamap_whichuser;
 	unordered_set<u_long> dirtyset;
+
 	bool reading_files = false;
 	unordered_map<string, FileInfo*> files;
+
 	vector<User*> userL;
+
 	unordered_map<u_long, Object*> objects;
+
+	public:
+	long long last_update, last_timestamp;
 
 	public:
 	void mainloop(void);
 	long long GetTime(void);
-	void SetPosition( u_long id, float x, float y, float z, float r0, float r1, float r2, float r3 );
-	void CreateObject( u_long uid, char *name );
-	void SendMsg( char cmd, unsigned int size, char *data, User *exclude );
+	void IdentifyVar( char *name, int type, User *sender );
+	Object *FindObject( u_long uid );
+	void SendMsg( char cmd, unsigned int size, char *data, User *exclude=NULL );
 };
 extern Game *game;
 
@@ -138,7 +154,10 @@ class Object
 
 	public:
 	u_long uid;
+	long long last_update;
 	float x, y, z;
+	//float velx, vely, velz; we don't need it.
+	float prex, prey, prez;
 	float r0, r1, r2, r3;
 	char *name;
 };
@@ -176,6 +195,7 @@ class User
 	FILE *fReading;
 	queue<char*> reading_file_q; // todo: this should be a queue (FIFO)
 	long long clocksync;
+	long long last_update;
 
 	public:
 	void ProcessMessages(void);
@@ -189,10 +209,11 @@ class User
 	void GetFile(char *data, long sz);
 	void GetFileS(char *filename);
 	void IdentifyVar(char *data, long sz);
-	void IdentifyObj(char *data, long sz);
+	void SetVar(char *data, long sz);
 	void ClockSync(char *data, long sz);
-	void SetPosition(char *data, long sz);
 	void CreateObject(char *data, long sz);
+	void SetObject(char *data, long sz);
+	void ChangePosition( char *data, long sz );
 };
 
 
@@ -281,7 +302,7 @@ class StringTrie
 */
 
 
-struct primitive
+struct _Primitive
 {
 	char type;
 	union {
@@ -293,10 +314,5 @@ struct primitive
 		void *p;
 	} data;
 };
-
-struct _StreamMessage
-{
-};
-
 
 #endif

@@ -20,24 +20,28 @@ https://answers.unity.com/questions/896763/custom-attributes.html
 -> big timestamp
 
 - small timestamps on update commands (inside data)
-- objectid as first element of packet, extract and send the rest of data to the obj for object commands
 
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
  (currently disabled)
 
+Lag compensation: 
+->Interpolation
+ - clientside, send short timestamp+delta position+avg velocity updates
+
+Max FPS:
+ - max out fps at 100
 
 Next up:
  - clock sync and position updates on clientside
- - distribute position updates
  - initial position messaging
-
 
 Completed/working:
 - tcp sockets
 - stream compression
 - file listing
 - var lookup
+- basic obj coordination
 
 In progress:
 - basic lua interface

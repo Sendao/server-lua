@@ -15,9 +15,11 @@ void init_commands( void )
 	commands[3] = &User::GetFileList;
 	commands[4] = &User::GetFile;
 	commands[5] = &User::IdentifyVar;
-	commands[6] = &User::IdentifyObj;
+	commands[6] = &User::SetVar;
 	commands[7] = &User::ClockSync;
-	commands[8] = &User::SetPosition;
+	commands[8] = &User::CreateObject;
+	commands[9] = &User::SetObject;
+	commands[10]= &User::ChangePosition;
 }
 
 User::User(void)
@@ -97,27 +99,33 @@ void User::SetKeyValue( char *data, long sz )
 {
 	u_long key;
 	char *ptr;
-	Primitive obj;
+	Primitive *obj;
+	unordered_map<u_long,Primitive*>::iterator it;
 
-	ptr = sunpackf(data, "lc", &key, &obj.type);
-	switch( obj.type ) {
+	ptr = sunpackf(data, "l", &key);
+	it = game->datamap.find(key);
+	if( it != game->datamap.end() ) {
+		lprintf("SetKeyValue: Not found!");
+		return;
+	}
+	obj = it->second;
+	switch( obj->type ) {
 		case 0: // char
-			sunpackf(ptr, "c", &obj.data.c);
+			sunpackf(ptr, "c", &obj->data.c);
 			break;
 		case 1: // int
-			sunpackf(ptr, "i", &obj.data.i);
+			sunpackf(ptr, "i", &obj->data.i);
 			break;
 		case 2: // float
-			sunpackf(ptr, "f", &obj.data.f);
+			sunpackf(ptr, "f", &obj->data.f);
 			break;
 		case 3: // string
-			sunpackf(ptr, "s", &obj.data.s);
+			sunpackf(ptr, "s", &obj->data.s);
 			break;
 		case 4: // buffer (binary string)
-			sunpackf(ptr, "p", &obj.data.p);
+			sunpackf(ptr, "p", &obj->data.p);
 			break;	
 	}
-
 	game->datamap[key] = obj;
 	game->datamap_whichuser[key] = this;
 	game->dirtyset.insert( key );
@@ -224,81 +232,7 @@ void User::GetFileS( char *filename )
 	game->reading_files = true;
 }
 
-void User::IdentifyVar( char *data, long sz )
-{
-	char *name;
-	char *buf;
-	long size;
-	Primitive obj;
-	unordered_map<string,u_long>::iterator it;
-	u_long key;
-	char *ptr;
-	u_long alloced;
 
-	ptr = sunpackf(data, "s", &name, &obj.type);
-	it = game->varmap.find(name);
-	if( it != game->varmap.end() ) {
-		key = (u_long)it->second;
-		size = spackf(&buf, &alloced, "csl", (char)4, name, key );
-	} else {
-		size = spackf(&buf, &alloced, "csl", (char)4, name, game->top_var_id );
-		game->varmap[name] = game->top_var_id;
-		key = (u_long)game->top_var_id;
-		game->top_var_id++;
-	}
-	this->SendMsg( 0, size, buf );
-	strmem->Free( buf, alloced );
-
-	switch( obj.type ) {
-		case 0: // char
-			sunpackf(ptr, "c", &obj.data.c);
-			break;
-		case 1: // int
-			sunpackf(ptr, "i", &obj.data.i);
-			break;
-		case 2: // float
-			sunpackf(ptr, "f", &obj.data.f);
-			break;
-		case 3: // string
-			sunpackf(ptr, "s", &obj.data.s);
-			break;
-			/*
-		case 4: // buffer (binary string) -- needs length
-			sunpackf(ptr, "p", /obj.data.plen/, &obj.data.p);
-			break;
-			*/
-	}
-
-	game->datamap[key] = obj;
-	game->datamap_whichuser[key] = this;
-	game->dirtyset.insert( key );
-}
-
-void User::IdentifyObj( char *data, long sz )
-{
-	char *name;
-	char *buf;
-	long size;
-	unordered_map<string,u_int>::iterator it;
-	u_int key;
-	char *ptr;
-	u_long alloced;
-
-	ptr = sunpackf(data, "s", &name);
-	it = game->objmap.find(name);
-	if( it != game->objmap.end() ) {
-		key = (u_int)it->second;
-		size = spackf(&buf, &alloced, "si", name, key );
-	} else {
-		size = spackf(&buf, &alloced, "si", name, game->top_var_id );
-		game->objmap[name] = game->top_var_id;
-		key = (u_int)game->top_var_id;
-		game->top_var_id++;
-	}
-	this->SendMsg( 5, size, buf );
-	strmem->Free( buf, alloced );
-	strmem->Free( name, strlen(name)+1 );
-}
 
 void User::ClockSync( char *data, long sz )
 {
@@ -307,30 +241,204 @@ void User::ClockSync( char *data, long sz )
 	sunpackf(data, "L", &userclock);
 	time = game->GetTime();
 
-	this->clocksync = time - userclock;
+	this->last_update = time;
+	this->clocksync = time - userclock; // measured in hours
 	lprintf("Set clocksync for user to %llu", this->clocksync);
 }
 
-void User::SetPosition( char *data, long sz )
-{
-	u_long objid;
-	float x, y, z;
-	float r0, r1, r2, r3;
 
-	sunpackf(data, "lfffffff", &objid, &x, &y, &z, &r0, &r1, &r2, &r3);
-	game->SetPosition( objid, x, y, z, r0, r1, r2, r3 );
-	lprintf("Position updated");
+
+void User::IdentifyVar( char *data, long sz )
+{
+	char *name;
+	int type;
+
+	sunpackf(data, "sc", &name, type);
+	game->IdentifyVar( name, type, this );
 
 }
+
+void User::SetVar( char *data, long sz )
+{
+	char *ptr;
+	u_long objid;
+	VarData *v;
+	unordered_map<u_long,VarData*>::iterator it;
+	Primitive *p;
+	unordered_map<u_long,Primitive*>::iterator it2;
+
+	ptr = sunpackf(data, "l", &objid);
+	it = game->varmap_by_id.find(objid);
+	if( it == game->varmap_by_id.end() ) { // not found
+		lprintf("SetVar:: Not Found!");
+		return;
+	}
+
+	v = it->second;
+
+	it2 = game->datamap.find(objid);
+	if( it2 == game->datamap.end() ) { // not found
+		p = (Primitive*)halloc(sizeof(Primitive));
+		p->type = v->type;
+		game->datamap[objid] = p;
+	} else {
+		p = it2->second;
+	}
+
+	switch( p->type ) {
+		case 0: // char
+			sunpackf(ptr, "c", &p->data.c);
+			break;
+		case 1: // int
+			sunpackf(ptr, "i", &p->data.i);
+			break;
+		case 2: // float
+			sunpackf(ptr, "f", &p->data.f);
+			break;
+		case 3: // string
+			sunpackf(ptr, "s", &p->data.s);
+			break;
+			/*
+		case 4: // buffer (binary string) -- needs length
+			sunpackf(ptr, "p", /obj.data.plen/, &obj.data.p);
+			break;
+			*/
+	}
+
+	game->datamap_whichuser[objid] = this;
+	game->dirtyset.insert( objid );
+}
+
 
 void User::CreateObject( char *data, long sz )
 {
 	u_long objid;
 	char *name;
+	float x,y,z;
+	float r0,r1,r2,r3;
+	int timestamp_short;
+	Object *obj;
+	VarData *v;
 
-	sunpackf(data, "ls", &objid, &name);
-	game->CreateObject( objid, name );
+	sunpackf(data, "isfffffff", &timestamp_short, &name, &x, &y, &z, &r0, &r1, &r2, &r3);
+
+	// make sure the name does not exist.
+	unordered_map<string,VarData*>::iterator it;
+	it = game->varmap.find( name );
+
+	if( it != game->varmap.end() ) {
+		lprintf("CreateObject:: Name already exists!");
+		return;
+	}
+
+	v = (VarData*)halloc(sizeof(VarData));
+	v->type = 0;
+	v->objid = game->top_var_id;
+	game->varmap[name] = v;
+	game->varmap_by_id[game->top_var_id] = v;
+	game->top_var_id++;
+
+	obj = (Object*)halloc(sizeof(Object));
+	obj->uid = v->objid;
+	obj->name = name;
+	obj->x = x;
+	obj->y = y;
+	obj->z = z;
+	obj->r0 = r0;
+	obj->r1 = r1;
+	obj->r2 = r2;
+	obj->r3 = r3;
+	obj->last_update = this->last_update + (long long)timestamp_short;
+	game->objects[obj->uid] = obj;
+
 	lprintf("Created %llu", objid);
-	
+
+	char *buf;
+	u_long alloced;
+	long size;
+
+	timestamp_short = (int)(obj->last_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
+	game->SendMsg( 9, size, buf );
+	strmem->Free( buf, alloced );
 }
 
+// Periodically update the object's full position
+void User::SetObject( char *data, long sz )
+{
+	u_long objid;
+	char *name;
+	float x,y,z;
+	float r0,r1,r2,r3;
+	int timestamp_short;
+	Object *obj;
+
+	sunpackf(data, "lifffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2, &r3);
+	
+	unordered_map<u_long,Object*>::iterator it;
+
+	it = game->objects.find( objid );
+	if( it == game->objects.end() ) {
+		lprintf("SetObject:: Not found!");
+		return;
+	}
+	obj = it->second;
+	obj->x = x;
+	obj->y = y;
+	obj->z = z;
+	obj->r0 = r0;
+	obj->r1 = r1;
+	obj->r2 = r2;
+	obj->r3 = r3;
+	obj->last_update = this->last_update + (long long)timestamp_short;
+	lprintf("Set %llu", objid);
+
+	char *buf;
+	long size;
+	u_long alloced;
+
+	timestamp_short = (int)(obj->last_update - this->last_update);
+
+	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
+	game->SendMsg( 7, size, buf );
+	strmem->Free( buf, alloced );
+}
+
+// Frequently update position
+void User::ChangePosition( char *data, long sz )
+{
+	u_long objid;
+	int timestamp_short;
+	long long timestamp;
+	float dx, dy, dz;
+	float r0,r1,r2,r3;
+
+	sunpackf(data, "lifff", &objid, &timestamp_short, &dx, &dy, &dz, &r0, &r1, &r2, &r3);
+	Object *obj = game->FindObject(objid);
+	if( !obj ) {
+		lprintf("ChangePosition: Can't find object!");
+		return;
+	}
+	timestamp = this->last_update + (long long)timestamp_short;
+
+	obj->x += dx;
+	obj->y += dy;
+	obj->z += dz;
+	obj->r0 = r0;
+	obj->r1 = r1;
+	obj->r2 = r2;
+	obj->r3 = r3;
+	obj->last_update = timestamp;
+
+	// distribute update to all users
+	char *buf;
+	long size;
+	u_long alloced;
+
+	timestamp_short = (int)(obj->last_update - this->last_update);
+
+	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, dx, dy, dz, r0, r1, r2, r3);
+	game->SendMsg( 8, size, buf );
+	strmem->Free( buf, alloced );
+}

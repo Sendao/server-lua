@@ -57,7 +57,7 @@ void Game::mainloop()
 	long tmpsize, size2;
 	char *tmpbuf, *buf, *buf2, *buf3, *packed, *fname;
 	const char *cstr;
-	Primitive prim;
+	Primitive *prim;
 
 	gettimeofday(&next_cycle, NULL);
 
@@ -151,25 +151,24 @@ void Game::mainloop()
 		}
 
 		// Send keyvals
-
 		for( itset = game->dirtyset.begin(); itset != game->dirtyset.end(); itset++ ) {
 			key = *itset;
 			prim = game->datamap[key];
 			uTarget = game->datamap_whichuser[key];
 
-			tmpsize = spackf( &tmpbuf, &packsz, "lc", key, prim.type );
-			switch( prim.type ) {
+			tmpsize = spackf( &tmpbuf, &packsz, "lc", key, prim->type );
+			switch( prim->type ) {
 				case 0: // char
-					size2 = spackf(&buf2, &packsz2, "c", &prim.data.c);
+					size2 = spackf(&buf2, &packsz2, "c", &prim->data.c);
 					break;
 				case 1: // int
-					size2 = spackf(&buf2, &packsz2,  "i", &prim.data.i);
+					size2 = spackf(&buf2, &packsz2,  "i", &prim->data.i);
 					break;
 				case 2: // float
-					size2 = spackf(&buf2, &packsz2, "f", &prim.data.f);
+					size2 = spackf(&buf2, &packsz2, "f", &prim->data.f);
 					break;
 				case 3: // string
-					size2 = spackf(&buf2, &packsz2, "s", &prim.data.s);
+					size2 = spackf(&buf2, &packsz2, "s", &prim->data.s);
 					break;
 			}
 			buf3 = strmem->Alloc( tmpsize + size2 );
@@ -180,14 +179,7 @@ void Game::mainloop()
 			tmpsize += size2;
 			tmpbuf = buf3;
 			buf3 = NULL;
-
-			for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
-			{
-				user = *ituser;
-				if( user != uTarget )
-					user->SendMsg( 0, tmpsize, tmpbuf );
-			}
-			
+			game->SendMsg(0, tmpsize, tmpbuf, uTarget);			
 			game->datamap_whichuser.erase(key);
 		}
 		game->dirtyset.clear();
@@ -289,50 +281,45 @@ long long Game::GetTime()
 	return (long long)ms;
 }
 
-void Game::SetPosition( u_long objid, float x, float y, float z, float r0, float r1, float r2, float r3 )
+void Game::IdentifyVar( char *name, int type, User *sender )
 {
-	unordered_map<u_long, Object*>::iterator itobj;
-	Object *obj;
-
-	itobj = objects.find(objid);
-	if( itobj == objects.end() ) {
-		obj = (Object*)halloc(sizeof(Object));
-		new(obj) Object();
-		obj->uid = objid;
-		objects[objid] = obj;
-	} else {
-		obj = itobj->second;
-	}
-
-	obj->x = x;
-	obj->y = y;
-	obj->z = z;
+	unordered_map<string,VarData*>::iterator it;
+	u_long alloced;
+	VarData *v;
+	char *buf;
+	long size;
 	
-	obj->r0 = r0;
-	obj->r1 = r1;
-	obj->r2 = r2;
-	obj->r3 = r3;
+	it = game->varmap.find(name);
+	if( it != game->varmap.end() ) {
+		v = it->second;
+		size = spackf(&buf, &alloced, "sl", name, v->objid );
+		sender->SendMsg( 0, size, buf );
+	} else {
+		size = spackf(&buf, &alloced, "sl", name, game->top_var_id );
+		game->SendMsg( 0, size, buf, NULL );
+		
+		v = (VarData*)halloc(sizeof(VarData));
+		v->name = name;
+		v->objid = game->top_var_id;
+		v->type = type;
 
-	//! Distribute package update
+		game->top_var_id++;
+		game->varmap[name] = v;
+		game->varmap_by_id[v->objid] = v;
+	}
+	strmem->Free( buf, alloced );
 
 }
 
-void Game::CreateObject( u_long objid, char *name )
+Object *Game::FindObject( u_long objid )
 {
 	unordered_map<u_long, Object*>::iterator itobj;
-	Object *obj;
-
 	itobj = objects.find(objid);
 	if( itobj == objects.end() ) {
-		obj = (Object*)halloc(sizeof(Object));
-		new(obj) Object();
-		obj->uid = objid;
-		objects[objid] = obj;
-		obj->name = name;
+		return NULL;
 	}
+	return itobj->second;
 }
-
-
 
 void Game::SendMsg( char cmd, unsigned int size, char *data, User *exclude )
 {

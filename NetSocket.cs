@@ -32,11 +32,32 @@ public class NetSocket : MonoBehaviour
         public string contents;
     };
 
+    struct VarData {
+        public string name;
+        public long objid;
+        public int type; // 0=object, 1=string, 2=int, 3=float, etc
+    }
+
+    struct ObjData {
+        public long objid;
+        public string name;
+        public long prev_update;
+        public float prev_x, prev_y, prev_z;
+        public long last_update;
+        public float x, y, z;
+        public float r0, r1, r2, r3;
+    };
+
     private Dictionary<String, FileData> localAssets = new Dictionary<String, FileData>(); // file data for local files
     private bool readingFiles = false;
     private FileData readingFile; // file currently being read from server
     private BinaryWriter fileWriter;
     private Queue<FileData> fileQ = new Queue<FileData>(); // files to be read
+
+    private Dictionary<String, VarData> serverAssets;
+    private Dictionary<long, ObjData> serverObjects;
+
+    private long last_game_time = 0;
 
     public void Start()
     {
@@ -115,6 +136,7 @@ public class NetSocket : MonoBehaviour
         IList<byte[]> res = recv();
         NetStringReader stream;
         int cmd;
+        long uid;
 
         foreach( byte[] data in res ) {
             stream = new NetStringReader(data);
@@ -123,7 +145,11 @@ public class NetSocket : MonoBehaviour
             stream.ReadInt(); // size
             switch( cmd ) {
                 case 0:
-                    Debug.Log("VarInfo");
+                    VarData v = new VarData();
+                    v.name = stream.ReadString();
+                    v.objid = stream.ReadLongLong();
+                    v.type = stream.ReadInt();
+                    Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
                     break;
                 case 1:
                     GotFileInfo(stream);
@@ -138,11 +164,21 @@ public class NetSocket : MonoBehaviour
                     GotNextFile(stream);
                     //! Step to next file in queue
                     break;
-                case 5:
-                    Debug.Log("ObjInfo");
+                case 5: // TimeSync
+                    Debug.Log("TimeSync"); // gonna be every 10 seconds or so I think
+                    last_game_time = stream.ReadLongLong();
                     break;
-                case 6:
-                    Debug.Log("TimeSyncTo");
+                case 6: // LinkToObject
+                    Debug.Log("LinkToObject");
+                    break;
+                case 7: // SetObjectPositionRotation
+                    Debug.Log("SetObjectPosition");
+                    break;
+                case 8: // DeltaObjectPoisition
+                    Debug.Log("DeltaObjectPosition");
+                    break;
+                case 9: // CreateObject
+                    Debug.Log("CreateObject");
                     break;
             }
         }
