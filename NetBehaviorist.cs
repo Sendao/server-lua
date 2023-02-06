@@ -13,14 +13,21 @@ public class CNetSync : Attribute
 // https://docs.unity3d.com/ScriptReference/Rigidbody.html
 // https://mirror-networking.gitbook.io/docs/components/network-rigidbody
 
-public class CNetRigidBody : MonoBehaviour
+public class CNetID : MonoBehaviour
 {
+	public long id = -1;
+
 	public void Start()
 	{
-		// Register with the main controller
-		NetSocket::instance.RegisterObject(this);
-	}
+		// Collect any identifying information
 
+		// Register with the main controller
+		NetSocket::instance.RegisterID(this, this.name);
+	}
+}
+
+public class CNetRigidBody : MonoBehaviour
+{
 	public void Update()
 	{
 		if( NetSocket::instance.authoritative )

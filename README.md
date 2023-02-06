@@ -28,7 +28,7 @@ Contains no actual LUA.
 - build sol2 from source. use a build directory in the sol2 root dir. Use the following from there:
 - cmake -G"MSYS Makefiles" ..
 - make (should download and install lua)
-- builds target liblua-5.4.4 in build/x64/lib and build/x64/bin
+ (this builds target liblua-5.4.4 in build/x64/lib and build/x64/bin)
 - locate liblua-5.4.4.dll.a and liblua-5.4.4.dll and copy to /c/serv/
 - go to c/serv and create a 'debug' directory'
 - copy the .dll file to the debug dir

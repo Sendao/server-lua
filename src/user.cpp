@@ -18,7 +18,6 @@ void init_commands( void )
 	commands[SCmdIdentifyVar] = &User::IdentifyVar;
 	commands[SCmdSetVar] = &User::SetVar;
 	commands[SCmdClockSync] = &User::ClockSync;
-	commands[SCmdCreateObject] = &User::CreateObject;
 	commands[SCmdSetObjectPositionRotation] = &User::SetObjectPositionRotation;
 	commands[SCmdRegister]= &User::Register;
 }
@@ -258,9 +257,6 @@ void User::IdentifyVar( char *data, long sz )
 
 	sunpackf(data, "sc", &name, type);
 	game->IdentifyVar( name, type, this );
-
-	//! Send any additional data about the object?
-
 }
 
 void User::SetVar( char *data, long sz )
@@ -314,72 +310,17 @@ void User::SetVar( char *data, long sz )
 	game->dirtyset.insert( objid );
 }
 
-
-void User::CreateObject( char *data, long sz )
-{
-	u_long objid;
-	char *name;
-	float x,y,z;
-	float r0,r1,r2;
-	int timestamp_short;
-	Object *obj;
-	VarData *v;
-
-	sunpackf(data, "isffffff", &timestamp_short, &name, &x, &y, &z, &r0, &r1, &r2);
-
-	// make sure the name does not exist.
-	unordered_map<string,VarData*>::iterator it;
-	it = game->varmap.find( name );
-
-	if( it != game->varmap.end() ) {
-		lprintf("CreateObject:: Name already exists!");
-		return;
-	}
-
-	v = (VarData*)halloc(sizeof(VarData));
-	v->type = 0;
-	v->objid = game->top_var_id;
-	game->varmap[name] = v;
-	game->varmap_by_id[game->top_var_id] = v;
-	game->top_var_id++;
-
-	obj = (Object*)halloc(sizeof(Object));
-	obj->uid = v->objid;
-	obj->name = name;
-	obj->x = x;
-	obj->y = y;
-	obj->z = z;
-	obj->r0 = r0;
-	obj->r1 = r1;
-	obj->r2 = r2;
-	obj->last_update = this->last_update + (long long)timestamp_short;
-	game->objects[obj->uid] = obj;
-
-	lprintf("Created %llu", objid);
-
-	char *buf;
-	u_long alloced;
-	long size;
-
-	timestamp_short = (int)(obj->last_update - game->last_timestamp);
-
-	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2);
-	game->SendMsg( CCmdSetObjectPositionRotation, size, buf );
-	strmem->Free( buf, alloced );
-}
-
-
 void User::SetObjectPositionRotation( char *data, long sz )
 {
 	u_long objid;
 	float x,y,z;
-	float r0,r1,r2;
+	float r0,r1,r2,r3;
 	int timestamp_short;
 	Object *obj;
 	VarData *v;
 	unordered_map<u_long,Object*>::iterator it;
 
-	sunpackf(data, "liffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2);
+	sunpackf(data, "lifffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2, &r3);
 
 	it = game->objects.find( objid );
 	if( it == game->objects.end() ) {
@@ -394,6 +335,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	obj->r0 = r0;
 	obj->r1 = r1;
 	obj->r2 = r2;
+	obj->r3 = r3;
 	obj->last_update = this->last_update + (long long)timestamp_short;
 
 	lprintf("Update %llu", objid);
@@ -404,7 +346,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 
 	timestamp_short = (int)(obj->last_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "liffffff", objid, timestamp_short, x, y, z, r0, r1, r2);
+	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
 	game->SendMsg( CCmdSetObjectPositionRotation, size, buf );
 	strmem->Free( buf, alloced );
 }

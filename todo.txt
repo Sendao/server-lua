@@ -1,42 +1,15 @@
-Unity:
-https://dev.to/ibmdeveloper/creating-our-multiplayer-game-using-unity3d-creating-a-multiplayer-game-server-part-5-4587
-
-Do something like SyncVars:
-https://mirror-networking.gitbook.io/docs/guides/synchronization/syncvars
-
-How to use custom attributes:
-https://answers.unity.com/questions/896763/custom-attributes.html
-https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/concepts/attributes/accessing-attributes-by-using-reflection
-
-
-
--> add new custom attributes: SyncVar and SyncPosition
--> SyncVar will send changed parameters to all clients
--> SyncPosition does the same, but clients need to use default move functions when syncposition updates to avoid jitter
-
 - Authentication:
 -> authenticate by IP address for now
 -> maybe encrypted token system later
-
-
-- Heartbeat command
--> big timestamp
-
-- small timestamps on update commands (inside data)
 
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
  (currently disabled)
 
-Lag compensation: 
-->Interpolation
- - clientside, send short timestamp+delta position+avg velocity updates
-
 Max FPS:
  - max out fps at 100
 
 Next up:
- - clock sync and position updates on clientside
  - initial position messaging
 
 Completed/working:

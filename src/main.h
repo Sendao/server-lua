@@ -53,7 +53,6 @@ enum {
 	SCmdIdentifyVar,
 	SCmdSetVar,
 	SCmdClockSync,
-	SCmdCreateObject,
 	SCmdSetObjectPositionRotation,
 	SCmdRegister
 };
@@ -180,12 +179,14 @@ class Object
 
 	public:
 	u_long uid;
+	char *name;
+
 	long long last_update;
 	float x, y, z;
-	//float velx, vely, velz; we don't need it.
-	float prex, prey, prez;
 	float r0, r1, r2;
-	char *name;
+	long long prev_update;
+	float prev_x, prev_y, pre_z;
+	float prev_r0, prev_r1, prev_r2;
 };
 
 

@@ -286,6 +286,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	unordered_map<string,VarData*>::iterator it;
 	u_long alloced;
 	VarData *v;
+	Object *o;
 	char *buf;
 	long size;
 	
@@ -297,12 +298,20 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	} else {
 		size = spackf(&buf, &alloced, "scl", name, 0, game->top_var_id );
 		game->SendMsg( CCmdVarInfo, size, buf, NULL );
-		
+
 		v = (VarData*)halloc(sizeof(VarData));
 		v->name = name;
 		v->objid = game->top_var_id;
 		v->type = type;
 
+		if( type == 0 ) { // allocate the object
+			o = (Object*)halloc(sizeof(Object));
+			new(o) Object();
+			o->uid = v->objid;
+			o->name = name;
+			game->objects[o->uid] = o;
+		}
+		
 		game->top_var_id++;
 		game->varmap[name] = v;
 		game->varmap_by_id[v->objid] = v;
