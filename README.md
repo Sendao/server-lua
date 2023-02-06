@@ -2,8 +2,11 @@
 
 Contains no actual LUA.
 
-
 # Next up:
+- RPCs
+- kinematic controller movement
+
+# In progress:
 - rigid body movement
 
 # Completed:

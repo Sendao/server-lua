@@ -1,16 +1,9 @@
-- Authentication:
--> authenticate by IP address for now
--> maybe encrypted token system later
-
 Fixes:
 - there's a (big) memory leak in strmem (it does not free allocated memory)
  (currently disabled)
 
 Max FPS:
- - max out fps at 100
-
-Next up:
- - initial position messaging
+ - max out fps at 100 (currently unlimited, at least 1 frame per 10s)
 
 Completed/working:
 - tcp sockets
@@ -22,11 +15,7 @@ Completed/working:
 In progress:
 - basic lua interface
 - keyvalue interface
-- obj lookup
-- obj positions
-- clock sync
-
-
+- rigidbody support
 
 
 Packet syntax:
