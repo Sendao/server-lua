@@ -19,8 +19,7 @@ void init_commands( void )
 	commands[SCmdSetVar] = &User::SetVar;
 	commands[SCmdClockSync] = &User::ClockSync;
 	commands[SCmdCreateObject] = &User::CreateObject;
-	commands[SCmdSetObject] = &User::SetObject;
-	commands[SCmdChangePosition]= &User::ChangePosition;
+	commands[SCmdSetObjectPositionRotation] = &User::SetObjectPositionRotation;
 	commands[SCmdRegister]= &User::Register;
 }
 
@@ -46,6 +45,8 @@ User::User(void)
 
 User::~User(void)
 {
+	if( outbuf_memory )
+		strmem->Free( outbuf_memory, outbufalloc );
 	if( sHost )
 		strmem->Free( sHost, strlen(sHost)+1 );
 	strmem->Free( inbuf, inbufmax );
@@ -367,13 +368,54 @@ void User::CreateObject( char *data, long sz )
 	strmem->Free( buf, alloced );
 }
 
+
+void User::SetObjectPositionRotation( char *data, long sz )
+{
+	u_long objid;
+	float x,y,z;
+	float r0,r1,r2;
+	int timestamp_short;
+	Object *obj;
+	VarData *v;
+	unordered_map<u_long,Object*>::iterator it;
+
+	sunpackf(data, "liffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2);
+
+	it = game->objects.find( objid );
+	if( it == game->objects.end() ) {
+		lprintf("SetObjectPositionRotation:: Not Found!");
+		return;
+	}
+
+	obj = it->second;
+	obj->x = x;
+	obj->y = y;
+	obj->z = z;
+	obj->r0 = r0;
+	obj->r1 = r1;
+	obj->r2 = r2;
+	obj->last_update = this->last_update + (long long)timestamp_short;
+
+	lprintf("Update %llu", objid);
+
+	char *buf;
+	u_long alloced;
+	long size;
+
+	timestamp_short = (int)(obj->last_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "liffffff", objid, timestamp_short, x, y, z, r0, r1, r2);
+	game->SendMsg( CCmdSetObjectPositionRotation, size, buf );
+	strmem->Free( buf, alloced );
+}
+
 void User::Register( char *data, long sz )
 {
 	char *buf;
 	long size;
 	u_long alloced;
 
-	size = spackf(&buf, &alloced, "c", user->authority?1:0);
+	size = spackf(&buf, &alloced, "c", this->authority?1:0);
 	SendMsg( CCmdRegisterUser, size, buf );
 	strmem->Free( buf, alloced );
 }

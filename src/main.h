@@ -54,8 +54,7 @@ enum {
 	SCmdSetVar,
 	SCmdClockSync,
 	SCmdCreateObject,
-	SCmdSetObject,
-	SCmdChangePosition,
+	SCmdSetObjectPositionRotation,
 	SCmdRegister
 };
 
@@ -240,8 +239,7 @@ class User
 	void SetVar(char *data, long sz);
 	void ClockSync(char *data, long sz);
 	void CreateObject(char *data, long sz);
-	void SetObject(char *data, long sz);
-	void ChangePosition(char *data, long sz);
+	void SetObjectPositionRotation(char *data, long sz);
 	void Register(char *data, long sz);
 };
 

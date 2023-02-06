@@ -3,6 +3,7 @@
 #include <zlib.h>
 
 int fSock;
+bool firstUser=true;
 
 void InitSocket(int port)
 {
@@ -109,6 +110,8 @@ User *InitConnection(void)
 	new(user) User();
 	
 	user->fSock = fUser;
+	user->authority = firstUser ? true : false;
+	firstUser=false;
 	char *ntoa = inet_ntoa(saConn.sin_addr);
 	user->sHost = strmem->Alloc( strlen(ntoa)+1 );
 	strcpy(user->sHost, ntoa);
