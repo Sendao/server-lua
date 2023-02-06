@@ -179,7 +179,7 @@ void Game::mainloop()
 			tmpsize += size2;
 			tmpbuf = buf3;
 			buf3 = NULL;
-			game->SendMsg(0, tmpsize, tmpbuf, uTarget);			
+			game->SendMsg(CCmdVarInfo, tmpsize, tmpbuf, uTarget);			
 			game->datamap_whichuser.erase(key);
 		}
 		game->dirtyset.clear();
@@ -201,7 +201,7 @@ void Game::mainloop()
 						// File is empty, send EOF
 						fclose( user->fReading );
 						user->fReading = NULL;
-						user->SendMsg( 4, 0, NULL );
+						user->SendMsg( CCmdNextFile, 0, NULL );
 						if( user->reading_file_q.size() > 0 ) {
 							fname = user->reading_file_q.front();
 							user->GetFileS(fname);
@@ -211,15 +211,15 @@ void Game::mainloop()
 						return;
 					}
 					found_file = true;
-					user->SendMsg( 3, status, buf );
+					user->SendMsg( CCmdFileData, status, buf );
 				} else if( game->reading_files && user->reading_ptr && user->reading_sz > 0 ) {
 					int status = user->reading_sz > user->inbufmax ? user->inbufmax : user->reading_sz;
-					user->SendMsg( 3, status, user->reading_ptr );
+					user->SendMsg( CCmdFileData, status, user->reading_ptr );
 					user->reading_ptr += status;
 					user->reading_sz -= status;
 					if( user->reading_sz == 0 ) {
 						user->reading_ptr = NULL;
-						user->SendMsg( 4, 0, NULL );
+						user->SendMsg( CCmdNextFile, 0, NULL );
 						if( user->reading_file_q.size() > 0 ) {
 							fname = user->reading_file_q.front();
 							user->GetFileS(fname);
@@ -293,10 +293,10 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	if( it != game->varmap.end() ) {
 		v = it->second;
 		size = spackf(&buf, &alloced, "scl", name, 0, v->objid );
-		sender->SendMsg( 0, size, buf );
+		sender->SendMsg( CCmdVarInfo, size, buf );
 	} else {
 		size = spackf(&buf, &alloced, "scl", name, 0, game->top_var_id );
-		game->SendMsg( 0, size, buf, NULL );
+		game->SendMsg( CCmdVarInfo, size, buf, NULL );
 		
 		v = (VarData*)halloc(sizeof(VarData));
 		v->name = name;

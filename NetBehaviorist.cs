@@ -10,6 +10,9 @@ public class CNetSync : Attribute
     }
 }
 
+// https://docs.unity3d.com/ScriptReference/Rigidbody.html
+// https://mirror-networking.gitbook.io/docs/components/network-rigidbody
+
 public class CNetRigidBody : MonoBehaviour
 {
 	public void Start()

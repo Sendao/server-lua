@@ -44,6 +44,33 @@ struct _VarData
 	int type;
 };
 
+enum {
+	SCmdSetKeyValue,
+	SCmdRunLuaFile,
+	SCmdRunLuaCommand,
+	SCmdGetFileList,
+	SCmdGetFile,
+	SCmdIdentifyVar,
+	SCmdSetVar,
+	SCmdClockSync,
+	SCmdCreateObject,
+	SCmdSetObject,
+	SCmdChangePosition,
+	SCmdRegister
+};
+
+enum {
+	CCmdVarInfo,
+	CCmdFileInfo,
+	CCmdEndOfFileList,
+	CCmdFileData,
+	CCmdNextFile,
+	CCmdTimeSync,
+	CCmdLinkToObject,
+	CCmdSetObjectPositionRotation,
+	CCmdRegisterUser
+};
+
 // lua.cpp
 extern sol::state lua;
 void init_lua(void);
@@ -158,7 +185,7 @@ class Object
 	float x, y, z;
 	//float velx, vely, velz; we don't need it.
 	float prex, prey, prez;
-	float r0, r1, r2, r3;
+	float r0, r1, r2;
 	char *name;
 };
 
@@ -189,6 +216,7 @@ class User
 	vector<char*> messages;
 
     bool bQuitting;
+	bool authority;
 	
 	char *reading_ptr;
 	long reading_sz;
@@ -213,7 +241,8 @@ class User
 	void ClockSync(char *data, long sz);
 	void CreateObject(char *data, long sz);
 	void SetObject(char *data, long sz);
-	void ChangePosition( char *data, long sz );
+	void ChangePosition(char *data, long sz);
+	void Register(char *data, long sz);
 };
 
 

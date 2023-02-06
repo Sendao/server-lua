@@ -9,17 +9,19 @@ void init_commands( void )
 	int i;
 	for( i=0; i<256; i++ )
 		commands[i] = NULL;
-	commands[0] = &User::SetKeyValue;
-	commands[1] = &User::RunLuaFile;
-	commands[2] = &User::RunLuaCommand;
-	commands[3] = &User::GetFileList;
-	commands[4] = &User::GetFile;
-	commands[5] = &User::IdentifyVar;
-	commands[6] = &User::SetVar;
-	commands[7] = &User::ClockSync;
-	commands[8] = &User::CreateObject;
-	commands[9] = &User::SetObject;
-	commands[10]= &User::ChangePosition;
+
+	commands[SCmdSetKeyValue] = &User::SetKeyValue;
+	commands[SCmdRunLuaFile] = &User::RunLuaFile;
+	commands[SCmdRunLuaCommand] = &User::RunLuaCommand;
+	commands[SCmdGetFileList] = &User::GetFileList;
+	commands[SCmdGetFile] = &User::GetFile;
+	commands[SCmdIdentifyVar] = &User::IdentifyVar;
+	commands[SCmdSetVar] = &User::SetVar;
+	commands[SCmdClockSync] = &User::ClockSync;
+	commands[SCmdCreateObject] = &User::CreateObject;
+	commands[SCmdSetObject] = &User::SetObject;
+	commands[SCmdChangePosition]= &User::ChangePosition;
+	commands[SCmdRegister]= &User::Register;
 }
 
 User::User(void)
@@ -147,7 +149,7 @@ void User::GetFileList( char *data, long sz )
 
 	it = game->files.begin();
 	if( it == game->files.end() ) {
-		this->SendMsg( 2, 0, NULL );
+		this->SendMsg( CCmdEndOfFileList, 0, NULL );
 		return;
 	}
 	u_long alloced, size;
@@ -157,13 +159,13 @@ void User::GetFileList( char *data, long sz )
 		FileInfo *fi = (it->second);
 
 		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
-		this->SendMsg( 1, size, buf );
+		this->SendMsg( CCmdFileInfo, size, buf );
 		strmem->Free( buf, alloced );
 
 		it++;
 	}
 
-	this->SendMsg( 2, 0, NULL );
+	this->SendMsg( CCmdEndOfFileList, 0, NULL );
 }
 
 void User::GetFile( char *data, long sz )
@@ -176,7 +178,7 @@ void User::GetFile( char *data, long sz )
 	if( strstr(filename, "..") != NULL ) {
 		lprintf("Found ..");
 		strmem->Free( filename, sz+1 );
-		this->SendMsg( 4, 0, NULL );
+		this->SendMsg( CCmdNextFile, 0, NULL );
 		return;
 	}
 	GetFileS(filename);
@@ -196,7 +198,7 @@ void User::GetFileS( char *filename )
 	it = game->files.find( filename );
 	if( it == game->files.end() ) {
 		lprintf("Not found %s", filename);
-		this->SendMsg( 4, 0, NULL );
+		this->SendMsg( CCmdNextFile, 0, NULL );
 		return;
 	}
 	FileInfo *fi = it->second;
@@ -209,7 +211,7 @@ void User::GetFileS( char *filename )
 
 		this->fReading = fopen( filename, "rb" );
 		if( !fReading ) {
-			this->SendMsg( 4, 0, NULL ); // eof
+			this->SendMsg( CCmdNextFile, 0, NULL ); // eof
 			fReading = NULL; // just to make sure
 			return;
 		}
@@ -222,11 +224,11 @@ void User::GetFileS( char *filename )
 			strmem->Free( buf, 1024 );
 			fclose( fReading );
 			fReading = NULL;
-			this->SendMsg( 4, 0, NULL );
+			this->SendMsg( CCmdNextFile, 0, NULL );
 			return;
 		}
 
-		this->SendMsg( 3, status, buf );
+		this->SendMsg( CCmdFileData, status, buf );
 		strmem->Free( buf, 1024 );
 	}
 	game->reading_files = true;
@@ -317,12 +319,12 @@ void User::CreateObject( char *data, long sz )
 	u_long objid;
 	char *name;
 	float x,y,z;
-	float r0,r1,r2,r3;
+	float r0,r1,r2;
 	int timestamp_short;
 	Object *obj;
 	VarData *v;
 
-	sunpackf(data, "isfffffff", &timestamp_short, &name, &x, &y, &z, &r0, &r1, &r2, &r3);
+	sunpackf(data, "isffffff", &timestamp_short, &name, &x, &y, &z, &r0, &r1, &r2);
 
 	// make sure the name does not exist.
 	unordered_map<string,VarData*>::iterator it;
@@ -349,7 +351,6 @@ void User::CreateObject( char *data, long sz )
 	obj->r0 = r0;
 	obj->r1 = r1;
 	obj->r2 = r2;
-	obj->r3 = r3;
 	obj->last_update = this->last_update + (long long)timestamp_short;
 	game->objects[obj->uid] = obj;
 
@@ -361,86 +362,18 @@ void User::CreateObject( char *data, long sz )
 
 	timestamp_short = (int)(obj->last_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
-	game->SendMsg( 9, size, buf );
+	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2);
+	game->SendMsg( CCmdSetObjectPositionRotation, size, buf );
 	strmem->Free( buf, alloced );
 }
 
-// Periodically update the object's full position
-void User::SetObject( char *data, long sz )
+void User::Register( char *data, long sz )
 {
-	u_long objid;
-	char *name;
-	float x,y,z;
-	float r0,r1,r2,r3;
-	int timestamp_short;
-	Object *obj;
-
-	sunpackf(data, "lifffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2, &r3);
-	
-	unordered_map<u_long,Object*>::iterator it;
-
-	it = game->objects.find( objid );
-	if( it == game->objects.end() ) {
-		lprintf("SetObject:: Not found!");
-		return;
-	}
-	obj = it->second;
-	obj->x = x;
-	obj->y = y;
-	obj->z = z;
-	obj->r0 = r0;
-	obj->r1 = r1;
-	obj->r2 = r2;
-	obj->r3 = r3;
-	obj->last_update = this->last_update + (long long)timestamp_short;
-	lprintf("Set %llu", objid);
-
 	char *buf;
 	long size;
 	u_long alloced;
 
-	timestamp_short = (int)(obj->last_update - this->last_update);
-
-	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
-	game->SendMsg( 7, size, buf );
-	strmem->Free( buf, alloced );
-}
-
-// Frequently update position
-void User::ChangePosition( char *data, long sz )
-{
-	u_long objid;
-	int timestamp_short;
-	long long timestamp;
-	float dx, dy, dz;
-	float r0,r1,r2,r3;
-
-	sunpackf(data, "lifff", &objid, &timestamp_short, &dx, &dy, &dz, &r0, &r1, &r2, &r3);
-	Object *obj = game->FindObject(objid);
-	if( !obj ) {
-		lprintf("ChangePosition: Can't find object!");
-		return;
-	}
-	timestamp = this->last_update + (long long)timestamp_short;
-
-	obj->x += dx;
-	obj->y += dy;
-	obj->z += dz;
-	obj->r0 = r0;
-	obj->r1 = r1;
-	obj->r2 = r2;
-	obj->r3 = r3;
-	obj->last_update = timestamp;
-
-	// distribute update to all users
-	char *buf;
-	long size;
-	u_long alloced;
-
-	timestamp_short = (int)(obj->last_update - this->last_update);
-
-	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, dx, dy, dz, r0, r1, r2, r3);
-	game->SendMsg( 8, size, buf );
+	size = spackf(&buf, &alloced, "c", user->authority?1:0);
+	SendMsg( CCmdRegisterUser, size, buf );
 	strmem->Free( buf, alloced );
 }
