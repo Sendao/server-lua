@@ -34,19 +34,26 @@ int main(int ac, char *av[])
 struct timeval now;
 time_t currentTime;
 
+/* We convert from microseconds to milliseconds */
 #if defined(_MSC_VER) || defined(__MINGW32__)
-int gettimeofday(struct timeval* tp, void* tzp) {
-    DWORD t = timeGetTime();
-    tp->tv_sec = t / 1000;
-    tp->tv_usec = t % 1000;
+int smalltimeofday(struct timeval* tp, void* tzp) {
+	long long ms = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+    tp->tv_sec = ms / (long long)1000;
+    tp->tv_usec = ms % (long long)1000;
     /* 0 indicates that the call succeeded. */
     return 0;
+}
+#else
+int smalltimeofday(struct timeval* tp, void* tzp ) {
+	gettimeofday(tp, tzp);
+	tp->tv_usec = tp->tv_usec / 1000;
+	return 0;
 }
 #endif
 
 void Game::mainloop()
 {
-	struct timeval per, next_cycle, zerotime, *usetv;
+	struct timeval per, prev_cycle, this_cycle, zerotime, *usetv;
 	fd_set fdI, fdO, fdE;
 	u_long key;
 	unordered_set<u_long>::iterator itset;
@@ -59,7 +66,8 @@ void Game::mainloop()
 	const char *cstr;
 	Primitive *prim;
 
-	gettimeofday(&next_cycle, NULL);
+	smalltimeofday(&prev_cycle, NULL);
+	prev_cycle.tv_sec -= 10;
 
 	while(1)
 	{
@@ -113,6 +121,8 @@ void Game::mainloop()
 			strmem->Free( tmpbuf, strlen(tmpbuf)+1 );
 			abort();
 		}
+
+		smalltimeofday(&this_cycle, NULL);
 
 		// Disconnect errored machines and process inputs:
 		for( ituser = userL.begin(); ituser != userL.end(); )
@@ -183,6 +193,12 @@ void Game::mainloop()
 			game->datamap_whichuser.erase(key);
 		}
 		game->dirtyset.clear();
+
+		// Send clocksync
+		game->last_timestamp = this_cycle.tv_sec*1000 + this_cycle.tv_usec;
+		tmpsize = spackf(&buf, &packsz, "L", game->last_timestamp);
+		game->SendMsg(CCmdTimeSync, tmpsize, buf, NULL);
+		strmem->Free(buf, packsz);
 
 		// Process output
 		zerotime.tv_usec = zerotime.tv_sec = 0;
@@ -277,8 +293,9 @@ Game::~Game()
 
 long long Game::GetTime()
 {
-	time_t ms = time(NULL);
-	return (long long)ms;
+	struct timeval tv;
+	smalltimeofday(&tv, NULL);
+	return (long long)tv.tv_sec*(long long)1000 + (long long)tv.tv_usec/(long long)1000;
 }
 
 void Game::IdentifyVar( char *name, int type, User *sender )
@@ -289,12 +306,23 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	Object *o;
 	char *buf;
 	long size;
+	int ts_short;
 	
 	it = game->varmap.find(name);
 	if( it != game->varmap.end() ) {
 		v = it->second;
 		size = spackf(&buf, &alloced, "scl", name, 0, v->objid );
 		sender->SendMsg( CCmdVarInfo, size, buf );
+
+		if( v->type == 0 ) { // it's an object
+		// send obj info
+			o = game->objects[v->objid];
+			ts_short = o->last_update - game->last_timestamp;
+
+			strmem->Free( buf, alloced );
+			size = spackf(&buf, &alloced, "lifffffff", o->uid, ts_short, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3 );
+			sender->SendMsg( CCmdSetObjectPositionRotation, size, buf );
+		}
 	} else {
 		size = spackf(&buf, &alloced, "scl", name, 0, game->top_var_id );
 		game->SendMsg( CCmdVarInfo, size, buf, NULL );

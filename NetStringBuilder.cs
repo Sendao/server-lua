@@ -1,17 +1,16 @@
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using System.Runtime.InteropServices;
+using Unity.Collections;
 using UnityEngine;
 
 public class NetStringBuilder
 {
-    byte[] ptr;
+    public byte[] ptr;
     public int alloced;
     public int used;
 
-    public NetStringBuilder(int size) {
+    public NetStringBuilder(int size=32) {
         alloced = size;
         used = 0;
         ptr = new byte[size];

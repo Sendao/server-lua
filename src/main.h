@@ -9,6 +9,7 @@
 
 #ifdef WIN32
 #include <winsock2.h>
+#include <chrono>
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -183,10 +184,10 @@ class Object
 
 	long long last_update;
 	float x, y, z;
-	float r0, r1, r2;
+	float r0, r1, r2, r3;
 	long long prev_update;
 	float prev_x, prev_y, pre_z;
-	float prev_r0, prev_r1, prev_r2;
+	float prev_r0, prev_r1, prev_r2, prev_r3;
 };
 
 
