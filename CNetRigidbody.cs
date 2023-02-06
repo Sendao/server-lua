@@ -18,6 +18,9 @@ public class CNetRigidbody : MonoBehaviour
 	{
 		if( NetSocket.instance.authoritative )
 		{
+			if( rb.isKinematic )
+				rb.isKinematic = false;
+
 			// We are authoritative, so we need to send our position to the server
 			float dist = Vector3.Distance( lastpos, rb.position );
 			float angle = Quaternion.Angle( lastrot, rb.rotation );

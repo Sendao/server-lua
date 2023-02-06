@@ -103,7 +103,7 @@ User *InitConnection(void)
 		lprintf("accept(): connection failed '%s'(%d)", strerror(errno), errno);
 		return NULL;
 	}
-	lprintf("[initConnection]");
+	//lprintf("[initConnection]");
     fUser = (unsigned int)fUserTest;
 
 	user = (User*)halloc( sizeof(User) );
@@ -162,7 +162,7 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
-		lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
+		//lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
 
 		do {
 			strm.avail_out = 1024;
@@ -220,7 +220,7 @@ int OutputConnection(User *user)
 
 		// reduce the size of the data to send
 		sendsize = tgtsz > user->outbufmax ? user->outbufmax : tgtsz;
-		lprintf("Send %d compressed bytes", sendsize);
+		//lprintf("Send %d compressed bytes", sendsize);
 	} else {
 		idbyte = (unsigned char)(sendsize & 0xFF);
 		tgtbuf = user->outbuf;
@@ -302,7 +302,7 @@ int InputConnection(User *user)
 
 	iSize = recv(user->fSock, user->inbuf, user->inbufmax - user->inbufsz, 0);
 
-	lprintf("Received %d bytes", iSize);
+	//lprintf("Received %d bytes", iSize);
 
 	if( iSize <= 0 ) {
 		lprintf("Read <=0 from recv()");

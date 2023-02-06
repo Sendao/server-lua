@@ -81,11 +81,11 @@ public class NetSocket : MonoBehaviour
     private BinaryWriter fileWriter;
     private Queue<FileData> fileQ = new Queue<FileData>(); // files to be read
 
-    private Dictionary<String, VarData> serverAssets;
-    private Dictionary<String, MonoBehaviour> loadingObjects;
-    private Dictionary<long, ObjData> serverObjects;
-    private Dictionary<long, MonoBehaviour> clientObjects;
-    private Dictionary<long, Rigidbody> clientBodies;
+    private Dictionary<String, VarData> serverAssets = new Dictionary<String, VarData>(); // file data for server files
+    private Dictionary<String, MonoBehaviour> loadingObjects = new Dictionary<String, MonoBehaviour>();
+    private Dictionary<long, ObjData> serverObjects = new Dictionary<long, ObjData>();
+    private Dictionary<long, MonoBehaviour> clientObjects = new Dictionary<long, MonoBehaviour>();
+    private Dictionary<long, Rigidbody> clientBodies = new Dictionary<long, Rigidbody>();
 
     private long last_game_time = 0;
     private long last_local_time = 0;
@@ -149,7 +149,6 @@ public class NetSocket : MonoBehaviour
         _recvThread.Start();
 
         SendMessage( SCommand.Register, null ); // authenticate (for now)
-        Debug.Log("Sent request");
     }
 
 
@@ -166,19 +165,13 @@ public class NetSocket : MonoBehaviour
         string name = "o" + objid + "_" + oname;
 
         loadingObjects[name] = obj;
-
         if( registered ) {
+            Debug.Log("Registering object " + name);
             NetStringBuilder sb = new NetStringBuilder();
             sb.AddString(name);
             sb.AddByte(0); // byte 0 specifies object type
             SendMessage(SCommand.IdentifyVar, sb.ptr);
         }
-    }
-
-    public void SendObject( Rigidbody rb, long objid )
-    {
-        NetStringBuilder sb = new NetStringBuilder();
-        sb.AddLong(objid);
     }
 
     public void ReadCurrentFileList()
@@ -214,11 +207,12 @@ public class NetSocket : MonoBehaviour
 
     public void SendObject( MonoBehaviour mb )
     {
-        CNetId cni = (CNetId)mb;
+        CNetId cni = (CNetId)mb.GetComponent<CNetId>();
         if( cni == null ) {
             Debug.Log("Object " + mb.name + " does not have a CNetId component");
             return;
         }
+        if( cni.id == -1 ) return; // can't send if it's not id'd yet
         NetStringBuilder sb = new NetStringBuilder();
 
         TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
@@ -228,6 +222,10 @@ public class NetSocket : MonoBehaviour
         sb.AddInt(ts_short);
 
         Rigidbody rb = mb.GetComponent<Rigidbody>();
+        if( rb == null ) {
+            Debug.Log("Object " + mb.name + " does not have a Rigidbody component");
+            return;
+        }
 
         sb.AddFloat( rb.position.x );
         sb.AddFloat( rb.position.y );
@@ -238,6 +236,7 @@ public class NetSocket : MonoBehaviour
         sb.AddFloat( rb.rotation.z );
         sb.AddFloat( rb.rotation.w );
 
+        Debug.Log("Sending object " + cni.id + " " + ts_short + " " + rb.position + " " + rb.rotation);
         SendMessage(SCommand.SetObjectPositionRotation, sb.ptr);
     }
 
@@ -253,7 +252,7 @@ public class NetSocket : MonoBehaviour
         }
         msg[1] = (byte)(len >> 8);
         msg[2] = (byte)(len & 0xFF);
-        Debug.Log("Encode len: " + len + " " + msg[1] + " " + msg[2]);
+        //Debug.Log("Encode len: " + len + " " + msg[1] + " " + msg[2]);
         send(msg);
 
         if( data != null )
@@ -274,7 +273,6 @@ public class NetSocket : MonoBehaviour
 
         foreach( byte[] data in res ) {
             stream = new NetStringReader(data);
-            Debug.Log("recv: " + data.Length);
             cmd = stream.ReadByte();
             stream.ReadInt(); // size
             switch( (CCommand)cmd ) {
@@ -282,7 +280,7 @@ public class NetSocket : MonoBehaviour
                     VarData v = new VarData();
                     v.name = stream.ReadString();
                     v.type = stream.ReadByte();
-                    v.objid = stream.ReadLongLong();
+                    v.objid = stream.ReadLong();
                     Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
                     serverAssets[v.name] = v;
                     if( !loadingObjects.ContainsKey(v.name) ) {
@@ -290,10 +288,11 @@ public class NetSocket : MonoBehaviour
                         break;
                     }
                     MonoBehaviour mb = loadingObjects[v.name];
-                    CNetId cni = null;
-                    if( mb is CNetId ) {
-                        cni = (CNetId)mb;
+                    CNetId cni = mb.GetComponent<CNetId>();
+                    if( cni != null ) {
                         cni.id = v.objid;
+                    } else {
+                        Debug.Log("Object " + v.name + " does not have a CNetId component");
                     }
                     clientObjects[v.objid] = mb;
                     Rigidbody rb = mb.GetComponent<Rigidbody>();
@@ -326,7 +325,6 @@ public class NetSocket : MonoBehaviour
                     Debug.Log("LinkToObject");
                     break;
                 case CCommand.SetObjectPositionRotation:
-                    Debug.Log("SetObjectPositionRotation");
                     SetObjectPositionRotation(stream);
                     break;
                 case CCommand.RegisterUser: // Register User
@@ -338,7 +336,9 @@ public class NetSocket : MonoBehaviour
                     SendMessage( SCommand.GetFileList, null ); // request file list
                     registered = true;
                     // request variable idents
+                    Debug.Log("Logged in");
                     foreach( string key in loadingObjects.Keys ) {
+                        Debug.Log("Registering object " + key);
                         NetStringBuilder sb = new NetStringBuilder();
                         sb.AddString(key);
                         sb.AddByte(0);
@@ -383,8 +383,6 @@ public class NetSocket : MonoBehaviour
 
     public void GotEndOfFileList(NetStringReader stream)
     {
-        Debug.Log("EndOfFileList");
-
         if( !readingFiles ) {
             GetObjects();
         }
@@ -392,10 +390,9 @@ public class NetSocket : MonoBehaviour
 
     public void GotNextFile(NetStringReader stream)
     {
-        Debug.Log("EndOfFile");
         if( fileQ.Count > 0 ) {
             readingFile = fileQ.Dequeue();
-            Debug.Log("Next: file " + readingFile.filename);
+            //Debug.Log("Next: file " + readingFile.filename);
             // open the streamwriter
             if( File.Exists("Assets\\StreamingAssets\\" + readingFile.filename) )
                 File.Delete("Assets\\StreamingAssets\\" + readingFile.filename);
@@ -409,7 +406,6 @@ public class NetSocket : MonoBehaviour
 
     public void GotFileData(NetStringReader stream)
     {
-        Debug.Log("FileData");
         if( !readingFiles ) {
             Debug.Log("Got file data but no file is being read");
             return;
@@ -428,15 +424,14 @@ public class NetSocket : MonoBehaviour
         //NetStringBuilder sb;
         byte[] buf;
 
-        Debug.Log("FileInfo");
         filename = stream.ReadString();
         filesize = stream.ReadLongLong();
         filetime = stream.ReadLongLong();
-        Debug.Log("FileInfo " + filename + ": size=" + filesize + ", time=" + filetime);
+        //Debug.Log("FileInfo " + filename + ": size=" + filesize + ", time=" + filetime);
 
         if( localAssets.ContainsKey(filename) ) {
             FileData fi = localAssets[filename];
-            if( fi.filesize != filesize || fi.filetime != filetime ) {
+            if( fi.filesize != filesize || fi.filetime < filetime ) {
                 // file has changed, request it
                 Debug.Log("File " + filename + " has changed from filetime " + fi.filetime + ", requesting");
                 buf = new byte[filename.Length];
@@ -451,8 +446,6 @@ public class NetSocket : MonoBehaviour
                 }
                 SendMessage( SCommand.GetFile, buf );
                 fi.contents = null;
-            } else {
-                Debug.Log("Duplicate file " + filename + " found, skipping");
             }
         } else {
             // file is new, request it + save info
@@ -522,17 +515,17 @@ public class NetSocket : MonoBehaviour
                         ws.Send(idhead);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
-                            int i;
-                            string str = "";
-                            for( i=0; i<data.Length; i++ ) {
-                                str += (int)data[i] + " ";
-                            }
-                            Debug.Log("Sending: " + data.Length + ": " + str);
+                            //int i;
+                            //string str = "";
+                            //for( i=0; i<data.Length; i++ ) {
+                            //    str += (int)data[i] + " ";
+                            //}
+                            //Debug.Log("Sending: " + data.Length + ": " + str);
                             ws.Send(data);
                         }
                         data = null;  // don't hold onto the data
                     } else {
-                        Debug.Log("Compressing " + totalSize + " bytes");
+                        //Debug.Log("Compressing " + totalSize + " bytes");
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)255;
                         ws.Send(idhead);
@@ -553,7 +546,7 @@ public class NetSocket : MonoBehaviour
                         data = null;  // don't hold onto the data
                         zipStream.Close();
                         byte[] compressedData = compressedStream.ToArray();
-                        Debug.Log("Compressed to " + compressedData.Length + " bytes");
+                        //Debug.Log("Compressed to " + compressedData.Length + " bytes");
                         ws.Send(compressedData);
                     }
                 }
@@ -583,7 +576,7 @@ public class NetSocket : MonoBehaviour
         while (true)
         {
             int recv = ws.Receive(readbuffer, readlen, 1024, SocketFlags.None);
-            Debug.Log("Received " + recv + " bytes");
+            //Debug.Log("Received " + recv + " bytes");
             if( recv <= 0 ) {
                 Debug.Log("Connection closed");
                 break;
@@ -603,10 +596,10 @@ public class NetSocket : MonoBehaviour
                         readbuffer[ptr+3] << 8 |
                         readbuffer[ptr+4];
                     if( ptr+5+compressedSize > readlen ) {
-                        Debug.Log("Compressed size: " + compressedSize + " not ready yet.");
+                        //Debug.Log("Compressed size: " + compressedSize + " not ready yet.");
                         break;
                     }
-                    Debug.Log("Compressed size: " + compressedSize + ", buffer size: " + readlen + ", readbuffers: " + readbuffer[ptr+1] + ", " + readbuffer[ptr+2] + ", " + readbuffer[ptr+3] + ", " + readbuffer[ptr+4] + ", " + readbuffer[ptr+5] + ", " + readbuffer[ptr+6]);
+                    //Debug.Log("Compressed size: " + compressedSize + ", buffer size: " + readlen + ", readbuffers: " + readbuffer[ptr+1] + ", " + readbuffer[ptr+2] + ", " + readbuffer[ptr+3] + ", " + readbuffer[ptr+4] + ", " + readbuffer[ptr+5] + ", " + readbuffer[ptr+6]);
                     ptr += 5;
 
                     var compressedStream = new MemoryStream(readbuffer, ptr, compressedSize);
@@ -617,7 +610,7 @@ public class NetSocket : MonoBehaviour
                     decompressedStream.Close();
                     byte[] decompressedData = decompressedStream.ToArray();
 
-                    Debug.Log("Decompressed, Size: " + decompressedData.Length + ", CRC32: " + crc32(decompressedData));
+                    //Debug.Log("Decompressed, Size: " + decompressedData.Length + ", CRC32: " + crc32(decompressedData));
 
                     ptr += (int)compressedSize;
 
@@ -634,7 +627,7 @@ public class NetSocket : MonoBehaviour
                         tmpbuf[0] = cmdByte;
                         tmpbuf[1] = decompressedData[deptr-2];
                         tmpbuf[2] = decompressedData[deptr-1];
-                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
+                        //Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
                         if( smallSize != 0 )
                             Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                         lock (_recvQLock)
@@ -644,7 +637,7 @@ public class NetSocket : MonoBehaviour
                         deptr += smallSize;
                     }
                 } else if( ptr+id > readlen ) {
-                    Debug.Log("Not enough data to read: " + ptr + " + " + id + " > " + readlen);
+                    //Debug.Log("Not enough data to read: " + ptr + " + " + id + " > " + readlen);
                     break;
                 } else {
                     ptr++;
@@ -659,7 +652,7 @@ public class NetSocket : MonoBehaviour
                         tmpbuf[2] = readbuffer[ptr-1];
                         if( smallSize != 0 )
                             Array.Copy(readbuffer, ptr, tmpbuf, 3, smallSize);
-                        Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + ": " + tmpbuf.Length);
+                        //Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + ": " + tmpbuf.Length);
                         ptr += smallSize;
                         lock (_recvQLock)
                         {

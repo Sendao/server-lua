@@ -81,7 +81,7 @@ void User::ProcessMessages(void)
 	string buf;
 	int x;
 
-	lprintf("Process %d messages", (int)messages.size());
+	//lprintf("Process %d messages", (int)messages.size());
 
 	for( it=messages.begin(); it != messages.end(); it++ ) {
 		ptr = *it;
@@ -89,7 +89,7 @@ void User::ProcessMessages(void)
 		sz = (*(ptr+1) << 8) | (*(ptr+2)&0xFF);
 		ptr += 3;
 		if( commands[code] != NULL ) {
-			lprintf("Found code %d length %lld", (int)code, sz);
+			//lprintf("Found code %d length %lld", (int)code, sz);
 			std::bind( commands[code], this, _1, _2 )( ptr, sz );
 		}
 		strmem->Free( *it, sz+3 );
@@ -253,10 +253,12 @@ void User::ClockSync( char *data, long sz )
 void User::IdentifyVar( char *data, long sz )
 {
 	char *name;
-	int type;
+	char type;
 
-	sunpackf(data, "sc", &name, type);
-	game->IdentifyVar( name, type, this );
+	sunpackf(data, "sc", &name, &type);
+	lprintf("IdentifyVar(%s data size: %ld)", name, sz);
+	game->IdentifyVar( name, (int)type, this );
+	strmem->Free(name, strlen(name)+1);
 }
 
 void User::SetVar( char *data, long sz )
@@ -338,7 +340,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	obj->r3 = r3;
 	obj->last_update = this->last_update + (long long)timestamp_short;
 
-	lprintf("Update %llu", objid);
+	//lprintf("Update %llu", objid);
 
 	char *buf;
 	u_long alloced;

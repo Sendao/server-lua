@@ -286,7 +286,7 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 		switch( *fmt++ )
 		{
 			case 'c':
-				c = (char*)va_arg(args, int*);
+				c = (char*)va_arg(args, char*);
 				*c = *buffer;
 				buffer++;
 				continue;
@@ -318,14 +318,19 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 's':
 				mylen = *buffer << 8 | *(buffer+1);
-				buffer += 2;
+				buffer += 2;/*
+				lprintf("str at %s, mylen: %d", buffer, mylen);
+				for( int j = 0; j < mylen; j++ ) {
+					lprintf("pt %c %d", *(buffer+j), (int)*(buffer+j));
+				}
+				lprintf("mylen now: %d", mylen);*/
 				s = (char**)va_arg(args, char**);
 				*s = strmem->Alloc(mylen+1);
 				if( mylen != 0 ) {
 					strncpy(*s, buffer, mylen);
 					buffer += mylen;
 				}
-				*(s[mylen]) = '\0';
+				(*s)[mylen] = '\0';
 				continue;
 			case 'V':
 				len = va_arg(args, unsigned long*);

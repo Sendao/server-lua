@@ -90,8 +90,8 @@ void Game::mainloop()
 			per.tv_sec = 0; // run immediately if there is data to process
 			per.tv_usec = 0;
 		} else {
-			per.tv_sec = 5; // wait up to 5 seconds if no users are doing anything
 			per.tv_usec = 0;
+			per.tv_sec = 10-(this_cycle.tv_sec-prev_cycle.tv_sec);// wait up to 10 seconds if no users are doing anything
 		}
 		usetv = &per;
 		FD_ZERO(&fdI);
@@ -195,10 +195,14 @@ void Game::mainloop()
 		game->dirtyset.clear();
 
 		// Send clocksync
-		game->last_timestamp = this_cycle.tv_sec*1000 + this_cycle.tv_usec;
-		tmpsize = spackf(&buf, &packsz, "L", game->last_timestamp);
-		game->SendMsg(CCmdTimeSync, tmpsize, buf, NULL);
-		strmem->Free(buf, packsz);
+		if( this_cycle.tv_sec >= prev_cycle.tv_sec+10 ) {
+			game->last_timestamp = this_cycle.tv_sec*1000 + this_cycle.tv_usec;
+			tmpsize = spackf(&buf, &packsz, "L", game->last_timestamp);
+			game->SendMsg(CCmdTimeSync, tmpsize, buf, NULL);
+			strmem->Free(buf, packsz);
+			prev_cycle = this_cycle;
+		}
+		
 
 		// Process output
 		zerotime.tv_usec = zerotime.tv_sec = 0;
@@ -311,7 +315,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	it = game->varmap.find(name);
 	if( it != game->varmap.end() ) {
 		v = it->second;
-		size = spackf(&buf, &alloced, "scl", name, 0, v->objid );
+		size = spackf(&buf, &alloced, "scl", name, type, v->objid );
 		sender->SendMsg( CCmdVarInfo, size, buf );
 
 		if( v->type == 0 ) { // it's an object
@@ -324,7 +328,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 			sender->SendMsg( CCmdSetObjectPositionRotation, size, buf );
 		}
 	} else {
-		size = spackf(&buf, &alloced, "scl", name, 0, game->top_var_id );
+		size = spackf(&buf, &alloced, "scl", name, type, game->top_var_id );
 		game->SendMsg( CCmdVarInfo, size, buf, NULL );
 
 		v = (VarData*)halloc(sizeof(VarData));
@@ -336,7 +340,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 			o = (Object*)halloc(sizeof(Object));
 			new(o) Object();
 			o->uid = v->objid;
-			o->name = name;
+			o->name = str_copy(name);
 			game->objects[o->uid] = o;
 		}
 		

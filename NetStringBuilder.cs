@@ -67,7 +67,6 @@ public class NetStringBuilder
             AllocMore();
         }
         byte[] x = System.BitConverter.GetBytes(value);
-        Debug.Log("Adding float: " + x.Length + " bytes.");
         x.CopyTo(ptr, used);
         used += 4;
     }
@@ -78,7 +77,7 @@ public class NetStringBuilder
             AllocMore();
         ptr[used+0] = (byte)((len>>8) & 0xff);
         ptr[used+1] = (byte)(len&0xFF);
-        System.Buffer.BlockCopy(str.ToCharArray(), 0, ptr, used+2, len);
+        System.Buffer.BlockCopy(System.Text.Encoding.ASCII.GetBytes(str), 0, ptr, used+2, len);
         used += len+2;
     }
 }
