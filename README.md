@@ -4,10 +4,7 @@ Contains no actual LUA.
 
 
 # Next up:
-
-- add modified-time to fileinfo packet
-- file i/o
-- transfer missing/modified files when client connects
+- rigid body movement
 
 # Completed:
 
@@ -15,6 +12,9 @@ Contains no actual LUA.
 - stream compression
 - file listing
 - basic lua interface
+- file i/o
+- basic packeting
+- authoritative client
 
 # MinGW Instructions:
 
