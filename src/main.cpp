@@ -292,10 +292,10 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	it = game->varmap.find(name);
 	if( it != game->varmap.end() ) {
 		v = it->second;
-		size = spackf(&buf, &alloced, "sl", name, v->objid );
+		size = spackf(&buf, &alloced, "scl", name, 0, v->objid );
 		sender->SendMsg( 0, size, buf );
 	} else {
-		size = spackf(&buf, &alloced, "sl", name, game->top_var_id );
+		size = spackf(&buf, &alloced, "scl", name, 0, game->top_var_id );
 		game->SendMsg( 0, size, buf, NULL );
 		
 		v = (VarData*)halloc(sizeof(VarData));

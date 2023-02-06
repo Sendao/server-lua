@@ -467,7 +467,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					ilen = 0;
 				else
 					ilen = (unsigned int)strlen(s);
-				while( bufsz+sizeof(int)+ilen >= *alloced ) {
+				while( bufsz+2+ilen >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
 					buffer = buf + bufsz;

@@ -256,6 +256,8 @@ void User::IdentifyVar( char *data, long sz )
 	sunpackf(data, "sc", &name, type);
 	game->IdentifyVar( name, type, this );
 
+	//! Send any additional data about the object?
+
 }
 
 void User::SetVar( char *data, long sz )

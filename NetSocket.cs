@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 
 public class NetSocket : MonoBehaviour
 {

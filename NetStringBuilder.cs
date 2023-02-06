@@ -7,93 +7,79 @@ using UnityEngine;
 
 public class NetStringBuilder
 {
-    unsafe public byte *memory;
-    unsafe byte *ptr;
+    byte[] ptr;
     public int alloced;
     public int used;
 
     public NetStringBuilder(int size) {
         alloced = size;
         used = 0;
-        unsafe
-        {
-            memory = (byte*)UnsafeUtility.Malloc(size, 4, Allocator.Persistent);
-            ptr = memory;
-        }
-    }
-
-    public void Dispose() {
-        unsafe
-        {
-            UnsafeUtility.Free(memory, Allocator.Persistent);
-        }
+        ptr = new byte[size];
     }
 
     public void AllocMore() {
         int old = alloced;
         alloced *= 2;
-        unsafe
-        {
-            byte *newmem = (byte*)UnsafeUtility.Malloc(alloced, 4, Allocator.Persistent);
-            UnsafeUtility.MemCpy(newmem, memory, old);
-            UnsafeUtility.Free(memory, Allocator.Persistent);
-            memory = newmem;
-            ptr = memory + used;
-        }
+
+        byte[] newmem = new byte[alloced];
+        System.Buffer.BlockCopy(ptr, 0, newmem, 0, old);
+        ptr = newmem;
+    }
+
+    public void AddLongLong(long value) {
+        if( used+8 > alloced )
+            AllocMore();
+        
+        ptr[used+0] = (byte)((value>>56) & 0xff);
+        ptr[used+1] = (byte)((value>>48) & 0xff);
+        ptr[used+2] = (byte)((value>>40) & 0xff);
+        ptr[used+3] = (byte)((value>>32) & 0xff);
+        ptr[used+4] = (byte)((value>>24) & 0xff);
+        ptr[used+5] = (byte)((value>>16) & 0xff);
+        ptr[used+6] = (byte)((value>>8) & 0xff);
+        ptr[used+7] = (byte)(value&0xFF);
+        used += 8;
     }
 
     public void AddLong(long value) {
-        if( used+sizeof(long) > alloced ) {
+        if( used+4 > alloced )
             AllocMore();
-        }
-        unsafe
-        {
-            *(long*)ptr = value;
-            ptr += sizeof(long);
-        }
-        used += sizeof(long);
+        ptr[used+0] = (byte)((value>>24) & 0xff);
+        ptr[used+1] = (byte)((value>>16) & 0xff);
+        ptr[used+2] = (byte)((value>>8) & 0xff);
+        ptr[used+3] = (byte)(value&0xFF);
+        used += 4;
     }
     public void AddInt(int value) {
-        if( used+sizeof(int) > alloced ) {
+        if( used+2 > alloced )
             AllocMore();
-        }
-        unsafe
-        {
-            *ptr = (byte)((value>>8) & 0xff);
-            ptr++;
-            *ptr = (byte)(value&0xFF);
-            ptr++;
-        }
+        ptr[used+0] = (byte)((value>>8) & 0xff);
+        ptr[used+1] = (byte)(value&0xFF);
         used += 2;
     }
+    public void AddByte(byte value) {
+        if( used+1 > alloced )
+            AllocMore();
+        ptr[used] = value;
+        used += 1;
+    }
     public void AddFloat(float value) {
-        if( used+sizeof(float) > alloced ) {
+        if( used+4 > alloced ) {
             AllocMore();
         }
-        unsafe
-        {
-            *(float*)ptr = value;
-            ptr += sizeof(float);
-        }
-        used += sizeof(float);
+        byte[] x = System.BitConverter.GetBytes(value);
+        Debug.Log("Adding float: " + x.Length + " bytes.");
+        x.CopyTo(ptr, used);
+        used += 4;
     }
 
     public void AddString(string str) {
         int len = str.Length;
-        if( used+sizeof(int)+len > alloced ) {
+        if( used+2+len > alloced )
             AllocMore();
-        }
-        unsafe
-        {
-            *ptr = (byte)((len>>8) & 0xff);
-            *(ptr+1) = (byte)(len&0xFF);
-            ptr += 2;
-            fixed (char* p = str)
-            {
-                UnsafeUtility.MemCpy(ptr, p, len * 2);
-                ptr += len * 2;
-            }
-        }
-        used += len + sizeof(int);
+        ptr[used+0] = (byte)((len>>8) & 0xff);
+        ptr[used+1] = (byte)(len&0xFF);
+        System.Buffer.BlockCopy(str.ToCharArray(), 0, ptr, used+2, len);
+        used += len+2;
     }
 }
