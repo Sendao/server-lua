@@ -349,8 +349,6 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	obj->r3 = r3;
 	obj->last_update = this->last_update + (long long)timestamp_short;
 
-	//lprintf("Update %llu", objid);
-
 	char *buf;
 	u_long alloced;
 	long size;
@@ -361,7 +359,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 
 	game->SendMsg( CCmdSetObjectPositionRotation, size, buf, this );
 	strmem->Free( buf, alloced );
-	lprintf("Updated %llu, rotation set to %f %f %f %f", objid, r0, r1, r2, r3);
+	lprintf("Updated %llu: %f %f %f rotation set to %f %f %f %f", objid, x, y, z, r0, r1, r2, r3);
 }
 
 void User::Register( char *data, long sz )

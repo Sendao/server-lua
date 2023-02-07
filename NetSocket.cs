@@ -178,7 +178,7 @@ public class NetSocket : MonoBehaviour
     public void ReadCurrentFileList()
     {
         // read directory
-        string[] files = Directory.GetFiles("Assets/ServerFiles");
+        string[] files = Directory.GetFiles("ServerFiles");
         foreach( string file in files ) {
             FileInfo fx = new System.IO.FileInfo(file);
 
@@ -412,9 +412,9 @@ public class NetSocket : MonoBehaviour
             readingFile = fileQ.Dequeue();
             //Debug.Log("Next: file " + readingFile.filename);
             // open the streamwriter
-            if( File.Exists("Assets\\ServerFiles\\" + readingFile.filename) )
-                File.Delete("Assets\\ServerFiles\\" + readingFile.filename);
-            fileWriter = new BinaryWriter(File.Create("Assets\\ServerFiles\\" + readingFile.filename));
+            if( File.Exists("ServerFiles\\" + readingFile.filename) )
+                File.Delete("ServerFiles\\" + readingFile.filename);
+            fileWriter = new BinaryWriter(File.Create("ServerFiles\\" + readingFile.filename));
         } else {
             readingFiles = false;
             fileWriter = null;
@@ -457,8 +457,8 @@ public class NetSocket : MonoBehaviour
                 System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
                 if( !readingFiles ) {
                     readingFile = fi;
-                    File.Delete("Assets\\ServerFiles\\" + readingFile.filename);
-                    fileWriter = new BinaryWriter(File.Create("Assets\\ServerFiles\\" + readingFile.filename));
+                    File.Delete("ServerFiles\\" + readingFile.filename);
+                    fileWriter = new BinaryWriter(File.Create("ServerFiles\\" + readingFile.filename));
                     readingFiles = true;
                 } else {
                     fileQ.Enqueue(fi);
@@ -479,7 +479,7 @@ public class NetSocket : MonoBehaviour
             System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
             if( !readingFiles ) {
                 readingFile = fi;
-                fileWriter = new BinaryWriter(File.Create("Assets\\ServerFiles\\" + readingFile.filename));
+                fileWriter = new BinaryWriter(File.Create("ServerFiles\\" + readingFile.filename));
                 readingFiles = true;
             } else {
                 fileQ.Enqueue(fi);
@@ -549,23 +549,25 @@ public class NetSocket : MonoBehaviour
                         idhead[0] = (byte)255;
                         ws.Send(idhead);
 
-                        byte[] sizehead = new byte[4];
-                        sizehead[0] = (byte)(totalSize >> 24);
-                        sizehead[1] = (byte)(totalSize >> 16);
-                        sizehead[2] = (byte)(totalSize >> 8);
-                        sizehead[3] = (byte)(totalSize);
-                        ws.Send(sizehead);
-
                         var compressedStream = new MemoryStream();
-                        var zipStream = new GZipStream(compressedStream, CompressionMode.Compress);
+                        var zipStream = new GZipStream(compressedStream, CompressionMode.Compress, true);
                         while( sendQ.Count > 0 ) {
                             data = sendQ.Dequeue();
                             zipStream.Write(data, 0, data.Length);
                         }
                         data = null;  // don't hold onto the data
                         zipStream.Close();
-                        byte[] compressedData = compressedStream.ToArray();
+                        compressedStream.Position = 0;
+                        byte[] compressedData = new byte[compressedStream.Length];
+                        compressedStream.Read(compressedData, 0, (int)compressedData.Length);
                         //Debug.Log("Compressed to " + compressedData.Length + " bytes");
+                        long compSize = compressedData.Length;
+                        byte[] sizehead = new byte[4];
+                        sizehead[0] = (byte)(compSize >> 24);
+                        sizehead[1] = (byte)(compSize >> 16);
+                        sizehead[2] = (byte)(compSize >> 8);
+                        sizehead[3] = (byte)(compSize);
+                        ws.Send(sizehead);
                         ws.Send(compressedData);
                     }
                 }

@@ -322,7 +322,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 				o = game->objects[v->objid];
 				ts_short = o->last_update - game->last_timestamp;
 
-				lprintf("First time update obj %s rotation %f %f %f %f", v->name, o->r0, o->r1, o->r2, o->r3);
+				lprintf("First time update obj %s: %f %f %f rotation %f %f %f %f", v->name, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3);
 
 				strmem->Free( buf, alloced );
 				size = spackf(&buf, &alloced, "lifffffff", o->uid, ts_short, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3 );
