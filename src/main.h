@@ -67,7 +67,8 @@ enum {
 	CCmdTimeSync,
 	CCmdLinkToObject,
 	CCmdSetObjectPositionRotation,
-	CCmdRegisterUser
+	CCmdRegisterUser,
+	CCmdChangeUserRegistration
 };
 
 // lua.cpp
@@ -108,6 +109,7 @@ int InputConnection(User *);
 void Output(User *, const char *, unsigned long);
 void Input(User *);
 extern int fSock;
+extern bool firstUser;
 
 // system.cpp
 void GetFileList(void);
@@ -169,6 +171,7 @@ class Game
 	void IdentifyVar( char *name, int type, User *sender );
 	Object *FindObject( u_long uid );
 	void SendMsg( char cmd, unsigned int size, char *data, User *exclude=NULL );
+	void PickNewAuthority( void );
 };
 extern Game *game;
 
@@ -227,6 +230,7 @@ class User
 	long long last_update;
 
 	public:
+	void Close(void);
 	void ProcessMessages(void);
 	void SendMsg( char cmd, unsigned int size, char *data );
 

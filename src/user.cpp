@@ -60,6 +60,15 @@ User::~User(void)
 	messages.clear();
 }
 
+void User::Close( void )
+{
+	if( authority ) {
+		game->PickNewAuthority();
+	}
+	if( fSock != -1 )
+		close( fSock );
+}
+
 void User::SendMsg( char cmd, unsigned int size, char *data )
 {
 	char *buf=NULL;
@@ -349,8 +358,10 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	timestamp_short = (int)(obj->last_update - game->last_timestamp);
 
 	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
-	game->SendMsg( CCmdSetObjectPositionRotation, size, buf );
+
+	game->SendMsg( CCmdSetObjectPositionRotation, size, buf, this );
 	strmem->Free( buf, alloced );
+	lprintf("Updated %llu, rotation set to %f %f %f %f", objid, r0, r1, r2, r3);
 }
 
 void User::Register( char *data, long sz )

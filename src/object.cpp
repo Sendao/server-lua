@@ -3,7 +3,7 @@
 Object::Object()
 {
 	x=y=z=0;
-	r0=r1=r2=0;
+	r0=r1=r2=r3=0;
 	last_update=0;
 }
 

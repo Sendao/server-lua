@@ -112,11 +112,12 @@ User *InitConnection(void)
 	user->fSock = fUser;
 	user->authority = firstUser ? true : false;
 	firstUser=false;
+
 	char *ntoa = inet_ntoa(saConn.sin_addr);
 	user->sHost = strmem->Alloc( strlen(ntoa)+1 );
 	strcpy(user->sHost, ntoa);
 	sscanf(user->sHost, "%d.%d.%d.%d", &user->iHost[0], &user->iHost[1], &user->iHost[2], &user->iHost[3]);
-	lprintf("Got connection from %d.%d.%d.%d", user->iHost[0], user->iHost[1], user->iHost[2], user->iHost[3]);
+	lprintf("Got %s connection from %d.%d.%d.%d", user->authority ? "host" : "client", user->iHost[0], user->iHost[1], user->iHost[2], user->iHost[3]);
 
 	return user;
 }
@@ -347,6 +348,7 @@ int InputConnection(User *user)
 			status = inflateInit2(&strm, 15|16);
 			strm.avail_in = sz;
 			strm.next_in = (unsigned char*)p;
+			failed = false;
 			do {
 				strm.avail_out = 1024;
 				strm.next_out = out;
@@ -416,15 +418,18 @@ int InputConnection(User *user)
 					}
 				} while( subptr != subend2 );
 
-			} while( strm.avail_out == 0 );
+			} while( !failed && strm.avail_out == 0 );
 
-			inflateEnd(&strm);
 			if( leftover ) {
 				strmem->Free( leftover, leftover_sz );
 				leftover = NULL;
 				leftover_sz = 0;
 			}
 			p += sz;
+
+			if( failed ) break;
+
+			inflateEnd(&strm);
 
 		} else if( p+ctl >= user->inbuf ) {
 			// not enough data in the buffer to read the packet
@@ -450,6 +455,8 @@ int InputConnection(User *user)
 			}
 		}
 	}
+	if( failed )
+		return -1;
 
 	if( p != user->inbuf_memory ) { // we have read some data so we need to trim the input buffer
 		sz = p - user->inbuf_memory;

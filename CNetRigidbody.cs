@@ -18,7 +18,7 @@ public class CNetRigidbody : MonoBehaviour
 	{
 		if( NetSocket.instance.authoritative )
 		{
-			if( rb.isKinematic )
+			if( rb.isKinematic && Input.GetKeyDown("space") )
 				rb.isKinematic = false;
 
 			// We are authoritative, so we need to send our position to the server

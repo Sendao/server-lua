@@ -132,11 +132,12 @@ void Game::mainloop()
 			{
 				lprintf("Socket exception: dropped connection");
 				lprintf("recv() error: %s", GetSocketError(user->fSock));
-				lsock = user->fSock;
+				FD_CLR(user->fSock, &fdI);
+				FD_CLR(user->fSock, &fdO);
 				sock_close(lsock);
-				FD_CLR(lsock, &fdI);
-				FD_CLR(lsock, &fdO);
+				user->fSock = -1;
 				ituser = userL.erase(ituser);
+				user->Close();
 				hfree(user, sizeof(User));
 				continue;
 			}
@@ -146,11 +147,10 @@ void Game::mainloop()
 				{	// user broke connection
 					lprintf("Input<0: client dropped connection");
 					lprintf("socket error: %s", GetSocketError(user->fSock));
-					/* No need apparently for this:
-					lsock = user->fSock;
-					sock_close(lsock);*/
-					FD_CLR(lsock, &fdO);
+					user->fSock = -1;
+					FD_CLR(user->fSock, &fdO);
 					ituser = userL.erase(ituser);
+					user->Close();
 					hfree(user, sizeof(User));
 					continue;
 				} else if( user->messages.size() > 0 ) {
@@ -255,10 +255,8 @@ void Game::mainloop()
 					if( OutputConnection(user) < 0 || user->bQuitting )
 					{
 						lprintf("connection close: quitting");
-						lsock = user->fSock;
-						sock_close(lsock);
-
 						ituser = userL.erase(ituser);
+						user->Close();
 						hfree(user, sizeof(User));
 						continue;
 					}
@@ -320,19 +318,23 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 
 		if( v->type == 0 ) { // it's an object
 		// send obj info
-			o = game->objects[v->objid];
-			ts_short = o->last_update - game->last_timestamp;
+			if( o->last_update != 0 ) {
+				o = game->objects[v->objid];
+				ts_short = o->last_update - game->last_timestamp;
 
-			strmem->Free( buf, alloced );
-			size = spackf(&buf, &alloced, "lifffffff", o->uid, ts_short, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3 );
-			sender->SendMsg( CCmdSetObjectPositionRotation, size, buf );
+				lprintf("First time update obj %s rotation %f %f %f %f", v->name, o->r0, o->r1, o->r2, o->r3);
+
+				strmem->Free( buf, alloced );
+				size = spackf(&buf, &alloced, "lifffffff", o->uid, ts_short, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3 );
+				sender->SendMsg( CCmdSetObjectPositionRotation, size, buf );
+			}
 		}
 	} else {
 		size = spackf(&buf, &alloced, "scl", name, type, game->top_var_id );
 		game->SendMsg( CCmdVarInfo, size, buf, NULL );
 
 		v = (VarData*)halloc(sizeof(VarData));
-		v->name = name;
+		v->name = str_copy(name);
 		v->objid = game->top_var_id;
 		v->type = type;
 
@@ -381,4 +383,25 @@ void Game::SendMsg( char cmd, unsigned int size, char *data, User *exclude )
 	}
 	strmem->Free(buf, alloced);
 	
+}
+void Game::PickNewAuthority( void )
+{
+	vector<User*>::iterator ituser;
+
+	ituser = userL.begin();
+	if( ituser == userL.end() ) {
+		lprintf("No users, waiting for host.");
+		firstUser = true;
+		// no users found
+		return;
+	}
+	lprintf("Changing host.");
+	User *user = *ituser;
+	char *buf;
+	u_long alloced;
+	long size;
+	user->authority = true;
+	size = spackf(&buf, &alloced, "c", 1 );
+	user->SendMsg( CCmdChangeUserRegistration, size, buf );
+	strmem->Free( buf, alloced );
 }

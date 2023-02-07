@@ -31,7 +31,8 @@ public enum CCommand {
     TimeSync,
     LinkToObject,
     SetObjectPositionRotation,
-    RegisterUser
+    RegisterUser,
+    ChangeUserRegistration
 };
 
 public class NetSocket : MonoBehaviour
@@ -161,8 +162,8 @@ public class NetSocket : MonoBehaviour
         }
 
         GameObject go = obj.gameObject;
-        int objid = go.GetInstanceID();
-        string name = "o" + objid + "_" + oname;
+        //int objid = go.GetInstanceID();
+        string name = "o_" + oname;
 
         loadingObjects[name] = obj;
         if( registered ) {
@@ -177,7 +178,7 @@ public class NetSocket : MonoBehaviour
     public void ReadCurrentFileList()
     {
         // read directory
-        string[] files = Directory.GetFiles("Assets/StreamingAssets");
+        string[] files = Directory.GetFiles("Assets/ServerFiles");
         foreach( string file in files ) {
             FileInfo fx = new System.IO.FileInfo(file);
 
@@ -269,6 +270,7 @@ public class NetSocket : MonoBehaviour
     public void Process() {
         IList<byte[]> res = recv();
         NetStringReader stream;
+        Rigidbody rb;
         int cmd;
 
         foreach( byte[] data in res ) {
@@ -295,7 +297,7 @@ public class NetSocket : MonoBehaviour
                         Debug.Log("Object " + v.name + " does not have a CNetId component");
                     }
                     clientObjects[v.objid] = mb;
-                    Rigidbody rb = mb.GetComponent<Rigidbody>();
+                    rb = mb.GetComponent<Rigidbody>();
                     if( rb != null ) {
                         clientBodies[v.objid] = rb;
                     }
@@ -325,6 +327,7 @@ public class NetSocket : MonoBehaviour
                     Debug.Log("LinkToObject");
                     break;
                 case CCommand.SetObjectPositionRotation:
+                    Debug.Log("SetObjectPositionRotation");
                     SetObjectPositionRotation(stream);
                     break;
                 case CCommand.RegisterUser: // Register User
@@ -343,6 +346,19 @@ public class NetSocket : MonoBehaviour
                         sb.AddString(key);
                         sb.AddByte(0);
                         SendMessage( SCommand.IdentifyVar, sb.ptr );
+                    }
+                    break;
+                case CCommand.ChangeUserRegistration:
+                    if( stream.ReadByte() == 0 ) {
+                        authoritative = false;
+                    } else {
+                        authoritative = true;
+                    }
+                    if( !authoritative ) {
+                        foreach( long key in clientBodies.Keys ) {
+                            rb = clientBodies[key];
+                            rb.isKinematic = !authoritative;
+                        }
                     }
                     break;
             }
@@ -376,6 +392,8 @@ public class NetSocket : MonoBehaviour
         r2 = stream.ReadFloat();
         r3 = stream.ReadFloat();
 
+        Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
+
         Rigidbody rb = clientBodies[objid];
         rb.MovePosition(new Vector3(x,y,z));
         rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
@@ -394,11 +412,12 @@ public class NetSocket : MonoBehaviour
             readingFile = fileQ.Dequeue();
             //Debug.Log("Next: file " + readingFile.filename);
             // open the streamwriter
-            if( File.Exists("Assets\\StreamingAssets\\" + readingFile.filename) )
-                File.Delete("Assets\\StreamingAssets\\" + readingFile.filename);
-            fileWriter = new BinaryWriter(File.Create("Assets\\StreamingAssets\\" + readingFile.filename));
+            if( File.Exists("Assets\\ServerFiles\\" + readingFile.filename) )
+                File.Delete("Assets\\ServerFiles\\" + readingFile.filename);
+            fileWriter = new BinaryWriter(File.Create("Assets\\ServerFiles\\" + readingFile.filename));
         } else {
             readingFiles = false;
+            fileWriter = null;
             Debug.Log("End of files");
             GetObjects();
         }
@@ -438,8 +457,8 @@ public class NetSocket : MonoBehaviour
                 System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
                 if( !readingFiles ) {
                     readingFile = fi;
-                    File.Delete("Assets\\StreamingAssets\\" + readingFile.filename);
-                    fileWriter = new BinaryWriter(File.Create("Assets\\StreamingAssets\\" + readingFile.filename));
+                    File.Delete("Assets\\ServerFiles\\" + readingFile.filename);
+                    fileWriter = new BinaryWriter(File.Create("Assets\\ServerFiles\\" + readingFile.filename));
                     readingFiles = true;
                 } else {
                     fileQ.Enqueue(fi);
@@ -460,7 +479,7 @@ public class NetSocket : MonoBehaviour
             System.Text.Encoding.ASCII.GetBytes(filename, 0, filename.Length, buf, 0);
             if( !readingFiles ) {
                 readingFile = fi;
-                fileWriter = new BinaryWriter(File.Create("Assets\\StreamingAssets\\" + readingFile.filename));
+                fileWriter = new BinaryWriter(File.Create("Assets\\ServerFiles\\" + readingFile.filename));
                 readingFiles = true;
             } else {
                 fileQ.Enqueue(fi);
