@@ -80,4 +80,22 @@ public class NetStringBuilder
         System.Buffer.BlockCopy(System.Text.Encoding.ASCII.GetBytes(str), 0, ptr, used+2, len);
         used += len+2;
     }
+
+    public void AddBytes(byte[] data) {
+        int len = data.Length;
+        if( used+len > alloced )
+            AllocMore();
+        System.Buffer.BlockCopy(data, 0, ptr, used, len);
+        used += len;
+    }
+
+    public void AddShortBytes(byte[] data) {
+        int len = data.Length;
+        if( used+len+2 > alloced )
+            AllocMore();
+        ptr[used+0] = (byte)((len>>8) & 0xff);
+        ptr[used+1] = (byte)(len&0xFF);
+        System.Buffer.BlockCopy(data, 0, ptr, used+2, len);
+        used += len+2;
+    }
 }

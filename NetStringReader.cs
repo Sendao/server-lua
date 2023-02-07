@@ -84,4 +84,31 @@ public class NetStringReader
 
 		return s;
     }
+	public byte[] ReadFixedBytes(int len) {
+		byte[] res;
+		
+		if( offset+len > data.Length ) {
+			Debug.Log("ReadFixedBytes: out of range");
+			return null;
+		}
+		res = new byte[len];
+		System.Buffer.BlockCopy(data, offset, res, 0, len);
+		offset += len;
+
+		return res;
+	}
+	public byte[] ReadShortBytes() {
+		int len = ReadInt();
+		byte[] res;
+		
+		if( offset+len > data.Length ) {
+			Debug.Log("ReadShortBytes: out of range");
+			return null;
+		}
+		res = new byte[len];
+		System.Buffer.BlockCopy(data, offset, res, 0, len);
+		offset += len;
+
+		return res;
+	}
 }

@@ -303,7 +303,7 @@ long long Game::GetTime()
 void Game::IdentifyVar( char *name, int type, User *sender )
 {
 	unordered_map<string,VarData*>::iterator it;
-	u_long alloced;
+	u_long alloced = 0;
 	VarData *v;
 	Object *o;
 	char *buf;
@@ -370,7 +370,7 @@ void Game::SendMsg( char cmd, unsigned int size, char *data, User *exclude )
 	vector<User*>::iterator ituser;
 	char *buf=NULL;
 	long bufsz;
-	u_long alloced;
+	u_long alloced = 0;
 
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
@@ -398,7 +398,7 @@ void Game::PickNewAuthority( void )
 	lprintf("Changing host.");
 	User *user = *ituser;
 	char *buf;
-	u_long alloced;
+	u_long alloced = 0;
 	long size;
 	user->authority = true;
 	size = spackf(&buf, &alloced, "c", 1 );

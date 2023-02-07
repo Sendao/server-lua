@@ -20,6 +20,8 @@ void init_commands( void )
 	commands[SCmdClockSync] = &User::ClockSync;
 	commands[SCmdSetObjectPositionRotation] = &User::SetObjectPositionRotation;
 	commands[SCmdRegister]= &User::Register;
+	commands[SCmdDynPacket] = &User::DynPacket;
+	commands[SCmdPacket] = &User::Packet;
 }
 
 User::User(void)
@@ -73,7 +75,7 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 {
 	char *buf=NULL;
 	long bufsz;
-	u_long alloced;
+	u_long alloced = 0;
 
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	Output( this, buf, bufsz );
@@ -350,7 +352,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	obj->last_update = this->last_update + (long long)timestamp_short;
 
 	char *buf;
-	u_long alloced;
+	u_long alloced = 0;
 	long size;
 
 	timestamp_short = (int)(obj->last_update - game->last_timestamp);
@@ -366,9 +368,59 @@ void User::Register( char *data, long sz )
 {
 	char *buf;
 	long size;
-	u_long alloced;
+	u_long alloced = 0;
 
 	size = spackf(&buf, &alloced, "c", this->authority?1:0);
 	SendMsg( CCmdRegisterUser, size, buf );
+	strmem->Free( buf, alloced );
+}
+
+void User::DynPacket( char *data, long sz )
+{
+	char *buf, *ptr;
+	long size;
+	u_long alloced=0;
+	int timestamp_short;
+	int cmd;
+	long long this_update;
+
+	ptr = sunpackf(data, "ii", &cmd, &timestamp_short);
+
+	this_update = this->last_update + (long long)timestamp_short;
+
+	timestamp_short = (int)(this_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "ii", cmd, timestamp_short);
+	char *buf2 = strmem->Alloc( sz );
+	memcpy( buf2, buf, size );
+	memcpy( buf2+size, ptr, sz-size );
+
+	game->SendMsg( CCmdDynPacket, sz, buf2, this );
+	strmem->Free( buf2, sz );
+	strmem->Free( buf, alloced );
+}
+
+void User::Packet( char *data, long sz )
+{
+	char *buf, *ptr;
+	long size;
+	u_long alloced=0;
+	int timestamp_short;
+	int cmd;
+	long long this_update;
+
+	ptr = sunpackf(data, "ii", &cmd, &timestamp_short);
+
+	this_update = this->last_update + (long long)timestamp_short;
+
+	timestamp_short = (int)(this_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "ii", cmd, timestamp_short);
+	char *buf2 = strmem->Alloc( sz );
+	memcpy( buf2, buf, size );
+	memcpy( buf2+size, ptr, sz-size );
+
+	game->SendMsg( CCmdPacket, sz, buf2, this );
+	strmem->Free( buf2, sz );
 	strmem->Free( buf, alloced );
 }

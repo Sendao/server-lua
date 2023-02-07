@@ -55,7 +55,9 @@ enum {
 	SCmdSetVar,
 	SCmdClockSync,
 	SCmdSetObjectPositionRotation,
-	SCmdRegister
+	SCmdRegister,
+	SCmdDynPacket,
+	SCmdPacket
 };
 
 enum {
@@ -68,7 +70,9 @@ enum {
 	CCmdLinkToObject,
 	CCmdSetObjectPositionRotation,
 	CCmdRegisterUser,
-	CCmdChangeUserRegistration
+	CCmdChangeUserRegistration,
+	CCmdDynPacket,
+	CCmdPacket
 };
 
 // lua.cpp
@@ -247,6 +251,8 @@ class User
 	void CreateObject(char *data, long sz);
 	void SetObjectPositionRotation(char *data, long sz);
 	void Register(char *data, long sz);
+	void DynPacket(char *data, long sz);
+	void Packet(char *data, long sz);
 };
 
 
