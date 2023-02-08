@@ -22,6 +22,7 @@ void init_commands( void )
 	commands[SCmdRegister]= &User::Register;
 	commands[SCmdDynPacket] = &User::DynPacket;
 	commands[SCmdPacket] = &User::Packet;
+	commands[SCmdQuit] = &User::Quit;
 }
 
 User::User(void)
@@ -41,6 +42,8 @@ User::User(void)
 	sHost = NULL;
 	fSock = -1;
 	state = 0;
+	x = y = z = 0;
+	r0 = r1 = r2 = r3 = 0;
 	reading_ptr = NULL;
 }
 
@@ -69,6 +72,11 @@ void User::Close( void )
 	}
 	if( fSock != -1 )
 		close( fSock );
+}
+
+void User::Quit( char *data, long sz )
+{
+	bQuitting = true;
 }
 
 void User::SendMsg( char cmd, unsigned int size, char *data )
@@ -366,13 +374,18 @@ void User::SetObjectPositionRotation( char *data, long sz )
 
 void User::Register( char *data, long sz )
 {
+	sunpackf(data, "fffffff", &this->x, &this->y, &this->z, &this->r0, &this->r1, &this->r2, &this->r3);
+
 	char *buf;
 	long size;
 	u_long alloced = 0;
 
-	size = spackf(&buf, &alloced, "c", this->authority?1:0);
+	size = spackf(&buf, &alloced, "ci", this->authority?1:0, this->uid);
 	SendMsg( CCmdRegisterUser, size, buf );
 	strmem->Free( buf, alloced );
+
+	size = spackf(&buf, &alloced, "ifffffff", this->uid, this->x, this->y, this->z, this->r0, this->r1, this->r2, this->r3);
+	game->SendMsg( CCmdUser, size, buf, this );
 }
 
 void User::DynPacket( char *data, long sz )
@@ -381,16 +394,16 @@ void User::DynPacket( char *data, long sz )
 	long size;
 	u_long alloced=0;
 	int timestamp_short;
-	int cmd;
+	int cmd, objtgt;
 	long long this_update;
 
-	ptr = sunpackf(data, "ii", &cmd, &timestamp_short);
+	ptr = sunpackf(data, "iii", &cmd, &objtgt, &timestamp_short);
 
 	this_update = this->last_update + (long long)timestamp_short;
 
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "ii", cmd, timestamp_short);
+	size = spackf(&buf, &alloced, "iii", cmd, objtgt, timestamp_short);
 	char *buf2 = strmem->Alloc( sz );
 	memcpy( buf2, buf, size );
 	memcpy( buf2+size, ptr, sz-size );
@@ -406,16 +419,16 @@ void User::Packet( char *data, long sz )
 	long size;
 	u_long alloced=0;
 	int timestamp_short;
-	int cmd;
+	int cmd, objtgt;
 	long long this_update;
 
-	ptr = sunpackf(data, "ii", &cmd, &timestamp_short);
+	ptr = sunpackf(data, "iii", &cmd, &objtgt, &timestamp_short);
 
 	this_update = this->last_update + (long long)timestamp_short;
 
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "ii", cmd, timestamp_short);
+	size = spackf(&buf, &alloced, "iii", cmd, objtgt, timestamp_short);
 	char *buf2 = strmem->Alloc( sz );
 	memcpy( buf2, buf, size );
 	memcpy( buf2+size, ptr, sz-size );

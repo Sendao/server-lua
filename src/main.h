@@ -57,7 +57,8 @@ enum {
 	SCmdSetObjectPositionRotation,
 	SCmdRegister,
 	SCmdDynPacket,
-	SCmdPacket
+	SCmdPacket,
+	SCmdQuit
 };
 
 enum {
@@ -72,7 +73,9 @@ enum {
 	CCmdRegisterUser,
 	CCmdChangeUserRegistration,
 	CCmdDynPacket,
-	CCmdPacket
+	CCmdPacket,
+	CCmdUser,
+	CCmdUserQuit
 };
 
 // lua.cpp
@@ -113,6 +116,7 @@ int InputConnection(User *);
 void Output(User *, const char *, unsigned long);
 void Input(User *);
 extern int fSock;
+extern int top_uid;
 extern bool firstUser;
 
 // system.cpp
@@ -233,12 +237,17 @@ class User
 	long long clocksync;
 	long long last_update;
 
+	int uid;
+	float x, y, z;
+	float r0, r1, r2, r3;
+
 	public:
 	void Close(void);
 	void ProcessMessages(void);
 	void SendMsg( char cmd, unsigned int size, char *data );
 
 	public: // commands (client controlled)
+	void Quit(char *data, long sz);
 	void SetKeyValue(char *data, long sz);
 	void RunLuaFile(char *data, long sz);
 	void RunLuaCommand(char *data, long sz);

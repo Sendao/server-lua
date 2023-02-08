@@ -19,7 +19,9 @@ public enum SCommand {
     SetVar,
     ClockSync,
     SetObjectPositionRotation,
-    Register
+    Register,
+    DynPacket,
+    Packet
 };
 
 public enum CCommand {
@@ -32,11 +34,27 @@ public enum CCommand {
     LinkToObject,
     SetObjectPositionRotation,
     RegisterUser,
-    ChangeUserRegistration
+    ChangeUserRegistration,
+    DynPacket,
+    Packet,
+    NewUser,
+    UserQuit
 };
 
 public class NetSocket : MonoBehaviour
 {
+    public static NetSocket instance;
+
+    public GameObject playerPrefab;
+
+    public bool authoritative = false;
+    public bool connected = false;
+    public bool registered = false;
+
+    public int local_uid;
+
+    public delegate void PacketCallback( long ts, NetStringReader data );
+
     private readonly object _sendQLock = new object();
     private readonly Queue<byte[]> sendQ = new Queue<byte[]>();
     private readonly AutoResetEvent _sendQSig = new AutoResetEvent(false);
@@ -87,49 +105,23 @@ public class NetSocket : MonoBehaviour
     private Dictionary<long, ObjData> serverObjects = new Dictionary<long, ObjData>();
     private Dictionary<long, MonoBehaviour> clientObjects = new Dictionary<long, MonoBehaviour>();
     private Dictionary<long, Rigidbody> clientBodies = new Dictionary<long, Rigidbody>();
+    private Dictionary<int, Dictionary<int, PacketCallback>> commandHandlers = new Dictionary<int, Dictionary<int, PacketCallback>>();
+    private Dictionary<int, int> packetSizes = new Dictionary<int, int>();
+    private Dictionary<long, ObjData> serverUsers = new Dictionary<long, ObjData>();
 
     private long last_game_time = 0;
     private long last_local_time = 0;
     private long last_record_time = -10000;
-
-    public static NetSocket instance;
-    public bool authoritative = false;
-    public bool connected = false;
-    public bool registered = false;
 
     public void Awake()
     {
         instance = this;
     }
     
-    /*
-    public void OnEnable()
-    {
-        Debug.Log("Enable NetSocket - Scanning for objects");
-        MonoBehaviour[] sceneActive = GameObject.FindObjectsOfType<MonoBehaviour>();
-
-        foreach (MonoBehaviour mono in sceneActive)
-        {
-            Type monoType = mono.GetType();
-
-            // Retreive the fields from the mono instance
-            FieldInfo[] objectFields = monoType.GetFields(BindingFlags.Instance | BindingFlags.Public);
-
-            // search all fields and find the attribute [Position]
-            for (int i = 0; i < objectFields.Length; i++)
-            {
-                CNetSync attribute = Attribute.GetCustomAttribute(objectFields[i], typeof(CNetSync)) as CNetSync;
-                if (attribute != null)
-                {
-                    //! Do the thing
-                }
-            }
-        }
-    }
-    */
-
     public void Start()
     {
+        ReadCurrentFileList();
+
         //IPHostEntry ipHost = Dns.GetHostEntry("127.0.0.1");
         IPAddress ipAddr = IPAddress.Parse("127.0.0.1"); //ipHost.AddressList[0];
 
@@ -148,8 +140,21 @@ public class NetSocket : MonoBehaviour
 
         _sendThread.Start();
         _recvThread.Start();
+        NetStringBuilder sb = new NetStringBuilder();
 
-        SendMessage( SCommand.Register, null ); // authenticate (for now)
+        sb.AddFloat( transform.position.x );
+        sb.AddFloat( transform.position.y );
+        sb.AddFloat( transform.position.z );
+        sb.AddFloat( transform.rotation.x );
+        sb.AddFloat( transform.rotation.y );
+        sb.AddFloat( transform.rotation.z );
+        sb.AddFloat( transform.rotation.w );
+        SendMessage( SCommand.Register, sb.ptr ); // authenticate (for now)
+    }
+
+    public void RegisterObj( MonoBehaviour obj )
+    {
+
     }
 
 
@@ -175,35 +180,102 @@ public class NetSocket : MonoBehaviour
         }
     }
 
-    public void ReadCurrentFileList()
+    public void RegisterPacket( int cmd, int tgt, PacketCallback callback, int packetSize )
     {
-        // read directory
-        string[] files = Directory.GetFiles("ServerFiles");
-        foreach( string file in files ) {
-            FileInfo fx = new System.IO.FileInfo(file);
+        if( !commandHandlers.ContainsKey(cmd) ) {
+            commandHandlers[cmd] = new Dictionary<int, PacketCallback>();
 
-            FileData fi = new FileData();
-            fi.filename = file;
-            fi.filesize = fx.Length;
-            fi.filetime = fx.LastWriteTime.Ticks;
-            fi.contents = null;
+            if( packetSizes.ContainsKey(cmd) && packetSizes[cmd] != packetSize )
+                Debug.Log("Warning: packet size for command " + cmd + " already set to " + packetSizes[cmd] + " (new size: " + packetSize + ")");
+            packetSizes[cmd] = packetSize;
+        }
+        commandHandlers[cmd][tgt] = callback;
+    }
+    public void SendDynPacket( int cmd, int tgt, byte[] data )
+    {
+        NetStringBuilder sb = new NetStringBuilder();
 
-            localAssets[file] = fi;
+        sb.AddInt(cmd);
+        sb.AddInt(tgt);
+
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        int ts_short = (int)(ts.TotalMilliseconds - last_record_time);
+        sb.AddInt(ts_short);
+
+        if( data != null ) sb.AddShortBytes(data);
+        SendMessage(SCommand.DynPacket, sb.ptr);
+    }
+    public void RecvDynPacket( byte[] data )
+    {
+        NetStringReader stream = new NetStringReader(data);
+        int cmd, tgt, ts_short;
+        long ts;
+        byte[] detail;
+
+        cmd = stream.ReadInt();
+        tgt = stream.ReadInt();
+
+        ts_short = stream.ReadInt();
+        ts = ts_short + last_game_time;
+
+        detail = stream.ReadShortBytes();
+        NetStringReader param = new NetStringReader(detail);
+
+        if( commandHandlers.ContainsKey(cmd) ) {
+            if( commandHandlers[cmd].ContainsKey(tgt) ) {
+                commandHandlers[cmd][tgt](ts, param);
+            } else {
+                Debug.Log("Unknown object: " + tgt);
+            }
+        } else {
+            Debug.Log("Unknown command: " + cmd);
         }
     }
-
-    public void Update()
+    
+    public void SendPacket( int cmd, int tgt, byte[] data )
     {
+        NetStringBuilder sb = new NetStringBuilder();
+
+        sb.AddInt(cmd);
+        sb.AddInt(tgt);
+
         TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
-        last_local_time = (long)ts.TotalMilliseconds;
-        if( last_local_time-last_record_time >= 10000 ) {
-            last_record_time = last_local_time;
-            NetStringBuilder sb = new NetStringBuilder();
-            sb.AddLongLong(last_local_time);
-            SendMessage(SCommand.ClockSync, sb.ptr);
+        int ts_short = (int)(ts.TotalMilliseconds - last_record_time);
+        sb.AddInt(ts_short);
+
+        if( data != null ) sb.AddBytes(data);
+        SendMessage(SCommand.Packet, sb.ptr);
+    }
+    public void RecvPacket( byte[] data )
+    {
+        NetStringReader stream = new NetStringReader(data);
+        int cmd, tgt, ts_short;
+        long ts;
+        byte[] detail;
+
+        cmd = stream.ReadInt();
+        tgt = stream.ReadInt();
+
+        ts_short = stream.ReadInt();
+        ts = ts_short + last_game_time;
+
+        NetStringReader param;
+        if( packetSizes.ContainsKey(cmd) ) {
+            detail = stream.ReadFixedBytes(packetSizes[cmd]);
+            param = new NetStringReader(detail);
+        } else {
+            param = null;
         }
 
-        Process();
+        if( commandHandlers.ContainsKey(cmd) ) {
+            if( commandHandlers[cmd].ContainsKey(tgt) ) {
+                commandHandlers[cmd][tgt](ts, param);
+            } else {
+                Debug.Log("Unknown object: " + tgt);
+            }
+        } else {
+            Debug.Log("Unknown command: " + cmd);
+        }
     }
 
     public void SendObject( MonoBehaviour mb )
@@ -237,9 +309,36 @@ public class NetSocket : MonoBehaviour
         sb.AddFloat( rb.rotation.z );
         sb.AddFloat( rb.rotation.w );
 
-        Debug.Log("Sending object " + cni.id + " " + ts_short + " " + rb.position + " " + rb.rotation);
         SendMessage(SCommand.SetObjectPositionRotation, sb.ptr);
     }
+
+    public void SetObjectPositionRotation(NetStringReader stream)
+    {
+        long objid;
+        int ts_short;
+        long ts;
+        float x,y,z;
+        float r0,r1,r2,r3;
+
+        objid = stream.ReadLong();
+        ts_short = stream.ReadInt();
+        ts = ts_short + last_game_time;
+
+        x = stream.ReadFloat();
+        y = stream.ReadFloat();
+        z = stream.ReadFloat();
+        r0 = stream.ReadFloat();
+        r1 = stream.ReadFloat();
+        r2 = stream.ReadFloat();
+        r3 = stream.ReadFloat();
+
+        //Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
+
+        Rigidbody rb = clientBodies[objid];
+        rb.MovePosition(new Vector3(x,y,z));
+        rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
+    }
+
 
     public void SendMessage( SCommand cmd, byte[] data )
     {
@@ -261,6 +360,40 @@ public class NetSocket : MonoBehaviour
         _sendQSig.Set();
     }
 
+    public void Update()
+    {
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        last_local_time = (long)ts.TotalMilliseconds;
+        if( last_local_time-last_record_time >= 10000 ) {
+            last_record_time = last_local_time;
+            NetStringBuilder sb = new NetStringBuilder();
+            sb.AddLongLong(last_local_time);
+            SendMessage(SCommand.ClockSync, sb.ptr);
+        }
+
+        Process();
+    }
+
+    public void ReadCurrentFileList()
+    {
+        // read directory
+        string[] files = Directory.GetFiles("ServerFiles");
+        foreach( string file in files ) {
+            string[] paths = file.Split('\\');
+            FileInfo fx = new System.IO.FileInfo(file);
+
+            FileData fi = new FileData();
+            fi.filename = paths[paths.Length-1];
+            fi.filesize = fx.Length;   
+            TimeSpan ts = fx.LastWriteTime - DateTime.UnixEpoch;
+            fi.filetime = (long)ts.TotalMilliseconds;
+            fi.contents = null;
+
+            localAssets[fi.filename] = fi;
+            Debug.Log("Local asset found: " + fi.filename);
+        }
+    }
+
     public void send(byte[] data) {
         lock (_sendQLock) {
             sendQ.Enqueue(data);
@@ -279,32 +412,7 @@ public class NetSocket : MonoBehaviour
             stream.ReadInt(); // size
             switch( (CCommand)cmd ) {
                 case CCommand.VarInfo:
-                    VarData v = new VarData();
-                    v.name = stream.ReadString();
-                    v.type = stream.ReadByte();
-                    v.objid = stream.ReadLong();
-                    Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
-                    serverAssets[v.name] = v;
-                    if( !loadingObjects.ContainsKey(v.name) ) {
-                        Debug.Log("Object " + v.name + " not found");
-                        break;
-                    }
-                    MonoBehaviour mb = loadingObjects[v.name];
-                    CNetId cni = mb.GetComponent<CNetId>();
-                    if( cni != null ) {
-                        cni.id = v.objid;
-                    } else {
-                        Debug.Log("Object " + v.name + " does not have a CNetId component");
-                    }
-                    clientObjects[v.objid] = mb;
-                    rb = mb.GetComponent<Rigidbody>();
-                    if( rb != null ) {
-                        clientBodies[v.objid] = rb;
-                    }
-                    loadingObjects.Remove(v.name);
-                    if( authoritative ) { // send back information about the object
-                        SendObject( mb );
-                    }
+                    GotVarInfo(stream);
                     break;
                 case CCommand.FileInfo:
                     GotFileInfo(stream);
@@ -336,6 +444,10 @@ public class NetSocket : MonoBehaviour
                     } else {
                         authoritative = true;
                     }
+
+                    //! Save uid
+                    local_uid = stream.ReadInt();
+
                     SendMessage( SCommand.GetFileList, null ); // request file list
                     registered = true;
                     // request variable idents
@@ -361,42 +473,84 @@ public class NetSocket : MonoBehaviour
                         }
                     }
                     break;
+                case CCommand.NewUser:
+                    Debug.Log("User");
+                    NewUser(stream);
+                    break;
+                case CCommand.UserQuit:
+                    Debug.Log("UserQuit");
+                    UserQuit(stream);
+                    break;
             }
+        }
+    }
+
+    public void NewUser(NetStringReader stream)
+    {
+        int uid = stream.ReadInt();
+        Vector3 startPos = new Vector3();
+        startPos.x = stream.ReadFloat();
+        startPos.y = stream.ReadFloat();
+        startPos.z = stream.ReadFloat();
+        Quaternion startRot = new Quaternion();
+        startRot.x = stream.ReadFloat();
+        startRot.y = stream.ReadFloat();
+        startRot.z = stream.ReadFloat();
+        startRot.w = stream.ReadFloat();
+
+        GameObject go = Instantiate(playerPrefab, startPos, startRot);
+        go.name = "Player";
+
+        CNetId cni = go.GetComponent<CNetId>();
+        cni.id = uid;
+
+        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
+        cplayer.isLocalPlayer = false;
+        cplayer.Register();
+
+        //! Save positions and such.
+    }
+
+    public void UserQuit(NetStringReader stream)
+    {
+        //! Do this.
+    }
+
+    public void GotVarInfo(NetStringReader stream)
+    {
+        VarData v = new VarData();
+        v.name = stream.ReadString();
+        v.type = stream.ReadByte();
+        v.objid = stream.ReadLong();
+
+        //Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
+        serverAssets[v.name] = v;
+        if( !loadingObjects.ContainsKey(v.name) ) {
+            Debug.Log("Object " + v.name + " not found");
+            return;
+        }
+
+        MonoBehaviour mb = loadingObjects[v.name];
+        CNetId cni = mb.GetComponent<CNetId>();
+        if( cni != null ) {
+            cni.id = v.objid;
+        } else {
+            Debug.Log("Object " + v.name + " does not have a CNetId component");
+        }
+        clientObjects[v.objid] = mb;
+        Rigidbody rb = mb.GetComponent<Rigidbody>();
+        if( rb != null ) {
+            clientBodies[v.objid] = rb;
+        }
+        loadingObjects.Remove(v.name);
+        if( authoritative ) { // send back information about the object
+            SendObject( mb );
         }
     }
 
     public void GetObjects()
     {
 
-    }
-
-    public void SetObjectPositionRotation(NetStringReader stream)
-    {
-        Debug.Log("SetObjectPositionRotation");
-
-        long objid;
-        int ts_short;
-        long ts;
-        float x,y,z;
-        float r0,r1,r2,r3;
-
-        objid = stream.ReadLong();
-        ts_short = stream.ReadInt();
-        ts = ts_short + last_game_time;
-
-        x = stream.ReadFloat();
-        y = stream.ReadFloat();
-        z = stream.ReadFloat();
-        r0 = stream.ReadFloat();
-        r1 = stream.ReadFloat();
-        r2 = stream.ReadFloat();
-        r3 = stream.ReadFloat();
-
-        Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
-
-        Rigidbody rb = clientBodies[objid];
-        rb.MovePosition(new Vector3(x,y,z));
-        rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
     }
 
     public void GotEndOfFileList(NetStringReader stream)
@@ -450,7 +604,7 @@ public class NetSocket : MonoBehaviour
 
         if( localAssets.ContainsKey(filename) ) {
             FileData fi = localAssets[filename];
-            if( fi.filesize != filesize || fi.filetime < filetime ) {
+            if( fi.filesize != filesize ) {
                 // file has changed, request it
                 Debug.Log("File " + filename + " has changed from filetime " + fi.filetime + ", requesting");
                 buf = new byte[filename.Length];

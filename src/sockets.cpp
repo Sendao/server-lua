@@ -4,6 +4,7 @@
 
 int fSock;
 bool firstUser=true;
+int top_uid=1;
 
 void InitSocket(int port)
 {
@@ -110,9 +111,13 @@ User *InitConnection(void)
 	new(user) User();
 	
 	user->fSock = fUser;
+
 	user->authority = firstUser ? true : false;
 	firstUser=false;
 
+	user->uid = top_uid;
+	top_uid++;
+	
 	char *ntoa = inet_ntoa(saConn.sin_addr);
 	user->sHost = strmem->Alloc( strlen(ntoa)+1 );
 	strcpy(user->sHost, ntoa);

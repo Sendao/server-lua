@@ -393,6 +393,7 @@ void Game::PickNewAuthority( void )
 		lprintf("No users, waiting for host.");
 		firstUser = true;
 		// no users found
+		top_uid=1; // reset top uid
 		return;
 	}
 	lprintf("Changing host.");
