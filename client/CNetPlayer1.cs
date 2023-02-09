@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -13,20 +14,34 @@ public class CNetPlayer1 : MonoBehaviour
 	}
 	*/
 	public bool isLocalPlayer = false;
-	private CNetId ident;
 	private MinifigController ctrl;
+    public int id;
 	public Vector3 lastpos;
 	public Quaternion lastrot;
 
 	public void Start()
 	{
-		ident = GetComponent<CNetId>();
 		ctrl = GetComponent<MinifigController>();
 		lastpos = transform.position;
 		lastrot = transform.rotation;
+
+        if( isLocalPlayer ) {
+		    NetSocket.instance.RegisterUser(this);
+            ctrl.remoteControl = false;
+        } else {
+            ctrl.SetInputEnabled(false);
+            ctrl.remoteControl = true;
+            ctrl.state = MinifigController.State.Automated;
+        }
 	}
 
-	public void OnPacketReceived(long id, NetStringReader stream) {
+	public void Register()
+	{
+		NetSocket.instance.RegisterPacket( 0, (int)id, OnPacketReceived, 40 );
+        Debug.Log("CNetPlayer1 " + id + " registered");
+	}
+	public void OnPacketReceived(long ts, NetStringReader stream) {
+        //Debug.Log("CNetPlayer1 OnPacketReceived for id " + id);
         Vector3 target = new Vector3();
 		Vector3 tgt = new Vector3();
 
@@ -36,34 +51,30 @@ public class CNetPlayer1 : MonoBehaviour
         y = stream.ReadFloat();
         z = stream.ReadFloat();
 
-        target.Set(x,y,z);
+        lastpos.Set(x,y,z);
         //t.position.Set(x,y,z);
-        
 
         rx = stream.ReadFloat();
         ry = stream.ReadFloat();
         rz = stream.ReadFloat();
         rw = stream.ReadFloat();
 
-        //t.rotation.Set(rx,ry,rz,rw);
+        lastrot.Set(rx,ry,rz,rw);
 
         tx = stream.ReadFloat();
         ty = stream.ReadFloat();
         tz = stream.ReadFloat();
 
-        tgt.Set(tx,ty,tz);
+        //tgt.Set(x+tx,y+ty,z+tz);
 
 		float speed = 1.0f;
 		float rospeed = 1.0f;
 		
-		ctrl.Follow2( target, 0.0f, null, 0.0f, 0.0f, true, speed, rospeed, tgt );
-	}
+        //ctrl.TurnTo( tgt, 0.0f, null, 0.0f, 0.0f, true, rospeed );
+		//ctrl.MoveTo( target, 0.0f, null, 0.0f, 0.0f, false, speed );
+        //ctrl.TurnToDirection( tgt, 0.0f, 1.0f, false );
 
-	public void Register()
-	{
-		NetSocket.instance.RegisterPacket( 0, (int)ident.id, OnPacketReceived, 40 );
 	}
-
 	public void Update()
 	{
 		if( isLocalPlayer ) {
@@ -79,13 +90,92 @@ public class CNetPlayer1 : MonoBehaviour
 				sb.AddFloat( transform.rotation.y );
 				sb.AddFloat( transform.rotation.z );
 				sb.AddFloat( transform.rotation.w );
-				sb.AddFloat( ctrl.currentTurnTarget.target.x );
-				sb.AddFloat( ctrl.currentTurnTarget.target.y );
-				sb.AddFloat( ctrl.currentTurnTarget.target.z );
-				NetSocket.instance.SendPacket( 0, (int)ident.id, sb.ptr );
+                Vector3 origVec = Vector3.forward;
+                Vector3 newVec = transform.rotation * origVec;
+				sb.AddFloat( newVec.x );
+				sb.AddFloat( newVec.y );
+				sb.AddFloat( newVec.z );
+                sb.Reduce();
+				NetSocket.instance.SendPacket( 0, (int)id, sb.ptr );
+                //Debug.Log("CNetPlayer1 Update: " + id);
 				lastpos = transform.position;
 				lastrot = transform.rotation;
 			}
-		}
+		} else {
+            float dist = Vector3.Distance( lastpos, transform.position );
+
+            // get a "forward vector" for each rotation
+            var forwardA = transform.rotation * Vector3.forward;
+            var forwardB = lastrot * Vector3.forward;
+            // get a numeric angle for each vector, on the X-Z plane (relative to world forward)
+            var angleA = Mathf.Atan2(forwardA.x, forwardA.z) * Mathf.Rad2Deg;
+            var angleB = Mathf.Atan2(forwardB.x, forwardB.z) * Mathf.Rad2Deg;
+            // get the signed difference in these angles
+            float angle = Mathf.DeltaAngle( angleA, angleB );
+
+            //float angle = 0.0f;
+            //float angle = Quaternion.Angle( lastrot, transform.rotation );
+
+            if( dist > 0.05f ) {
+                Vector3 targetDist = (lastpos - transform.position);
+                Vector3 targetSpeed = (2f*targetDist) / ( ctrl.acceleration * Time.deltaTime );
+                //targetSpeed.y = ctrl.moveDelta.y;
+
+                if( targetSpeed.sqrMagnitude > 0.05f ) {
+                    var localTargetSpeed = transform.InverseTransformDirection(targetSpeed);                
+                    angle = Vector3.SignedAngle(Vector3.forward, localTargetSpeed.normalized, Vector3.up);
+                }
+
+                /*
+                if( ctrl.directSpeed.sqrMagnitude >= dist * Time.deltaTime ) {
+                    ctrl.directSpeed = targetSpeed;
+                }*/
+
+                var speedDiff = targetSpeed - ctrl.directSpeed;
+                if (speedDiff.sqrMagnitude < ctrl.acceleration * ctrl.acceleration * Time.deltaTime * Time.deltaTime)
+                {
+                    ctrl.directSpeed = targetSpeed;
+                }
+                else if (speedDiff.sqrMagnitude > 0.0f)
+                {
+                    speedDiff.Normalize();
+
+                    ctrl.directSpeed += speedDiff * ctrl.acceleration * Time.deltaTime;
+                }
+
+                if( ctrl.directSpeed.magnitude > ctrl.maxForwardSpeed ) {
+                    ctrl.directSpeed = ctrl.directSpeed.normalized * ctrl.maxForwardSpeed;
+                }
+                ctrl.moveDelta = new Vector3( ctrl.directSpeed.x, ctrl.moveDelta.y, ctrl.directSpeed.z );
+            } else {
+                if( ctrl.directSpeed.x > 0 ) {
+                    ctrl.directSpeed.x -= Mathf.Min(ctrl.directSpeed.x,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                } else {
+                    ctrl.directSpeed.x += Mathf.Min(-ctrl.directSpeed.x,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                }
+                if( ctrl.directSpeed.z > 0 ) {
+                    ctrl.directSpeed.z -= Mathf.Min(ctrl.directSpeed.z,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                } else {
+                    ctrl.directSpeed.z += Mathf.Min(-ctrl.directSpeed.z,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                }
+                ctrl.moveDelta = new Vector3( ctrl.directSpeed.x, ctrl.moveDelta.y, ctrl.directSpeed.z );
+            }
+            ctrl.speed = ctrl.directSpeed.magnitude;
+            if( Mathf.Abs(angle) > 1.0f ) {
+                if( angle > 0 ) {
+                    ctrl.rotateSpeed = ctrl.maxRotateSpeed;
+                } else {
+                    ctrl.rotateSpeed = -ctrl.maxRotateSpeed;
+                }
+
+                if( Mathf.Abs(ctrl.rotateSpeed) > Mathf.Abs(angle)/Time.deltaTime ) {
+                    ctrl.rotateSpeed = Mathf.Abs(angle)/Time.deltaTime;
+                }
+            } else {
+                ctrl.rotateSpeed = 0.0f;
+            }
+            //Debug.Log("CNP " + id + " moveDelta: "  + ctrl.moveDelta + " rotateSpeed: " + ctrl.rotateSpeed);
+            //ctrl.HandleMotion();
+        }
 	}
 }

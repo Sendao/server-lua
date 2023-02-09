@@ -45,7 +45,7 @@ public class NetSocket : MonoBehaviour
     public static NetSocket instance;
 
     public GameObject playerPrefab;
-    public GameObject Player;
+    public GameObject Player = null;
 
     public bool authoritative = false;
     public bool connected = false;
@@ -102,6 +102,7 @@ public class NetSocket : MonoBehaviour
     public void Awake()
     {
         instance = this;
+        Debug.Log("Wake up");
     }
     
     public void Start()
@@ -117,21 +118,131 @@ public class NetSocket : MonoBehaviour
 
         Debug.Log("Connecting to server...");
         ws.Connect(localEnd); // warning: this appears to block.
-        connected = true;
         Debug.Log("Socket connected to " + ws.RemoteEndPoint.ToString());
 
         threads._sendThread.Start();
         threads._recvThread.Start();
+        connected = true;
 
-        NetStringBuilder sb = new NetStringBuilder();
-        sb.AddFloat( Player.transform.position.x );
-        sb.AddFloat( Player.transform.position.y );
-        sb.AddFloat( Player.transform.position.z );
-        sb.AddFloat( Player.transform.rotation.x );
-        sb.AddFloat( Player.transform.rotation.y );
-        sb.AddFloat( Player.transform.rotation.z );
-        sb.AddFloat( Player.transform.rotation.w );
-        SendMessage( SCommand.Register, sb.ptr ); // authenticate (for now)
+        if( Player != null ) {
+            NetStringBuilder sb = new NetStringBuilder();
+            sb.AddFloat( Player.transform.position.x );
+            sb.AddFloat( Player.transform.position.y );
+            sb.AddFloat( Player.transform.position.z );
+            sb.AddFloat( Player.transform.rotation.x );
+            sb.AddFloat( Player.transform.rotation.y );
+            sb.AddFloat( Player.transform.rotation.z );
+            sb.AddFloat( Player.transform.rotation.w );
+            SendMessage( SCommand.Register, sb ); // authenticate (for now)
+        }
+    }
+
+    public void RegisterUser( CNetPlayer1 player ) {
+        Debug.Log("-local player found-");
+        Player = player.gameObject;
+        if( connected ) {
+            NetStringBuilder sb = new NetStringBuilder();
+            sb.AddFloat( Player.transform.position.x );
+            sb.AddFloat( Player.transform.position.y );
+            sb.AddFloat( Player.transform.position.z );
+            sb.AddFloat( Player.transform.rotation.x );
+            sb.AddFloat( Player.transform.rotation.y );
+            sb.AddFloat( Player.transform.rotation.z );
+            sb.AddFloat( Player.transform.rotation.w );
+            SendMessage( SCommand.Register, sb ); // authenticate (for now)
+        }
+    }
+
+
+    // Process() gets called by Update()
+    public void Process() {
+        IList<byte[]> res = recv();
+        NetStringReader stream;
+        Rigidbody rb;
+        int cmd;
+
+        foreach( byte[] data in res ) {
+            stream = new NetStringReader(data);
+            cmd = stream.ReadByte();
+            stream.ReadInt(); // size
+            switch( (CCommand)cmd ) {
+                case CCommand.VarInfo:
+                    GotVarInfo(stream);
+                    break;
+                case CCommand.FileInfo:
+                    files.GotFileInfo(stream);
+                    break;
+                case CCommand.EndOfFileList:
+                    files.GotEndOfFileList(stream);
+                    break;
+                case CCommand.FileData:
+                    files.GotFileData(stream);
+                    break;
+                case CCommand.NextFile:
+                    files.GotNextFile(stream);
+                    //! Step to next file in queue
+                    break;
+                case CCommand.TimeSync:
+                    last_game_time = stream.ReadLongLong();
+                    break;
+                case CCommand.LinkToObject:
+                    Debug.Log("LinkToObject");
+                    break;
+                case CCommand.SetObjectPositionRotation:
+                    SetObjectPositionRotation(stream);
+                    break;
+                case CCommand.RegisterUser: // Register User
+                    if( stream.ReadByte() == 0 ) {
+                        authoritative = false;
+                    } else {
+                        authoritative = true;
+                    }
+
+                    //! Save uid
+                    local_uid = stream.ReadInt();
+                    CNetPlayer1 plr = Player.GetComponent<CNetPlayer1>();
+                    plr.id = local_uid;
+
+                    SendMessage( SCommand.GetFileList, null ); // request file list
+                    registered = true;
+                    // request variable idents
+                    Debug.Log("Logged in as " + local_uid);
+                    foreach( string key in loadingObjects.Keys ) {
+                        Debug.Log("Registering object " + key);
+                        NetStringBuilder sb = new NetStringBuilder();
+                        sb.AddString(key);
+                        sb.AddByte(0);
+                        SendMessage( SCommand.IdentifyVar, sb );
+                    }
+                    break;
+                case CCommand.ChangeUserRegistration:
+                    if( stream.ReadByte() == 0 ) {
+                        authoritative = false;
+                    } else {
+                        authoritative = true;
+                    }
+                    if( !authoritative ) {
+                        foreach( long key in clientBodies.Keys ) {
+                            rb = clientBodies[key];
+                            rb.isKinematic = !authoritative;
+                        }
+                    }
+                    break;
+                case CCommand.NewUser:
+                    NewUser(stream);
+                    break;
+                case CCommand.UserQuit:
+                    UserQuit(stream);
+                    break;
+                case CCommand.Packet:
+                    RecvPacket(stream);
+                    break;
+                case CCommand.DynPacket:
+                    Debug.Log("Got dyn packet");
+                    RecvDynPacket(stream);
+                    break;
+            }
+        }
     }
 
     public void close() {
@@ -149,6 +260,77 @@ public class NetSocket : MonoBehaviour
     {
 
     }
+
+    public void GetObjects()
+    {
+
+    }
+
+    public void SendObject( MonoBehaviour mb )
+    {
+        CNetId cni = (CNetId)mb.GetComponent<CNetId>();
+        if( cni == null ) {
+            Debug.Log("Object " + mb.name + " does not have a CNetId component");
+            return;
+        }
+        if( cni.id == -1 ) {
+            Debug.Log("Object " + mb.name + " does not have an id");
+            return; // can't send if it's not id'd yet
+        }
+
+        NetStringBuilder sb = new NetStringBuilder();
+
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        int ts_short = (int)(ts.TotalMilliseconds - last_record_time);
+
+        sb.AddLong(cni.id);
+        sb.AddInt(ts_short);
+
+        Rigidbody rb = mb.GetComponent<Rigidbody>();
+        if( rb == null ) {
+            Debug.Log("Object " + mb.name + " does not have a Rigidbody component");
+            return;
+        }
+
+        sb.AddFloat( rb.position.x );
+        sb.AddFloat( rb.position.y );
+        sb.AddFloat( rb.position.z );
+
+        sb.AddFloat( rb.rotation.x );
+        sb.AddFloat( rb.rotation.y );
+        sb.AddFloat( rb.rotation.z );
+        sb.AddFloat( rb.rotation.w );
+
+        SendMessage(SCommand.SetObjectPositionRotation, sb);
+        //Debug.Log("Sent object " + cni.id);
+    }
+
+    public void SetObjectPositionRotation(NetStringReader stream)
+    {
+        long objid;
+        int ts_short;
+        long ts;
+        float x,y,z;
+        float r0,r1,r2,r3;
+
+        objid = stream.ReadLong();
+        ts_short = stream.ReadInt();
+        ts = ts_short + last_game_time;
+
+        x = stream.ReadFloat();
+        y = stream.ReadFloat();
+        z = stream.ReadFloat();
+        r0 = stream.ReadFloat();
+        r1 = stream.ReadFloat();
+        r2 = stream.ReadFloat();
+        r3 = stream.ReadFloat();
+
+        //Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
+        Rigidbody rb = clientBodies[objid];
+        rb.MovePosition(new Vector3(x,y,z));
+        rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
+    }
+
 
 
     public void RegisterId( MonoBehaviour obj, String oname )
@@ -169,7 +351,7 @@ public class NetSocket : MonoBehaviour
             NetStringBuilder sb = new NetStringBuilder();
             sb.AddString(name);
             sb.AddByte(0); // byte 0 specifies object type
-            SendMessage(SCommand.IdentifyVar, sb.ptr);
+            SendMessage(SCommand.IdentifyVar, sb);
         }
     }
 
@@ -197,11 +379,10 @@ public class NetSocket : MonoBehaviour
         sb.AddInt(ts_short);
 
         if( data != null ) sb.AddShortBytes(data);
-        SendMessage(SCommand.DynPacket, sb.ptr);
+        SendMessage(SCommand.DynPacket, sb);
     }
-    public void RecvDynPacket( byte[] data )
+    public void RecvDynPacket( NetStringReader stream )
     {
-        NetStringReader stream = new NetStringReader(data);
         int cmd, tgt, ts_short;
         long ts;
         byte[] detail;
@@ -238,11 +419,10 @@ public class NetSocket : MonoBehaviour
         sb.AddInt(ts_short);
 
         if( data != null ) sb.AddBytes(data);
-        SendMessage(SCommand.Packet, sb.ptr);
+        SendMessage(SCommand.Packet, sb);
     }
-    public void RecvPacket( byte[] data )
+    public void RecvPacket( NetStringReader stream )
     {
-        NetStringReader stream = new NetStringReader(data);
         int cmd, tgt, ts_short;
         long ts;
         byte[] detail;
@@ -272,69 +452,109 @@ public class NetSocket : MonoBehaviour
         }
     }
 
-    public void SendObject( MonoBehaviour mb )
+    public void NewUser(NetStringReader stream)
     {
-        CNetId cni = (CNetId)mb.GetComponent<CNetId>();
-        if( cni == null ) {
-            Debug.Log("Object " + mb.name + " does not have a CNetId component");
+        int uid = stream.ReadInt();
+        Debug.Log("NewUser " + uid);
+        Vector3 startPos = new Vector3();
+        startPos.x = stream.ReadFloat();
+        startPos.y = stream.ReadFloat();
+        startPos.z = stream.ReadFloat();
+        Quaternion startRot = new Quaternion();
+        startRot.x = stream.ReadFloat();
+        startRot.y = stream.ReadFloat();
+        startRot.z = stream.ReadFloat();
+        startRot.w = stream.ReadFloat();
+
+        GameObject go = Instantiate(playerPrefab, startPos, startRot);
+        go.name = "Player";
+
+        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
+        cplayer.isLocalPlayer = false;
+        cplayer.id = uid;
+        cplayer.Register();
+    }
+
+    public void UserQuit(NetStringReader stream)
+    {
+        //! Do this.
+    }
+
+    public void GotVarInfo(NetStringReader stream)
+    {
+        VarData v = new VarData();
+        v.name = stream.ReadString();
+        v.type = stream.ReadByte();
+        v.objid = stream.ReadLong();
+
+        Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
+        serverAssets[v.name] = v;
+        if( !loadingObjects.ContainsKey(v.name) ) {
+            Debug.Log("Object " + v.name + " not found");
             return;
         }
-        if( cni.id == -1 ) return; // can't send if it's not id'd yet
-        NetStringBuilder sb = new NetStringBuilder();
 
-        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
-        int ts_short = (int)(ts.TotalMilliseconds - last_record_time);
-
-        sb.AddLong(cni.id);
-        sb.AddInt(ts_short);
-
+        MonoBehaviour mb = loadingObjects[v.name];
+        CNetId cni = mb.GetComponent<CNetId>();
+        if( cni != null ) {
+            cni.id = (int)v.objid;
+        } else {
+            Debug.Log("Object " + v.name + " does not have a CNetId component");
+        }
+        clientObjects[v.objid] = mb;
         Rigidbody rb = mb.GetComponent<Rigidbody>();
-        if( rb == null ) {
-            Debug.Log("Object " + mb.name + " does not have a Rigidbody component");
-            return;
+        if( rb != null ) {
+            clientBodies[v.objid] = rb;
+        }
+        loadingObjects.Remove(v.name);
+        if( rb != null && authoritative ) { // send back information about the object
+            Debug.Log("Sending object " + v.name + " to server");
+            SendObject( mb );
+        }
+    }
+
+
+
+    public void Update()
+    {
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        last_local_time = (long)ts.TotalMilliseconds;
+        if( last_local_time-last_record_time >= 10000 ) {
+            last_record_time = last_local_time;
+            NetStringBuilder sb = new NetStringBuilder();
+            sb.AddLongLong(last_local_time);
+            SendMessage(SCommand.ClockSync, sb);
         }
 
-        sb.AddFloat( rb.position.x );
-        sb.AddFloat( rb.position.y );
-        sb.AddFloat( rb.position.z );
-
-        sb.AddFloat( rb.rotation.x );
-        sb.AddFloat( rb.rotation.y );
-        sb.AddFloat( rb.rotation.z );
-        sb.AddFloat( rb.rotation.w );
-
-        SendMessage(SCommand.SetObjectPositionRotation, sb.ptr);
+        Process();
     }
 
-    public void SetObjectPositionRotation(NetStringReader stream)
+    public void SendMessage( SCommand cmd, NetStringBuilder sb )
     {
-        long objid;
-        int ts_short;
-        long ts;
-        float x,y,z;
-        float r0,r1,r2,r3;
+        byte[] data = null;
+        if( sb != null ) {
+            sb.Reduce();
+            data = sb.ptr;
+        }
+        byte[] msg = new byte[3];
+        int len;
+        msg[0] = (byte)cmd;
+        if( sb == null || data == null ) {
+            len = 0;
+        } else {
+            len = data.Length;
+        }
+        msg[1] = (byte)(len >> 8);
+        msg[2] = (byte)(len & 0xFF);
+        //Debug.Log("Encode len: " + len + " " + msg[1] + " " + msg[2]);
+        send(msg);
 
-        objid = stream.ReadLong();
-        ts_short = stream.ReadInt();
-        ts = ts_short + last_game_time;
-
-        x = stream.ReadFloat();
-        y = stream.ReadFloat();
-        z = stream.ReadFloat();
-        r0 = stream.ReadFloat();
-        r1 = stream.ReadFloat();
-        r2 = stream.ReadFloat();
-        r3 = stream.ReadFloat();
-
-        //Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
-
-        Rigidbody rb = clientBodies[objid];
-        rb.MovePosition(new Vector3(x,y,z));
-        rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
+        if( data != null )
+            send(data);
+        _sendQSig.Set();
     }
 
-
-    public void SendMessage( SCommand cmd, byte[] data )
+    public void SendMessage2( SCommand cmd, byte[] data )
     {
         byte[] msg = new byte[3];
         int len;
@@ -354,177 +574,10 @@ public class NetSocket : MonoBehaviour
         _sendQSig.Set();
     }
 
-    public void Update()
-    {
-        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
-        last_local_time = (long)ts.TotalMilliseconds;
-        if( last_local_time-last_record_time >= 10000 ) {
-            last_record_time = last_local_time;
-            NetStringBuilder sb = new NetStringBuilder();
-            sb.AddLongLong(last_local_time);
-            SendMessage(SCommand.ClockSync, sb.ptr);
-        }
-
-        Process();
-    }
-
     public void send(byte[] data) {
         lock (_sendQLock) {
             sendQ.Enqueue(data);
         }
-    }
-
-    public void Process() {
-        IList<byte[]> res = recv();
-        NetStringReader stream;
-        Rigidbody rb;
-        int cmd;
-
-        foreach( byte[] data in res ) {
-            stream = new NetStringReader(data);
-            cmd = stream.ReadByte();
-            stream.ReadInt(); // size
-            switch( (CCommand)cmd ) {
-                case CCommand.VarInfo:
-                    GotVarInfo(stream);
-                    break;
-                case CCommand.FileInfo:
-                    files.GotFileInfo(stream);
-                    break;
-                case CCommand.EndOfFileList:
-                    files.GotEndOfFileList(stream);
-                    break;
-                case CCommand.FileData:
-                    files.GotFileData(stream);
-                    break;
-                case CCommand.NextFile:
-                    files.GotNextFile(stream);
-                    //! Step to next file in queue
-                    break;
-                case CCommand.TimeSync:
-                    Debug.Log("TimeSync"); // gonna be every 10 seconds or so I think
-                    last_game_time = stream.ReadLongLong();
-                    break;
-                case CCommand.LinkToObject:
-                    Debug.Log("LinkToObject");
-                    break;
-                case CCommand.SetObjectPositionRotation:
-                    Debug.Log("SetObjectPositionRotation");
-                    SetObjectPositionRotation(stream);
-                    break;
-                case CCommand.RegisterUser: // Register User
-                    if( stream.ReadByte() == 0 ) {
-                        authoritative = false;
-                    } else {
-                        authoritative = true;
-                    }
-
-                    //! Save uid
-                    local_uid = stream.ReadInt();
-
-                    SendMessage( SCommand.GetFileList, null ); // request file list
-                    registered = true;
-                    // request variable idents
-                    Debug.Log("Logged in");
-                    foreach( string key in loadingObjects.Keys ) {
-                        Debug.Log("Registering object " + key);
-                        NetStringBuilder sb = new NetStringBuilder();
-                        sb.AddString(key);
-                        sb.AddByte(0);
-                        SendMessage( SCommand.IdentifyVar, sb.ptr );
-                    }
-                    break;
-                case CCommand.ChangeUserRegistration:
-                    if( stream.ReadByte() == 0 ) {
-                        authoritative = false;
-                    } else {
-                        authoritative = true;
-                    }
-                    if( !authoritative ) {
-                        foreach( long key in clientBodies.Keys ) {
-                            rb = clientBodies[key];
-                            rb.isKinematic = !authoritative;
-                        }
-                    }
-                    break;
-                case CCommand.NewUser:
-                    Debug.Log("User");
-                    NewUser(stream);
-                    break;
-                case CCommand.UserQuit:
-                    Debug.Log("UserQuit");
-                    UserQuit(stream);
-                    break;
-            }
-        }
-    }
-
-    public void NewUser(NetStringReader stream)
-    {
-        int uid = stream.ReadInt();
-        Vector3 startPos = new Vector3();
-        startPos.x = stream.ReadFloat();
-        startPos.y = stream.ReadFloat();
-        startPos.z = stream.ReadFloat();
-        Quaternion startRot = new Quaternion();
-        startRot.x = stream.ReadFloat();
-        startRot.y = stream.ReadFloat();
-        startRot.z = stream.ReadFloat();
-        startRot.w = stream.ReadFloat();
-
-        GameObject go = Instantiate(playerPrefab, startPos, startRot);
-        go.name = "Player";
-
-        CNetId cni = go.GetComponent<CNetId>();
-        cni.id = uid;
-
-        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
-        cplayer.isLocalPlayer = false;
-        cplayer.Register();
-
-        //! Save positions and such.
-    }
-
-    public void UserQuit(NetStringReader stream)
-    {
-        //! Do this.
-    }
-
-    public void GotVarInfo(NetStringReader stream)
-    {
-        VarData v = new VarData();
-        v.name = stream.ReadString();
-        v.type = stream.ReadByte();
-        v.objid = stream.ReadLong();
-
-        //Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
-        serverAssets[v.name] = v;
-        if( !loadingObjects.ContainsKey(v.name) ) {
-            Debug.Log("Object " + v.name + " not found");
-            return;
-        }
-
-        MonoBehaviour mb = loadingObjects[v.name];
-        CNetId cni = mb.GetComponent<CNetId>();
-        if( cni != null ) {
-            cni.id = v.objid;
-        } else {
-            Debug.Log("Object " + v.name + " does not have a CNetId component");
-        }
-        clientObjects[v.objid] = mb;
-        Rigidbody rb = mb.GetComponent<Rigidbody>();
-        if( rb != null ) {
-            clientBodies[v.objid] = rb;
-        }
-        loadingObjects.Remove(v.name);
-        if( authoritative ) { // send back information about the object
-            SendObject( mb );
-        }
-    }
-
-    public void GetObjects()
-    {
-
     }
 
     public IList<byte[]> recv() {

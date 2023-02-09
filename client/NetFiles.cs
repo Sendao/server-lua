@@ -25,7 +25,7 @@ public class NetFiles
 	public NetFiles(NetSocket ctrl)
 	{
 		net = ctrl;
-		readingFiles = true;
+		readingFiles = false;
 		ReadLocalFiles();
 	}
 
@@ -52,6 +52,7 @@ public class NetFiles
 
     public void GotEndOfFileList(NetStringReader stream)
     {
+        Debug.Log("EOF list");
         if( !readingFiles ) {
             net.GetObjects();
         }
@@ -60,13 +61,21 @@ public class NetFiles
     public void GotNextFile(NetStringReader stream)
     {
         if( fileQ.Count > 0 ) {
+            if( fileWriter != null ) {
+                fileWriter.Close();
+                fileWriter = null;
+            }
             readingFile = fileQ.Dequeue();
-            //Debug.Log("Next: file " + readingFile.filename);
+            Debug.Log("Next: file " + readingFile.filename);
             // open the streamwriter
             if( File.Exists("ServerFiles\\" + readingFile.filename) )
                 File.Delete("ServerFiles\\" + readingFile.filename);
             fileWriter = new BinaryWriter(File.Create("ServerFiles\\" + readingFile.filename));
         } else {
+            if( fileWriter != null ) {
+                fileWriter.Close();
+                fileWriter = null;
+            }
             readingFiles = false;
             fileWriter = null;
             Debug.Log("End of files");
@@ -114,7 +123,7 @@ public class NetFiles
                 } else {
                     fileQ.Enqueue(fi);
                 }
-                net.SendMessage( SCommand.GetFile, buf );
+                net.SendMessage2( SCommand.GetFile, buf );
                 fi.contents = null;
             }
         } else {
@@ -135,7 +144,7 @@ public class NetFiles
             } else {
                 fileQ.Enqueue(fi);
             }
-            net.SendMessage( SCommand.GetFile, buf );
+            net.SendMessage2( SCommand.GetFile, buf );
         }
     }
 }

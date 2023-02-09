@@ -22,7 +22,7 @@ public class NetThreads
         _sendThread.IsBackground = true;
         _recvThread = new Thread(new ThreadStart(RecvThread));
         _recvThread.IsBackground = true;
-
+        Debug.Log("NetThreads ready");
 	}
 
     private void SendThread()

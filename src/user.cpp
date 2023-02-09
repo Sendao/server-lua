@@ -25,6 +25,8 @@ void init_commands( void )
 	commands[SCmdQuit] = &User::Quit;
 }
 
+int top_uid = 0;
+
 User::User(void)
 {
 	bQuitting = false;
@@ -45,6 +47,8 @@ User::User(void)
 	x = y = z = 0;
 	r0 = r1 = r2 = r3 = 0;
 	reading_ptr = NULL;
+	uid = top_uid;
+	top_uid++;
 }
 
 User::~User(void)
@@ -345,7 +349,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 
 	it = game->objects.find( objid );
 	if( it == game->objects.end() ) {
-		lprintf("SetObjectPositionRotation:: Not Found!");
+		lprintf("SetObjectPositionRotation:: Not Found %d!", objid);
 		return;
 	}
 
@@ -369,7 +373,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 
 	game->SendMsg( CCmdSetObjectPositionRotation, size, buf, this );
 	strmem->Free( buf, alloced );
-	lprintf("Updated %llu: %f %f %f rotation set to %f %f %f %f", objid, x, y, z, r0, r1, r2, r3);
+	//lprintf("Updated %llu: %f %f %f rotation set to %f %f %f %f", objid, x, y, z, r0, r1, r2, r3);
 }
 
 void User::Register( char *data, long sz )
@@ -384,8 +388,20 @@ void User::Register( char *data, long sz )
 	SendMsg( CCmdRegisterUser, size, buf );
 	strmem->Free( buf, alloced );
 
+	User *otheruser;
+	vector<User*>::iterator ituser;
+
+	for( ituser = game->userL.begin(); ituser != game->userL.end(); ituser++ ) {
+		otheruser = *ituser;
+		if( otheruser == this ) continue;
+		size = spackf(&buf, &alloced, "ifffffff", otheruser->uid, otheruser->x, otheruser->y, otheruser->z, otheruser->r0, otheruser->r1, otheruser->r2, otheruser->r3);
+		SendMsg( CCmdUser, size, buf );
+		strmem->Free( buf, alloced );
+	}
+
 	size = spackf(&buf, &alloced, "ifffffff", this->uid, this->x, this->y, this->z, this->r0, this->r1, this->r2, this->r3);
 	game->SendMsg( CCmdUser, size, buf, this );
+	strmem->Free( buf, alloced );
 }
 
 void User::DynPacket( char *data, long sz )
@@ -436,4 +452,26 @@ void User::Packet( char *data, long sz )
 	game->SendMsg( CCmdPacket, sz, buf2, this );
 	strmem->Free( buf2, sz );
 	strmem->Free( buf, alloced );
+
+	if( cmd == 0 ) { // update user position
+		vector<User*>::iterator ituser;
+		User *otheruser;
+
+		for( ituser = game->userL.begin(); ituser != game->userL.end(); ituser++ ) {
+			otheruser = *ituser;
+			if( otheruser->uid == objtgt ) {
+				float x,y,z;
+				float r0,r1,r2,r3;
+				sunpackf(ptr, "ffffff", &x, &y, &z, &r0, &r1, &r2, &r3);
+				otheruser->x = x;
+				otheruser->y = y;
+				otheruser->z = z;
+				otheruser->r0 = r0;
+				otheruser->r1 = r1;
+				otheruser->r2 = r2;
+				otheruser->r3 = r3;
+				otheruser->last_update = this_update;
+			}
+		}
+	}
 }
