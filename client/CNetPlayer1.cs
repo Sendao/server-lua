@@ -102,7 +102,7 @@ public class CNetPlayer1 : MonoBehaviour
 				lastrot = transform.rotation;
 			}
 		} else {
-            float dist = Vector3.Distance( lastpos, transform.position );
+            //float dist = Vector3.Distance( lastpos, transform.position );
 
             // get a "forward vector" for each rotation
             var forwardA = transform.rotation * Vector3.forward;
@@ -116,19 +116,23 @@ public class CNetPlayer1 : MonoBehaviour
             //float angle = 0.0f;
             //float angle = Quaternion.Angle( lastrot, transform.rotation );
 
-            if( dist > 0.05f ) {
-                Vector3 targetDist = (lastpos - transform.position);
-                Vector3 targetSpeed = (2f*targetDist) / ( ctrl.acceleration * Time.deltaTime );
-                //targetSpeed.y = ctrl.moveDelta.y;
+            Vector3 targetDist = (lastpos - transform.position);
+            targetDist.y = 0f;
+            float dist = targetDist.magnitude;
 
-                if( targetSpeed.sqrMagnitude > 0.05f ) {
-                    var localTargetSpeed = transform.InverseTransformDirection(targetSpeed);                
-                    angle = Vector3.SignedAngle(Vector3.forward, localTargetSpeed.normalized, Vector3.up);
+            if( dist > 0.05f ) {
+                var targetDir = targetDist.normalized;
+                Vector3 targetSpeed = (3f*ctrl.maxForwardSpeed*targetDir); // accelerate to full speed. 2 = lag compensation, accelerate faster.
+
+                // on this calculation, we allow some distance overshoot to compensate for the fact that we don't have the latest movement information.
+                if( targetSpeed.magnitude * ctrl.acceleration * Time.deltaTime > 3f*dist ) { // don't overshoot.
+                    targetSpeed = targetDist * 3f / (ctrl.acceleration*Time.deltaTime);
                 }
 
-                /*
-                if( ctrl.directSpeed.sqrMagnitude >= dist * Time.deltaTime ) {
-                    ctrl.directSpeed = targetSpeed;
+/* we don't need to do this though.
+                if( targetSpeed.sqrMagnitude > 0.05f ) { // if moving in a direction, rotate first To that direction
+                    var localTargetSpeed = transform.InverseTransformDirection(targetSpeed);                
+                    angle = Vector3.SignedAngle(Vector3.forward, localTargetSpeed.normalized, Vector3.up);
                 }*/
 
                 var speedDiff = targetSpeed - ctrl.directSpeed;
@@ -146,20 +150,23 @@ public class CNetPlayer1 : MonoBehaviour
                 if( ctrl.directSpeed.magnitude > ctrl.maxForwardSpeed ) {
                     ctrl.directSpeed = ctrl.directSpeed.normalized * ctrl.maxForwardSpeed;
                 }
-                ctrl.moveDelta = new Vector3( ctrl.directSpeed.x, ctrl.moveDelta.y, ctrl.directSpeed.z );
             } else {
-                if( ctrl.directSpeed.x > 0 ) {
-                    ctrl.directSpeed.x -= Mathf.Min(ctrl.directSpeed.x,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                if( ctrl.directSpeed.x > 0.1f ) {
+                    ctrl.directSpeed.x -= Mathf.Min(ctrl.directSpeed.x,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
+                } else if( ctrl.directSpeed.x < -0.1f ) {
+                    ctrl.directSpeed.x += Mathf.Min(-ctrl.directSpeed.x,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
                 } else {
-                    ctrl.directSpeed.x += Mathf.Min(-ctrl.directSpeed.x,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                    ctrl.directSpeed.x = 0f;
                 }
-                if( ctrl.directSpeed.z > 0 ) {
-                    ctrl.directSpeed.z -= Mathf.Min(ctrl.directSpeed.z,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                if( ctrl.directSpeed.z > 0.1f ) {
+                    ctrl.directSpeed.z -= Mathf.Min(ctrl.directSpeed.z,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
+                } else if( ctrl.directSpeed.x < -0.1f ) {
+                    ctrl.directSpeed.z += Mathf.Min(-ctrl.directSpeed.z,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
                 } else {
-                    ctrl.directSpeed.z += Mathf.Min(-ctrl.directSpeed.z,1.0f) * (1f * ctrl.acceleration) * Time.deltaTime;
+                    ctrl.directSpeed.z = 0f;
                 }
-                ctrl.moveDelta = new Vector3( ctrl.directSpeed.x, ctrl.moveDelta.y, ctrl.directSpeed.z );
             }
+            ctrl.moveDelta = new Vector3( ctrl.directSpeed.x, ctrl.moveDelta.y, ctrl.directSpeed.z );
             ctrl.speed = ctrl.directSpeed.magnitude;
             if( Mathf.Abs(angle) > 1.0f ) {
                 if( angle > 0 ) {
@@ -174,8 +181,6 @@ public class CNetPlayer1 : MonoBehaviour
             } else {
                 ctrl.rotateSpeed = 0.0f;
             }
-            //Debug.Log("CNP " + id + " moveDelta: "  + ctrl.moveDelta + " rotateSpeed: " + ctrl.rotateSpeed);
-            //ctrl.HandleMotion();
         }
 	}
 }
