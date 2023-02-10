@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -94,10 +95,22 @@ public class NetSocket : MonoBehaviour
     private Dictionary<int, Dictionary<int, PacketCallback>> commandHandlers = new Dictionary<int, Dictionary<int, PacketCallback>>();
     private Dictionary<int, int> packetSizes = new Dictionary<int, int>();
     private Dictionary<long, ObjData> serverUsers = new Dictionary<long, ObjData>();
+    private Dictionary<long, GameObject> serverUserObjects = new Dictionary<long, GameObject>();
 
     private long last_game_time = 0;
     private long last_local_time = 0;
     private long last_record_time = -10000;
+
+    public bool record_bps = false;
+
+    public List<int> out_bytes = new List<int>();
+    public List<int> in_bytes = new List<int>();
+    public long last_out_time = 0;
+    public long last_in_time = 0;
+    public int in_bps_measure = 0;
+    public int out_bps_measure = 0;
+    public readonly object _inbpsLock = new object();
+    public readonly object _outbpsLock = new object();
 
     public void Awake()
     {
@@ -107,24 +120,44 @@ public class NetSocket : MonoBehaviour
     
     public void Start()
     {
-        //IPHostEntry ipHost = Dns.GetHostEntry("127.0.0.1");
-        IPAddress ipAddr = IPAddress.Parse("127.0.0.1"); //ipHost.AddressList[0];
+        IPHostEntry ipHost = Dns.GetHostEntry("spiritshare.org");
+        IPAddress ipAddr=null;
+        bool found=false;
 
-        localEnd = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 2038);
+        foreach( IPAddress addr in ipHost.AddressList ) {
+            if( addr.AddressFamily == AddressFamily.InterNetwork ) {
+                Debug.Log("Found IPv4 address: " + addr.ToString());
+                localEnd = new IPEndPoint(addr, 2038);
+                found=true;
+                break;
+            }
+        }
 
-        ws = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        if( !found ) {
+            Debug.Log("No IPv4 address found, using localhost");
+            ipAddr = IPAddress.Parse("127.0.0.1");
+            localEnd = new IPEndPoint(ipAddr, 2038);
+        }
+
+        //localEnd = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 2038);
+        ws = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         threads = new NetThreads(this);
         files = new NetFiles(this);
 
         Debug.Log("Connecting to server...");
-        ws.Connect(localEnd); // warning: this appears to block.
+        ws.Connect(localEnd);
+        
         Debug.Log("Socket connected to " + ws.RemoteEndPoint.ToString());
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        last_in_time = (long)ts.TotalMilliseconds;
+        last_out_time = (long)ts.TotalMilliseconds;
 
         threads._sendThread.Start();
         threads._recvThread.Start();
         connected = true;
 
         if( Player != null ) {
+            Debug.Log("-local player found (early)-");
             NetStringBuilder sb = new NetStringBuilder();
             sb.AddFloat( Player.transform.position.x );
             sb.AddFloat( Player.transform.position.y );
@@ -266,6 +299,115 @@ public class NetSocket : MonoBehaviour
 
     }
 
+    public void RegisterPacket( int cmd, int tgt, PacketCallback callback, int packetSize )
+    {
+        if( !commandHandlers.ContainsKey(cmd) ) {
+            commandHandlers[cmd] = new Dictionary<int, PacketCallback>();
+
+            if( packetSizes.ContainsKey(cmd) && packetSizes[cmd] != packetSize )
+                Debug.Log("Warning: packet size for command " + cmd + " already set to " + packetSizes[cmd] + " (new size: " + packetSize + ")");
+            packetSizes[cmd] = packetSize;
+        }
+        commandHandlers[cmd][tgt] = callback;
+    }
+
+
+
+    public void RegisterId( MonoBehaviour obj, String oname )
+    {
+        CNetId cni = (CNetId)obj;
+        if( cni == null ) {
+            Debug.Log("Object " + oname + " does not have a CNetId component");
+            return;
+        }
+
+        GameObject go = obj.gameObject;
+        //int objid = go.GetInstanceID();
+        string name = "o_" + oname;
+
+        loadingObjects[name] = obj;
+        if( registered ) {
+            Debug.Log("Registering object " + name);
+            NetStringBuilder sb = new NetStringBuilder();
+            sb.AddString(name);
+            sb.AddByte(0); // byte 0 specifies object type
+            SendMessage(SCommand.IdentifyVar, sb);
+        }
+    }
+
+
+
+    public void NewUser(NetStringReader stream)
+    {
+        int uid = stream.ReadInt();
+        Debug.Log("NewUser " + uid);
+
+        Vector3 startPos = new Vector3();
+        startPos.x = stream.ReadFloat();
+        startPos.y = stream.ReadFloat();
+        startPos.z = stream.ReadFloat();
+        Quaternion startRot = new Quaternion();
+        startRot.x = stream.ReadFloat();
+        startRot.y = stream.ReadFloat();
+        startRot.z = stream.ReadFloat();
+        startRot.w = stream.ReadFloat();
+
+        GameObject go = Instantiate(playerPrefab, startPos, startRot);
+        go.name = "Player";
+
+        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
+        cplayer.isLocalPlayer = false;
+        cplayer.id = uid;
+        cplayer.Register();
+
+        serverUserObjects[uid] = go;
+    }
+
+    public void UserQuit(NetStringReader stream)
+    {
+        int uid = stream.ReadInt();
+
+        GameObject go = serverUserObjects[uid];
+
+        Destroy(go);
+        serverUserObjects.Remove(uid);
+    }
+
+    public void GotVarInfo(NetStringReader stream)
+    {
+        VarData v = new VarData();
+        v.name = stream.ReadString();
+        v.type = stream.ReadByte();
+        v.objid = stream.ReadLong();
+
+        Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
+        serverAssets[v.name] = v;
+        if( !loadingObjects.ContainsKey(v.name) ) {
+            Debug.Log("Object " + v.name + " not found");
+            return;
+        }
+
+        MonoBehaviour mb = loadingObjects[v.name];
+        CNetId cni = mb.GetComponent<CNetId>();
+        if( cni != null ) {
+            cni.id = (int)v.objid;
+        } else {
+            Debug.Log("Object " + v.name + " does not have a CNetId component");
+        }
+        clientObjects[v.objid] = mb;
+        Rigidbody rb = mb.GetComponent<Rigidbody>();
+        if( rb != null ) {
+            clientBodies[v.objid] = rb;
+        }
+        loadingObjects.Remove(v.name);
+        if( rb != null && authoritative ) { // send back information about the object
+            Debug.Log("Sending object " + v.name + " to server");
+            SendObject( mb );
+        }
+    }
+
+
+
     public void SendObject( MonoBehaviour mb )
     {
         CNetId cni = (CNetId)mb.GetComponent<CNetId>();
@@ -331,41 +473,6 @@ public class NetSocket : MonoBehaviour
         rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
     }
 
-
-
-    public void RegisterId( MonoBehaviour obj, String oname )
-    {
-        CNetId cni = (CNetId)obj;
-        if( cni == null ) {
-            Debug.Log("Object " + oname + " does not have a CNetId component");
-            return;
-        }
-
-        GameObject go = obj.gameObject;
-        //int objid = go.GetInstanceID();
-        string name = "o_" + oname;
-
-        loadingObjects[name] = obj;
-        if( registered ) {
-            Debug.Log("Registering object " + name);
-            NetStringBuilder sb = new NetStringBuilder();
-            sb.AddString(name);
-            sb.AddByte(0); // byte 0 specifies object type
-            SendMessage(SCommand.IdentifyVar, sb);
-        }
-    }
-
-    public void RegisterPacket( int cmd, int tgt, PacketCallback callback, int packetSize )
-    {
-        if( !commandHandlers.ContainsKey(cmd) ) {
-            commandHandlers[cmd] = new Dictionary<int, PacketCallback>();
-
-            if( packetSizes.ContainsKey(cmd) && packetSizes[cmd] != packetSize )
-                Debug.Log("Warning: packet size for command " + cmd + " already set to " + packetSizes[cmd] + " (new size: " + packetSize + ")");
-            packetSizes[cmd] = packetSize;
-        }
-        commandHandlers[cmd][tgt] = callback;
-    }
 
     public void SendDynPacket( int cmd, int tgt, byte[] data )
     {
@@ -452,73 +559,41 @@ public class NetSocket : MonoBehaviour
         }
     }
 
-    public void NewUser(NetStringReader stream)
-    {
-        int uid = stream.ReadInt();
-        Debug.Log("NewUser " + uid);
-        Vector3 startPos = new Vector3();
-        startPos.x = stream.ReadFloat();
-        startPos.y = stream.ReadFloat();
-        startPos.z = stream.ReadFloat();
-        Quaternion startRot = new Quaternion();
-        startRot.x = stream.ReadFloat();
-        startRot.y = stream.ReadFloat();
-        startRot.z = stream.ReadFloat();
-        startRot.w = stream.ReadFloat();
-
-        GameObject go = Instantiate(playerPrefab, startPos, startRot);
-        go.name = "Player";
-
-        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
-        cplayer.isLocalPlayer = false;
-        cplayer.id = uid;
-        cplayer.Register();
-    }
-
-    public void UserQuit(NetStringReader stream)
-    {
-        //! Do this.
-    }
-
-    public void GotVarInfo(NetStringReader stream)
-    {
-        VarData v = new VarData();
-        v.name = stream.ReadString();
-        v.type = stream.ReadByte();
-        v.objid = stream.ReadLong();
-
-        Debug.Log("VarInfo: " + v.name + " " + v.objid + " " + v.type);
-        serverAssets[v.name] = v;
-        if( !loadingObjects.ContainsKey(v.name) ) {
-            Debug.Log("Object " + v.name + " not found");
-            return;
-        }
-
-        MonoBehaviour mb = loadingObjects[v.name];
-        CNetId cni = mb.GetComponent<CNetId>();
-        if( cni != null ) {
-            cni.id = (int)v.objid;
-        } else {
-            Debug.Log("Object " + v.name + " does not have a CNetId component");
-        }
-        clientObjects[v.objid] = mb;
-        Rigidbody rb = mb.GetComponent<Rigidbody>();
-        if( rb != null ) {
-            clientBodies[v.objid] = rb;
-        }
-        loadingObjects.Remove(v.name);
-        if( rb != null && authoritative ) { // send back information about the object
-            Debug.Log("Sending object " + v.name + " to server");
-            SendObject( mb );
-        }
-    }
-
 
 
     public void Update()
     {
         TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
         last_local_time = (long)ts.TotalMilliseconds;
+
+        if( last_local_time-last_in_time >= 1000 ) {
+            last_in_time = last_local_time;
+            lock( _inbpsLock ) {
+                if( in_bps_measure == 0 ) {
+                    in_bytes.Clear();
+                } else if( in_bytes.Count > 4 ) {
+                    in_bytes.RemoveAt(0);
+                }
+                if( in_bps_measure != 0 )
+                    in_bytes.Add( in_bps_measure );
+                in_bps_measure = 0;
+            }
+
+        }
+        if( last_local_time-last_out_time >= 1000 ) {
+            last_out_time = last_local_time;
+            lock( _outbpsLock ) {
+                if( out_bps_measure == 0 ) {
+                    out_bytes.Clear();
+                } else if( out_bytes.Count > 4 ) {
+                    out_bytes.RemoveAt(0);
+                }
+                if( out_bps_measure != 0 )
+                    out_bytes.Add( out_bps_measure );
+                out_bps_measure = 0;
+            }
+        }
+
         if( last_local_time-last_record_time >= 10000 ) {
             last_record_time = last_local_time;
             NetStringBuilder sb = new NetStringBuilder();

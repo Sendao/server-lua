@@ -27,64 +27,76 @@ public class NetThreads
 
     private void SendThread()
     {
-        long totalSize;
+        long totalSize, sentSize;
         byte[] data;
 
         while (true)
         {
             parent._sendQSig.WaitOne();
-            lock (parent._sendQLock)
+            while (parent.sendQ.Count > 0)
             {
-                while (parent.sendQ.Count > 0)
+                totalSize=0;
+                lock (parent._sendQLock)
                 {
-                    totalSize=0;
                     foreach( byte[] dataitem in parent.sendQ ) {
                         // measure total size
                         totalSize += dataitem.Length;
                     }
+                }
 
-                    if( totalSize < 128 ) {
-                        byte[] idhead = new byte[1];
-                        idhead[0] = (byte)totalSize;
-                        parent.ws.Send(idhead);
-                        while( parent.sendQ.Count > 0 ) {
-                            data = parent.sendQ.Dequeue();
-                            //int i;
-                            //string str = "";
-                            //for( i=0; i<data.Length; i++ ) {
-                            //    str += (int)data[i] + " ";
-                            //}
-                            //Debug.Log("Sending: " + data.Length + ": " + str);
-                            parent.ws.Send(data);
-                        }
-                        data = null;  // don't hold onto the data
-                    } else {
-                        //Debug.Log("Compressing " + totalSize + " bytes");
-                        byte[] idhead = new byte[1];
-                        idhead[0] = (byte)255;
-                        parent.ws.Send(idhead);
+                sentSize=0;
 
-                        var compressedStream = new MemoryStream();
-                        var zipStream = new GZipStream(compressedStream, CompressionMode.Compress, true);
-                        while( parent.sendQ.Count > 0 ) {
+                if( totalSize < 128 ) {
+                    byte[] idhead = new byte[1];
+                    idhead[0] = (byte)totalSize;
+                    parent.ws.Send(idhead);
+                    sentSize = 1;
+                    while( parent.sendQ.Count > 0 ) {
+                        lock (parent._sendQLock) {
                             data = parent.sendQ.Dequeue();
-                            zipStream.Write(data, 0, data.Length);
                         }
-                        data = null;  // don't hold onto the data
-                        zipStream.Close();
-                        compressedStream.Position = 0;
-                        byte[] compressedData = new byte[compressedStream.Length];
-                        compressedStream.Read(compressedData, 0, (int)compressedData.Length);
-                        //Debug.Log("Compressed to " + compressedData.Length + " bytes");
-                        long compSize = compressedData.Length;
-                        byte[] sizehead = new byte[4];
-                        sizehead[0] = (byte)(compSize >> 24);
-                        sizehead[1] = (byte)(compSize >> 16);
-                        sizehead[2] = (byte)(compSize >> 8);
-                        sizehead[3] = (byte)(compSize);
-                        parent.ws.Send(sizehead);
-                        parent.ws.Send(compressedData);
+                        parent.ws.Send(data);
+                        sentSize += data.Length;
+                        if( sentSize >= totalSize ) break;
                     }
+                    data = null;  // don't hold onto the data
+                } else {
+                    //Debug.Log("Compressing " + totalSize + " bytes");
+                    byte[] idhead = new byte[1];
+                    idhead[0] = (byte)255;
+                    parent.ws.Send(idhead);
+
+                    var compressedStream = new MemoryStream();
+                    var zipStream = new GZipStream(compressedStream, CompressionMode.Compress, true);
+                    while( parent.sendQ.Count > 0 ) {
+                        lock (parent._sendQLock) {
+                            data = parent.sendQ.Dequeue();
+                        }
+                        zipStream.Write(data, 0, data.Length);
+                        sentSize += data.Length;
+                        if( sentSize >= totalSize ) break;
+                    }
+                    data = null;  // don't hold onto the data
+                    zipStream.Close();
+
+                    compressedStream.Position = 0;
+                    byte[] compressedData = new byte[compressedStream.Length];
+                    compressedStream.Read(compressedData, 0, (int)compressedData.Length);
+                    long compSize = compressedData.Length;
+                    //Debug.Log("Compressed to " + compSize + " bytes");
+
+                    byte[] sizehead = new byte[4];
+                    sizehead[0] = (byte)(compSize >> 24);
+                    sizehead[1] = (byte)(compSize >> 16);
+                    sizehead[2] = (byte)(compSize >> 8);
+                    sizehead[3] = (byte)(compSize);
+                    parent.ws.Send(sizehead);
+                    parent.ws.Send(compressedData);
+                    sentSize = 5 + compSize;
+                }
+
+                lock( parent._outbpsLock ) {
+                    parent.out_bps_measure += (int)totalSize+1;
                 }
             }
         }
@@ -96,10 +108,12 @@ public class NetThreads
         byte[] tmpbuf;
         int readlen = 0;
         byte cmdByte;
+        long recv_bytes;
 
         while (true)
         {
             int recv = parent.ws.Receive(readbuffer, readlen, 1024, SocketFlags.None);
+            recv_bytes=0;
             //Debug.Log("Received " + recv + " bytes");
             if( recv <= 0 ) {
                 Debug.Log("Connection closed");
@@ -154,11 +168,12 @@ public class NetThreads
                         //Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
                         if( smallSize != 0 )
                             Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
+                        recv_bytes += tmpbuf.Length;
+                        deptr += smallSize;
                         lock (parent._recvQLock)
                         {
                             parent.recvQ.Enqueue(tmpbuf);
                         }
-                        deptr += smallSize;
                     }
                 } else if( ptr+id > readlen ) {
                     //Debug.Log("Not enough data to read: " + ptr + " + " + id + " > " + readlen);
@@ -178,6 +193,7 @@ public class NetThreads
                             Array.Copy(readbuffer, ptr, tmpbuf, 3, smallSize);
                         //Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + ": " + tmpbuf.Length);
                         ptr += smallSize;
+                        recv_bytes += tmpbuf.Length;
                         lock (parent._recvQLock)
                         {
                             parent.recvQ.Enqueue(tmpbuf);
@@ -193,6 +209,10 @@ public class NetThreads
                 readlen = readlen-ptr;
             } else {
                 readlen = 0;
+            }
+
+            lock( parent._inbpsLock ) {
+                parent.in_bps_measure += (int)recv_bytes;
             }
         }
     }

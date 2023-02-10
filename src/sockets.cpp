@@ -2,6 +2,12 @@
 
 #include <zlib.h>
 
+#ifdef WIN32
+#define SENDOPT 0
+#else
+#define SENDOPT MSG_NOSIGNAL
+#endif
+
 int fSock;
 bool firstUser=true;
 
@@ -203,7 +209,7 @@ int OutputConnection(User *user)
 		// first send the size of the compressed data
 
 		idbyte = (unsigned char)255;
-		iSent = send(user->fSock, &idbyte, 1, 0);
+		iSent = send(user->fSock, &idbyte, 1, SENDOPT);
 		if( iSent < 0 ) {
 			lprintf("send() failed sending compressed data: %s", strerror(errno));
 			return -1;
@@ -217,7 +223,7 @@ int OutputConnection(User *user)
 		smallbuf[2] = (redsz>>8) & 0xFF;
 		smallbuf[3] = (unsigned char)(redsz&0xFF);
 		//lprintf("Compression size buffer: %u %u %u %d", smallbuf[0], smallbuf[1], smallbuf[2], (unsigned char)smallbuf[3]);
-		iSent = send(user->fSock, smallbuf, 4, 0);
+		iSent = send(user->fSock, smallbuf, 4, SENDOPT);
 		if( iSent == 4 ) iSent=1;
 
 		// reduce the size of the data to send
@@ -229,11 +235,11 @@ int OutputConnection(User *user)
 		tgtsz = sendsize;
 
 		//lprintf("Compile and send %d+1 bytes", (int)idbyte);
-		iSent = send(user->fSock, &idbyte, 1, 0);
+		iSent = send(user->fSock, &idbyte, 1, SENDOPT);
 	}
 
 	if( iSent == 1 ) {
-		iSent = send(user->fSock, tgtbuf, sendsize, 0);
+		iSent = send(user->fSock, tgtbuf, sendsize, SENDOPT);
 	} else if( iSent < 0 ) {
 		lprintf("Error sending idbyte: %s", strerror(errno));
 		return -1;
