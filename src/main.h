@@ -244,6 +244,7 @@ class User
 	public:
 	void Close(void);
 	void ProcessMessages(void);
+	void SendQuit(void);
 	void SendMsg( char cmd, unsigned int size, char *data );
 
 	public: // commands (client controlled)

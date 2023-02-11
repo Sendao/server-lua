@@ -82,6 +82,16 @@ void User::Quit( char *data, long sz )
 {
 	bQuitting = true;
 }
+void User::SendQuit()
+{
+	char *buf=NULL;
+	long bufsz;
+	u_long alloced = 0;
+
+	bufsz = spackf(&buf, &alloced, "i", uid);
+	game->SendMsg( CCmdUserQuit, bufsz, buf, this );
+	strmem->Free( buf, alloced );
+}
 
 void User::SendMsg( char cmd, unsigned int size, char *data )
 {
@@ -92,7 +102,6 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	Output( this, buf, bufsz );
 	strmem->Free( buf, alloced );
-	
 }
 
 void User::ProcessMessages(void)

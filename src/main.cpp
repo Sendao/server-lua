@@ -138,10 +138,9 @@ void Game::mainloop()
 				lprintf("recv() error: %s", GetSocketError(user->fSock));
 				FD_CLR(user->fSock, &fdI);
 				FD_CLR(user->fSock, &fdO);
-				sock_close(lsock);
-				user->fSock = -1;
-				ituser = userL.erase(ituser);
+				user->SendQuit();
 				user->Close();
+				ituser = userL.erase(ituser);
 				hfree(user, sizeof(User));
 				continue;
 			}
@@ -152,9 +151,9 @@ void Game::mainloop()
 					lprintf("Input<0: client dropped connection");
 					lprintf("socket error: %s", GetSocketError(user->fSock));
 					FD_CLR(user->fSock, &fdO);
-					user->fSock = -1;
-					ituser = userL.erase(ituser);
+					user->SendQuit();
 					user->Close();
+					ituser = userL.erase(ituser);
 					hfree(user, sizeof(User));
 					continue;
 				} else if( user->messages.size() > 0 ) {
@@ -260,6 +259,7 @@ void Game::mainloop()
 					{
 						lprintf("connection close: quitting");
 						ituser = userL.erase(ituser);
+						user->SendQuit();
 						user->Close();
 						hfree(user, sizeof(User));
 						continue;
