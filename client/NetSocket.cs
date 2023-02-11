@@ -111,6 +111,7 @@ public class NetSocket : MonoBehaviour
     public int out_bps_measure = 0;
     public readonly object _inbpsLock = new object();
     public readonly object _outbpsLock = new object();
+    public int maxTargets = 0;
 
     public void Awake()
     {
@@ -309,6 +310,7 @@ public class NetSocket : MonoBehaviour
             packetSizes[cmd] = packetSize;
         }
         commandHandlers[cmd][tgt] = callback;
+        if( tgt > maxTargets ) maxTargets = tgt;
     }
 
 
@@ -333,44 +335,6 @@ public class NetSocket : MonoBehaviour
             sb.AddByte(0); // byte 0 specifies object type
             SendMessage(SCommand.IdentifyVar, sb);
         }
-    }
-
-
-
-    public void NewUser(NetStringReader stream)
-    {
-        int uid = stream.ReadInt();
-        Debug.Log("NewUser " + uid);
-
-        Vector3 startPos = new Vector3();
-        startPos.x = stream.ReadFloat();
-        startPos.y = stream.ReadFloat();
-        startPos.z = stream.ReadFloat();
-        Quaternion startRot = new Quaternion();
-        startRot.x = stream.ReadFloat();
-        startRot.y = stream.ReadFloat();
-        startRot.z = stream.ReadFloat();
-        startRot.w = stream.ReadFloat();
-
-        GameObject go = Instantiate(playerPrefab, startPos, startRot);
-        go.name = "Player";
-
-        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
-        cplayer.isLocalPlayer = false;
-        cplayer.id = uid;
-        cplayer.Register();
-
-        serverUserObjects[uid] = go;
-    }
-
-    public void UserQuit(NetStringReader stream)
-    {
-        int uid = stream.ReadInt();
-
-        GameObject go = serverUserObjects[uid];
-
-        Destroy(go);
-        serverUserObjects.Remove(uid);
     }
 
     public void GotVarInfo(NetStringReader stream)
@@ -398,6 +362,8 @@ public class NetSocket : MonoBehaviour
         Rigidbody rb = mb.GetComponent<Rigidbody>();
         if( rb != null ) {
             clientBodies[v.objid] = rb;
+        } else {
+            Debug.Log("Object " + v.name + " does not have a RigidBody component");
         }
         loadingObjects.Remove(v.name);
         if( rb != null && authoritative ) { // send back information about the object
@@ -443,8 +409,8 @@ public class NetSocket : MonoBehaviour
         sb.AddFloat( rb.rotation.z );
         sb.AddFloat( rb.rotation.w );
 
-        SendMessage(SCommand.SetObjectPositionRotation, sb);
-        //Debug.Log("Sent object " + cni.id);
+        SendMessage(SCommand.SetObjectPositionRotation, sb, 50000 + cni.id*1 + (int)SCommand.SetObjectPositionRotation );
+        Debug.Log("Sent object " + cni.id + ": " + rb.position.x + ", " + rb.position.y + ", " + rb.position.z + "  " + rb.rotation.x + ", " + rb.rotation.y + ", " + rb.rotation.z + ", " + rb.rotation.w);
     }
 
     public void SetObjectPositionRotation(NetStringReader stream)
@@ -467,11 +433,48 @@ public class NetSocket : MonoBehaviour
         r2 = stream.ReadFloat();
         r3 = stream.ReadFloat();
 
-        //Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
+        Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
         Rigidbody rb = clientBodies[objid];
         rb.MovePosition(new Vector3(x,y,z));
         rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
     }
+
+    public void NewUser(NetStringReader stream)
+    {
+        int uid = stream.ReadInt();
+        Debug.Log("NewUser " + uid);
+
+        Vector3 startPos = new Vector3();
+        startPos.x = stream.ReadFloat();
+        startPos.y = stream.ReadFloat();
+        startPos.z = stream.ReadFloat();
+        Quaternion startRot = new Quaternion();
+        startRot.x = stream.ReadFloat();
+        startRot.y = stream.ReadFloat();
+        startRot.z = stream.ReadFloat();
+        startRot.w = stream.ReadFloat();
+
+        GameObject go = Instantiate(playerPrefab, startPos, startRot);
+        go.name = "Player";
+
+        CNetPlayer1 cplayer = go.GetComponent<CNetPlayer1>();
+        cplayer.isLocalPlayer = false;
+        cplayer.id = uid;
+        cplayer.Register();
+
+        serverUserObjects[uid] = go;
+    }
+
+    public void UserQuit(NetStringReader stream)
+    {
+        int uid = stream.ReadInt();
+
+        GameObject go = serverUserObjects[uid];
+
+        Destroy(go);
+        serverUserObjects.Remove(uid);
+    }
+
 
 
     public void SendDynPacket( int cmd, int tgt, byte[] data )
@@ -514,9 +517,10 @@ public class NetSocket : MonoBehaviour
         }
     }
     
-    public void SendPacket( int cmd, int tgt, byte[] data )
+    public void SendPacket( int cmd, int tgt, byte[] data, bool instantSend=false )
     {
         NetStringBuilder sb = new NetStringBuilder();
+        long code = (long)(tgt+1) + ((long)(cmd+1) * (long)maxTargets);
 
         sb.AddInt(cmd);
         sb.AddInt(tgt);
@@ -526,7 +530,7 @@ public class NetSocket : MonoBehaviour
         sb.AddInt(ts_short);
 
         if( data != null ) sb.AddBytes(data);
-        SendMessage(SCommand.Packet, sb);
+        SendMessage(SCommand.Packet, sb, instantSend?0:code);
     }
     public void RecvPacket( NetStringReader stream )
     {
@@ -601,10 +605,15 @@ public class NetSocket : MonoBehaviour
             SendMessage(SCommand.ClockSync, sb);
         }
 
+
+        flushDelayQueue();
+        if( sendBuffers.Count > 0 ) {
+            sendPackets();
+        }
         Process();
     }
 
-    public void SendMessage( SCommand cmd, NetStringBuilder sb )
+    public void SendMessage( SCommand cmd, NetStringBuilder sb, long code=0 )
     {
         byte[] data = null;
         if( sb != null ) {
@@ -622,14 +631,20 @@ public class NetSocket : MonoBehaviour
         msg[1] = (byte)(len >> 8);
         msg[2] = (byte)(len & 0xFF);
         //Debug.Log("Encode len: " + len + " " + msg[1] + " " + msg[2]);
-        send(msg);
 
-        if( data != null )
-            send(data);
-        _sendQSig.Set();
+        if( code == 0 ) {
+            _sendQSig.Reset();
+            send(msg, data != null ? data.Length : 0);
+
+            if( data != null )
+                send(data);
+            _sendQSig.Set();
+        } else {
+            sendBuffer(code, msg, data);
+        }
     }
 
-    public void SendMessage2( SCommand cmd, byte[] data )
+    public void SendMessage2( SCommand cmd, byte[] data, long code=0 )
     {
         byte[] msg = new byte[3];
         int len;
@@ -642,17 +657,120 @@ public class NetSocket : MonoBehaviour
         msg[1] = (byte)(len >> 8);
         msg[2] = (byte)(len & 0xFF);
         //Debug.Log("Encode len: " + len + " " + msg[1] + " " + msg[2]);
-        send(msg);
 
-        if( data != null )
-            send(data);
-        _sendQSig.Set();
+        if( code == 0 ) {
+            _sendQSig.Reset();
+            send(msg, data != null ? data.Length : 0);
+
+            if( data != null )
+                send(data);
+            _sendQSig.Set();
+        } else {
+            sendBuffer(code, msg, data);
+        }
     }
 
-    public void send(byte[] data) {
+    public long last_send_time=0;
+    public int max_out_bps=1024;
+    public int second_bytes=0;
+    private Queue<byte[]> delayQ = new Queue<byte[]>();
+
+    public void send(byte[] data, int additionalData=0) {
+
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        long cur_send_time = (long)ts.TotalMilliseconds;
+        float elapsed = (cur_send_time-last_send_time)/1000.0f;
+        if( elapsed > 1.0f ) {
+            elapsed=1.0f;
+        }
+        if( second_bytes+additionalData+data.Length > max_out_bps*elapsed ) {
+            Debug.Log("overflow to delayQ");
+            delayQ.Enqueue(data);
+            return;
+        }
+        if( delayQ.Count > 0 ) { // do not let any data through if we have data in the delay queue
+            Debug.Log("delayQ blocking data");
+            delayQ.Enqueue(data);
+            return;
+        }
+        second_bytes += data.Length;
         lock (_sendQLock) {
             sendQ.Enqueue(data);
         }
+    }
+    public void flushDelayQueue()
+    {
+        if( delayQ.Count <= 0 ) return;
+
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        long cur_send_time = (long)ts.TotalMilliseconds;
+        float elapsed = (cur_send_time-last_send_time)/1000.0f;
+
+        if( elapsed > 1.0f ) {
+            elapsed = 1.0f;
+            last_send_time = cur_send_time;
+            second_bytes = 0;
+        }
+
+        if( second_bytes > elapsed*max_out_bps ) {
+            return;
+        }
+
+        _sendQSig.Reset();
+        while( delayQ.Count > 0 ) {
+            byte[] data = delayQ.Dequeue();
+            second_bytes += data.Length;
+            lock (_sendQLock) {
+                sendQ.Enqueue(data);
+            }
+            Debug.Log("flushQueue: " + data.Length + " bytes");
+            if( data.Length != 3 && second_bytes > elapsed*max_out_bps ) { // do not end if we just sent a header.
+                Debug.Log("end on flushQueue");
+                break;
+            }
+        }
+        _sendQSig.Set();
+    }
+
+    private Dictionary<long, byte[]> sendHeaders = new Dictionary<long, byte[]>();
+    private Dictionary<long, byte[]> sendBuffers = new Dictionary<long, byte[]>();
+    public void sendPackets() {
+        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
+        long cur_time = (long)ts.TotalMilliseconds;
+        float elapsed = (cur_time-last_send_time)/1000.0f;
+        if( second_bytes >= max_out_bps*elapsed ) {
+            Debug.Log("sendPackets delayed: " + elapsed + " " + second_bytes);
+            return;
+        }
+        if( sendBuffers.Count > 0 )
+            Debug.Log("sendPackets: " + sendBuffers.Count);
+        lock( _sendQLock ) {
+            List<long> keys = new List<long>();
+            _sendQSig.Reset();
+            foreach( var ks in sendBuffers ) {
+                var k = ks.Key;
+                second_bytes += sendHeaders[k].Length;
+                sendQ.Enqueue(sendHeaders[k]);
+                second_bytes += sendBuffers[k].Length;
+                sendQ.Enqueue(sendBuffers[k]);
+                keys.Add(k);
+                /* send at least one of every packet.
+                if( second_bytes > max_out_bps*elapsed ) {
+                    Debug.Log("-partial sendPackets: " + keys.Count + " sent");
+                    break;
+                } */
+            }
+            _sendQSig.Set();
+            foreach( var k in keys ) {
+                sendHeaders.Remove(k);
+                sendBuffers.Remove(k);
+            }
+        }
+    }
+
+    public void sendBuffer(long code, byte[] head, byte[] data) {
+        sendHeaders[code] = head;
+        sendBuffers[code] = data;
     }
 
     public IList<byte[]> recv() {

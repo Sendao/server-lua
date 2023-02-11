@@ -15,8 +15,8 @@ public class CNetBPS : MonoBehaviour
         style.normal.textColor = Color.green;
         avginrect = new Rect( Screen.width * 90/100, Screen.height * 5/100, Screen.width * 10/100, Screen.height * 5/100 );
         avgoutrect = new Rect( Screen.width * 90/100, Screen.height * 10/100, Screen.width * 10/100, Screen.height * 5/100 );
-        inbps = "0";
-        outbps = "0";
+        inbps = "Recv: 0 bps";
+        outbps = "Send: 0 bps";
     }
     void OnGUI()
     {
@@ -47,7 +47,7 @@ public class CNetBPS : MonoBehaviour
         if( count == 0 ) _outbps = 0;
         else _outbps = total_bytes / count;
 
-        inbps = _inbps.ToString();
-        outbps = _outbps.ToString();
+        inbps = "Recv: " + _inbps.ToString() + " bps";
+        outbps = "Send: " + _outbps.ToString() + " bps";
     }
 }
