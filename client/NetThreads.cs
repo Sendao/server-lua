@@ -100,7 +100,7 @@ public class NetThreads
                     compressedData[compressedData.Length - 1] = (byte)(a1 & 0xFF);
 
                     long compSize = compressedData.Length;
-                    //Debug.Log("Compressed to " + compSize + " bytes");
+                    Debug.Log("Compressed to " + compSize + " bytes");
 
                     byte[] sizehead = new byte[4];
                     sizehead[0] = (byte)(compSize >> 24);

@@ -437,7 +437,7 @@ public class NetSocket : MonoBehaviour
         r2 = stream.ReadFloat();
         r3 = stream.ReadFloat();
 
-        //Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
+        Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
         Rigidbody rb = clientBodies[objid];
         rb.MovePosition(new Vector3(x,y,z));
         rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
