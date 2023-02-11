@@ -22,23 +22,22 @@ Contains no actual LUA.
 # MinGW Instructions:
 
 - clone to c:\serv
-- install msys
-- pacman install mingw
-- start a mingw shell
-- pacman -R cmake
-- pacman -S mingw-w64-x86_64-cmake
-- start a new mingw shell
-- build sol2 from source. use a build directory in the sol2 root dir. Use the following from there:
-- cmake -G"MSYS Makefiles" ..
-- make (should download and install lua)
+- delete CMakeLists.txt and copy CMakeWin.txt to CMakeLists.txt
+- install msys from https://www.msys2.org/
+- start a UCRT64 shell.
+- pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-c++ mingw-w64-x86_64-make
+- optionally, pacman -S mingw-w64-x86_64-gdb
+- switch to the MINGW64 shell.
+- download sol2 to c:\serv\sol
+- go to c:\serv\sol and create a 'build' directory.
+- from the build directory:
+- `cmake ..`
+- `mingw32-make` (should download and install lua)
  (this builds target liblua-5.4.4 in build/x64/lib and build/x64/bin)
-- locate liblua-5.4.4.dll.a and liblua-5.4.4.dll and copy to /c/serv/
+- locate liblua-5.4.4.dll.a and liblua-5.4.4.dll and copy to c:\serv
 - go to c/serv and create a 'debug' directory'
 - copy the .dll file to the debug dir
-- build the project in 'debug' directory using cmake -G"MSYS Makefiles" ..
-- locate libwinpthread-1.dll in /c/msys64/mingw64/bin and copy to the debug dir
+- build the project in 'debug' directory using `cmake ..`
+- `mingw32-make` (will build server.exe)
 - you're set to run server.exe
-
-
-
 
