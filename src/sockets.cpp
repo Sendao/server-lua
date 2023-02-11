@@ -340,23 +340,31 @@ int InputConnection(User *user)
 		ctl = *(unsigned char*)p;
 		if( ctl == 255 ) {
 			p++;
-			compsize = sz = *(long*)p;
-			if( p+sizeof(long)+sz >= user->inbuf ) {
+			if( p + 4 >= user->inbuf ) {
+				lprintf("Not enough data for compressed packet (-4-).");
+				p--;
+				break;
+			}
+			compsize = sz = *p << 24 | *(p+1) << 16 | *(p+2) << 8 | *(p+3);
+			if( p+4+sz >= user->inbuf ) {
+				lprintf("Not enough data for compressed packet (%ld).", compsize);
 				p--;
 				break;
 			}
 			lprintf("Compressed data packet: %ld bytes", sz);
-			p += sizeof(long);
+			p += 4;
 
 			strm.zalloc = Z_NULL;
 			strm.zfree = Z_NULL;
 			strm.opaque = Z_NULL;
 			strm.avail_in = 0;
 			strm.next_in = (unsigned char*)p;
-			status = inflateInit2(&strm, 15|16);
+			status = inflateInit2(&strm, 32|15);
 			strm.avail_in = sz;
 			strm.next_in = (unsigned char*)p;
 			failed = false;
+			leftover = NULL;
+			leftover_sz = 0;
 			do {
 				strm.avail_out = 1024;
 				strm.next_out = out;
@@ -364,6 +372,7 @@ int InputConnection(User *user)
 
 				switch( status ) {
 				case Z_OK: case Z_STREAM_END: case Z_BUF_ERROR:
+					lprintf("Decompressed %d bytes", 1024 - strm.avail_out);
 					break;
 				default:
 					inflateEnd(&strm);
@@ -372,6 +381,7 @@ int InputConnection(User *user)
 					break;
 				}
 				if( failed ) break;
+
 				sz = 1024 - strm.avail_out; // how much is actually in 'out'
 
 				subptr = (unsigned char*)leftover;
@@ -385,9 +395,10 @@ int InputConnection(User *user)
 					}
 
 					cmdByte = *subptr;
-					ilen = (int)( (*subptr+1)<<8 | (*(subptr+2)&0xFF) );
+					ilen = (int)( *(subptr+1)<<8 | (*(subptr+2)&0xFF) );
+					lprintf("ilen=%d", ilen);
 					if( subend != NULL && subptr+3+ilen > subend ) {
-						int remainder = subend - (subptr+3+ilen);
+						int remainder = 3+ilen - (subend - subptr);
 
 						if( sz < remainder ) { // not enough data in this packet, we'll need the next one
 							msgbuf = strmem->Alloc( subend-subptr + sz );
@@ -397,12 +408,14 @@ int InputConnection(User *user)
 								strmem->Free( leftover, leftover_sz );
 							leftover = msgbuf;
 							leftover_sz = (subend-subptr)+sz;
+							lprintf("Leftover: %d", leftover_sz);
 							break;
 						} else {
 							msgbuf = strmem->Alloc( (subend-subptr) + remainder );
 							memcpy( msgbuf, subptr, subend-subptr );
 							memcpy( msgbuf+(subend-subptr), out, remainder );
 							user->messages.push_back( msgbuf );
+							lprintf("Read compressed packet of %d (%d)", (subend-subptr) + remainder, ilen);
 							leftover = NULL;
 							leftover_sz = 0;
 							subptr = out + remainder;
@@ -410,19 +423,20 @@ int InputConnection(User *user)
 						}
 						continue;
 					}
-					if( ( subend != NULL && subptr+3+ilen > subend ) ||
-						( subend == NULL && subptr+3+ilen > subend2 ) ) {
+					if( subend == NULL && subptr+3+ilen > subend2 ) {
 						if( leftover )
 							strmem->Free( leftover, leftover_sz );
-						leftover = strmem->Alloc( subend-subptr );
-						memcpy( leftover, subptr, subend-subptr );
-						leftover_sz = subend - subptr;
+						leftover = strmem->Alloc( subend2-subptr );
+						memcpy( leftover, subptr, subend2-subptr );
+						leftover_sz = subend2 - subptr;
+						lprintf("Leftover: %d", leftover_sz);
 						break;
 					} else {
 						msgbuf = strmem->Alloc( ilen+3 );
 						memcpy( msgbuf, subptr, ilen+3 );
 						subptr += ilen + 3;
 						user->messages.push_back( msgbuf );
+						lprintf("Red compressed packet of %d (%d)", ilen);
 					}
 				} while( subptr != subend2 );
 
@@ -433,7 +447,8 @@ int InputConnection(User *user)
 				leftover = NULL;
 				leftover_sz = 0;
 			}
-			p += sz;
+
+			p += compsize;
 
 			if( failed ) break;
 
@@ -458,7 +473,7 @@ int InputConnection(User *user)
 				memcpy( msgbuf, p, 3 );
 				user->messages.push_back(msgbuf);
 				p += 3;
-			} else if( ilen+3+p >= user->inbuf ) {
+			} else if( ilen+3+p >= user->inbuf || ilen<0 ) {
 				lprintf("Broken packet. Size: %d left: %d", ilen+3, (int)(user->inbuf-p));
 				return -1;
 			} else {

@@ -277,9 +277,10 @@ void Game::mainloop()
 		if( FD_ISSET(fSock, &fdI) ) // New Connection Available
 		{
 			user = InitConnection();
-			lprintf("InitConnection %u", user->fSock);
-			//TransmitWorld(user);
-			userL.push_back(user);
+			if( user ) {
+				lprintf("InitConnection %u", user->fSock);
+				userL.push_back(user);
+			}
 		}
 	}
 }
@@ -323,7 +324,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 		if( v->type == 0 ) { // it's an object
 		// send obj info
 			o = game->objects[v->objid];
-			if( o->last_update != 0 ) {
+			if( o->last_update != 0 && !sender->authority ) {
 				ts_short = o->last_update - game->last_timestamp;
 
 				lprintf("First time update obj %s: %f %f %f rotation %f %f %f %f", v->name, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3);
