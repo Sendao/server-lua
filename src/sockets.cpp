@@ -345,6 +345,7 @@ int InputConnection(User *user)
 				p--;
 				break;
 			}
+			lprintf("Compressed data packet: %ld bytes", sz);
 			p += sizeof(long);
 
 			strm.zalloc = Z_NULL;
@@ -437,14 +438,17 @@ int InputConnection(User *user)
 			if( failed ) break;
 
 			inflateEnd(&strm);
-
-		} else if( p+ctl >= user->inbuf ) {
+			continue;
+		} else if( p+1+ctl >= user->inbuf ) {
 			// not enough data in the buffer to read the packet
 			break;
 		} else {
 			p++;
 		}
-		//lprintf("Got %d packet size", (int)ctl);
+		lprintf("Got %d packet size (inbufsz=%d)", (int)ctl, user->inbufsz);
+		if( p+ctl >= user->inbuf ) {
+			lprintf("Overflow: %d bytes", (user->inbuf)-(p+ctl));
+		}
 		endpt = p+ctl;
 		while( p < endpt ) {
 			cmdByte = *p;
@@ -454,6 +458,9 @@ int InputConnection(User *user)
 				memcpy( msgbuf, p, 3 );
 				user->messages.push_back(msgbuf);
 				p += 3;
+			} else if( ilen+3+p >= user->inbuf ) {
+				lprintf("Broken packet. Size: %d left: %d", ilen+3, (int)(user->inbuf-p));
+				return -1;
 			} else {
 				msgbuf = strmem->Alloc(ilen+3);
 				memcpy( msgbuf, p, ilen+3 );
@@ -468,6 +475,10 @@ int InputConnection(User *user)
 	if( p != user->inbuf_memory ) { // we have read some data so we need to trim the input buffer
 		sz = p - user->inbuf_memory;
 		user->inbufsz -= sz;
+		if( user->inbufsz < 0 ) {
+			lprintf("ERROR: inbufsz<0");
+			return -1;
+		}
 		// Note: copying in overlapping buffers is undefined behavior. So we require two copies here.
 		//! An alternative is to copy byte-by-byte
 		if( user->inbufsz != 0 ) {

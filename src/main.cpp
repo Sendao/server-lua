@@ -91,7 +91,11 @@ void Game::mainloop()
 			per.tv_usec = 0;
 		} else {
 			per.tv_usec = 0;
-			per.tv_sec = 10-(this_cycle.tv_sec-prev_cycle.tv_sec);// wait up to 10 seconds if no users are doing anything
+			if( this_cycle.tv_sec-prev_cycle.tv_sec > 10 ) {
+				per.tv_sec = 0;
+			} else {
+				per.tv_sec = 10-(this_cycle.tv_sec-prev_cycle.tv_sec);// wait up to 10 seconds if no users are doing anything
+										      		}
 		}
 		usetv = &per;
 		FD_ZERO(&fdI);
@@ -147,8 +151,8 @@ void Game::mainloop()
 				{	// user broke connection
 					lprintf("Input<0: client dropped connection");
 					lprintf("socket error: %s", GetSocketError(user->fSock));
-					user->fSock = -1;
 					FD_CLR(user->fSock, &fdO);
+					user->fSock = -1;
 					ituser = userL.erase(ituser);
 					user->Close();
 					hfree(user, sizeof(User));
@@ -318,8 +322,8 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 
 		if( v->type == 0 ) { // it's an object
 		// send obj info
+			o = game->objects[v->objid];
 			if( o->last_update != 0 ) {
-				o = game->objects[v->objid];
 				ts_short = o->last_update - game->last_timestamp;
 
 				lprintf("First time update obj %s: %f %f %f rotation %f %f %f %f", v->name, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3);
