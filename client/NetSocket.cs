@@ -228,8 +228,10 @@ public class NetSocket : MonoBehaviour
                 case CCommand.RegisterUser: // Register User
                     if( stream.ReadByte() == 0 ) {
                         authoritative = false;
+                        max_out_bps = 4096;
                     } else {
                         authoritative = true;
+                        max_out_bps = 16000;
                     }
 
                     //! Save uid
@@ -252,8 +254,10 @@ public class NetSocket : MonoBehaviour
                 case CCommand.ChangeUserRegistration:
                     if( stream.ReadByte() == 0 ) {
                         authoritative = false;
+                        max_out_bps = 4096;
                     } else {
                         authoritative = true;
+                        max_out_bps = 16000;
                     }
                     if( !authoritative ) {
                         foreach( long key in clientBodies.Keys ) {
@@ -410,7 +414,7 @@ public class NetSocket : MonoBehaviour
         sb.AddFloat( rb.rotation.w );
 
         SendMessage(SCommand.SetObjectPositionRotation, sb, 50000 + cni.id*1 + (int)SCommand.SetObjectPositionRotation );
-        Debug.Log("Sent object " + cni.id + ": " + rb.position.x + ", " + rb.position.y + ", " + rb.position.z + "  " + rb.rotation.x + ", " + rb.rotation.y + ", " + rb.rotation.z + ", " + rb.rotation.w);
+        //Debug.Log("Sent object " + cni.id + ": " + rb.position.x + ", " + rb.position.y + ", " + rb.position.z + "  " + rb.rotation.x + ", " + rb.rotation.y + ", " + rb.rotation.z + ", " + rb.rotation.w);
     }
 
     public void SetObjectPositionRotation(NetStringReader stream)
@@ -671,7 +675,7 @@ public class NetSocket : MonoBehaviour
     }
 
     public long last_send_time=0;
-    public int max_out_bps=1024;
+    public int max_out_bps=4096;
     public int second_bytes=0;
     private Queue<byte[]> delayQ = new Queue<byte[]>();
 

@@ -43,7 +43,7 @@ public class NetThreads
                     }
                 }
 
-                Debug.Log("Sending " + totalSize + " bytes");
+                //Debug.Log("Sending " + totalSize + " bytes");
 
                 sentSize=0;
 
