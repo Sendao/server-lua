@@ -120,7 +120,7 @@ public class CNetPlayer1 : MonoBehaviour
             targetDist.y = 0f;
             float dist = targetDist.magnitude;
 
-            if( dist > 0.05f ) {
+            if( dist > 0.1f ) {
                 var targetDir = targetDist.normalized;
                 Vector3 targetSpeed = (3f*ctrl.maxForwardSpeed*targetDir); // accelerate to full speed. 2 = lag compensation, accelerate faster.
 
@@ -144,7 +144,7 @@ public class CNetPlayer1 : MonoBehaviour
                 {
                     speedDiff.Normalize();
 
-                    ctrl.directSpeed += speedDiff * ctrl.acceleration * Time.deltaTime;
+                    ctrl.directSpeed += speedDiff * ctrl.acceleration * Time.deltaTime * 2f;
                 }
 
                 if( ctrl.directSpeed.magnitude > ctrl.maxForwardSpeed ) {
@@ -152,16 +152,20 @@ public class CNetPlayer1 : MonoBehaviour
                 }
             } else {
                 if( ctrl.directSpeed.x > 0.1f ) {
-                    ctrl.directSpeed.x -= Mathf.Min(ctrl.directSpeed.x,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
+                    ctrl.directSpeed.x -= Mathf.Min(ctrl.directSpeed.x,1.0f) * (4f * ctrl.acceleration) * Time.deltaTime;
+                    if( ctrl.directSpeed.x < 0 ) ctrl.directSpeed.x=0;
                 } else if( ctrl.directSpeed.x < -0.1f ) {
-                    ctrl.directSpeed.x += Mathf.Min(-ctrl.directSpeed.x,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
+                    ctrl.directSpeed.x += Mathf.Min(-ctrl.directSpeed.x,1.0f) * (4f * ctrl.acceleration) * Time.deltaTime;
+                    if( ctrl.directSpeed.x > 0 ) ctrl.directSpeed.x=0;
                 } else {
                     ctrl.directSpeed.x = 0f;
                 }
                 if( ctrl.directSpeed.z > 0.1f ) {
-                    ctrl.directSpeed.z -= Mathf.Min(ctrl.directSpeed.z,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
+                    ctrl.directSpeed.z -= Mathf.Min(ctrl.directSpeed.z,1.0f) * (4f * ctrl.acceleration) * Time.deltaTime;
+                    if( ctrl.directSpeed.z < 0 ) ctrl.directSpeed.z=0;
                 } else if( ctrl.directSpeed.x < -0.1f ) {
-                    ctrl.directSpeed.z += Mathf.Min(-ctrl.directSpeed.z,1.0f) * (2f * ctrl.acceleration) * Time.deltaTime;
+                    ctrl.directSpeed.z += Mathf.Min(-ctrl.directSpeed.z,1.0f) * (4f * ctrl.acceleration) * Time.deltaTime;
+                    if( ctrl.directSpeed.z > 0 ) ctrl.directSpeed.z=0;
                 } else {
                     ctrl.directSpeed.z = 0f;
                 }

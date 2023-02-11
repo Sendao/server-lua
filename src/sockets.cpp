@@ -372,7 +372,7 @@ int InputConnection(User *user)
 
 				switch( status ) {
 				case Z_OK: case Z_STREAM_END: case Z_BUF_ERROR:
-					lprintf("Decompressed %d bytes", 1024 - strm.avail_out);
+					//lprintf("Decompressed %d bytes", 1024 - strm.avail_out);
 					break;
 				default:
 					inflateEnd(&strm);
@@ -408,14 +408,14 @@ int InputConnection(User *user)
 								strmem->Free( leftover, leftover_sz );
 							leftover = msgbuf;
 							leftover_sz = (subend-subptr)+sz;
-							lprintf("Leftover: %d", leftover_sz);
+							//lprintf("Leftover: %d", leftover_sz);
 							break;
 						} else {
 							msgbuf = strmem->Alloc( (subend-subptr) + remainder );
 							memcpy( msgbuf, subptr, subend-subptr );
 							memcpy( msgbuf+(subend-subptr), out, remainder );
 							user->messages.push_back( msgbuf );
-							lprintf("Read compressed packet of %d (%d)", (subend-subptr) + remainder, ilen);
+							//lprintf("Read compressed packet of %d (%d)", (subend-subptr) + remainder, ilen);
 							leftover = NULL;
 							leftover_sz = 0;
 							subptr = out + remainder;
@@ -460,7 +460,7 @@ int InputConnection(User *user)
 		} else {
 			p++;
 		}
-		lprintf("Got %d packet size (inbufsz=%d)", (int)ctl, user->inbufsz);
+		//lprintf("Got %d packet size (inbufsz=%d)", (int)ctl, user->inbufsz);
 		if( p+ctl >= user->inbuf ) {
 			lprintf("Overflow: %d bytes", (user->inbuf)-(p+ctl));
 		}

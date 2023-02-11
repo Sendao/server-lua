@@ -39,10 +39,11 @@ public class NetThreads
                 lock (parent._sendQLock)
                 {
                     foreach( byte[] dataitem in parent.sendQ ) {
-                        // measure total size
                         totalSize += dataitem.Length;
                     }
                 }
+
+                //Debug.Log("Sending " + totalSize + " bytes");
 
                 sentSize=0;
 
@@ -61,27 +62,43 @@ public class NetThreads
                     }
                     data = null;  // don't hold onto the data
                 } else {
-                    //Debug.Log("Compressing " + totalSize + " bytes");
+                    Debug.Log("Compressing " + totalSize + " bytes");
                     byte[] idhead = new byte[1];
                     idhead[0] = (byte)255;
                     parent.ws.Send(idhead);
 
+                    
                     var compressedStream = new MemoryStream();
-                    var zipStream = new GZipStream(compressedStream, CompressionMode.Compress, true);
+                    var zipStream = new DeflateStream(compressedStream, System.IO.Compression.CompressionLevel.Optimal);
+                    compressedStream.WriteByte(0x78);
+                    compressedStream.WriteByte(0xDA);
+                    uint a1 = 1, a2 = 0;
                     while( parent.sendQ.Count > 0 ) {
                         lock (parent._sendQLock) {
                             data = parent.sendQ.Dequeue();
                         }
                         zipStream.Write(data, 0, data.Length);
                         sentSize += data.Length;
+                        foreach (byte b in data) {
+                            a1 = (a1 + b) % 65521;
+                            a2 = (a2 + a1) % 65521;
+                        }
                         if( sentSize >= totalSize ) break;
                     }
-                    data = null;  // don't hold onto the data
-                    zipStream.Close();
 
-                    compressedStream.Position = 0;
-                    byte[] compressedData = new byte[compressedStream.Length];
-                    compressedStream.Read(compressedData, 0, (int)compressedData.Length);
+                    data = null;  // don't hold onto the data
+                    zipStream.Close(); // finish sending all data
+
+                    byte[] compressedData = compressedStream.ToArray();
+                    //new byte[compressedStream.Length];
+                    //compressedStream.Read(compressedData, 0, (int)compressedData.Length);
+
+                    Array.Resize(ref compressedData, compressedData.Length + 4);
+                    compressedData[compressedData.Length - 4] = (byte)(a2 >> 8);
+                    compressedData[compressedData.Length - 3] = (byte)(a2 & 0xFF);
+                    compressedData[compressedData.Length - 2] = (byte)(a1 >> 8);
+                    compressedData[compressedData.Length - 1] = (byte)(a1 & 0xFF);
+
                     long compSize = compressedData.Length;
                     //Debug.Log("Compressed to " + compSize + " bytes");
 
@@ -91,12 +108,13 @@ public class NetThreads
                     sizehead[2] = (byte)(compSize >> 8);
                     sizehead[3] = (byte)(compSize);
                     parent.ws.Send(sizehead);
+                    
                     parent.ws.Send(compressedData);
                     sentSize = 5 + compSize;
                 }
 
                 lock( parent._outbpsLock ) {
-                    parent.out_bps_measure += (int)totalSize+1;
+                    parent.out_bps_measure += (int) sentSize;
                 }
             }
         }
