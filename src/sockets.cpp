@@ -170,7 +170,7 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
-		//lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
+		lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
 
 		do {
 			strm.avail_out = 1024;
@@ -195,7 +195,7 @@ int OutputConnection(User *user)
 		} while( strm.avail_out == 0 );
 
 		deflateEnd(&strm);
-		//lprintf("Compressed to %d bytes.", tgtsz);
+		lprintf("Compressed to %d bytes.", tgtsz);
 
 		// reset the outbuf
 		user->outbuf = user->outbuf_memory;
@@ -468,6 +468,7 @@ int InputConnection(User *user)
 		while( p < endpt ) {
 			cmdByte = *p;
 			ilen = (int)((*(p+1)<<8) | (*(p+2)&0xFF));
+			//lprintf("Got packet %d size %d", cmdByte, ilen);
 			if( ilen == 0 ) {
 				msgbuf = strmem->Alloc(3);
 				memcpy( msgbuf, p, 3 );

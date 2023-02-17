@@ -37,9 +37,9 @@ time_t currentTime;
 /* We convert from microseconds to milliseconds */
 #if defined(_MSC_VER) || defined(__MINGW32__)
 int smalltimeofday(struct timeval* tp, void* tzp) {
-	long long ms = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
-    tp->tv_sec = ms / (long long)1000;
-    tp->tv_usec = ms % (long long)1000;
+	uint64_t ms = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+    tp->tv_sec = ms / (uint64_t)1000;
+    tp->tv_usec = ms % (uint64_t)1000;
     /* 0 indicates that the call succeeded. */
     return 0;
 }
@@ -55,10 +55,10 @@ void Game::mainloop()
 {
 	struct timeval per, prev_cycle, this_cycle, zerotime, *usetv;
 	fd_set fdI, fdO, fdE;
-	u_long key;
-	unordered_set<u_long>::iterator itset;
+	uint16_t key;
+	unordered_set<uint16_t>::iterator itset;
 	int iHigh, err, lsock;
-	vector<User*>::iterator ituser;
+	unordered_map<uint16_t, User*>::iterator ituser;
 	User *user, *uTarget;
 	u_long packsz, packsz2;
 	long tmpsize, size2;
@@ -95,7 +95,7 @@ void Game::mainloop()
 				per.tv_sec = 0;
 			} else {
 				per.tv_sec = 10-(this_cycle.tv_sec-prev_cycle.tv_sec);// wait up to 10 seconds if no users are doing anything
-										      		}
+			}
 		}
 		usetv = &per;
 		FD_ZERO(&fdI);
@@ -103,9 +103,9 @@ void Game::mainloop()
 		FD_ZERO(&fdE);
 
 		iHigh = fSock+1;
-		for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
+		for( ituser = usermap.begin(); ituser != usermap.end(); ituser++ )
 		{
-			user = *ituser;
+			user = ituser->second;
 			if( user->fSock+1 > iHigh )
 				iHigh = user->fSock+1;
 			FD_SET((user->fSock), (&fdI));
@@ -129,9 +129,10 @@ void Game::mainloop()
 		smalltimeofday(&this_cycle, NULL);
 
 		// Disconnect errored machines and process inputs:
-		for( ituser = userL.begin(); ituser != userL.end(); )
+		ituser = usermap.begin();
+		while( ituser != usermap.end() ) 
 		{
-			user = *ituser;
+			user = ituser->second;
 			if( FD_ISSET(user->fSock, &fdE) )
 			{
 				lprintf("Socket exception: dropped connection");
@@ -140,7 +141,7 @@ void Game::mainloop()
 				FD_CLR(user->fSock, &fdO);
 				user->SendQuit();
 				user->Close();
-				ituser = userL.erase(ituser);
+				ituser = usermap.erase(ituser);
 				hfree(user, sizeof(User));
 				continue;
 			}
@@ -153,7 +154,7 @@ void Game::mainloop()
 					FD_CLR(user->fSock, &fdO);
 					user->SendQuit();
 					user->Close();
-					ituser = userL.erase(ituser);
+					ituser = usermap.erase(ituser);
 					hfree(user, sizeof(User));
 					continue;
 				} else if( user->messages.size() > 0 ) {
@@ -171,16 +172,16 @@ void Game::mainloop()
 
 			tmpsize = spackf( &tmpbuf, &packsz, "lc", key, prim->type );
 			switch( prim->type ) {
-				case 0: // char
+				case 100: // char
 					size2 = spackf(&buf2, &packsz2, "c", &prim->data.c);
 					break;
-				case 1: // int
+				case 101: // int
 					size2 = spackf(&buf2, &packsz2,  "i", &prim->data.i);
 					break;
-				case 2: // float
+				case 102: // float
 					size2 = spackf(&buf2, &packsz2, "f", &prim->data.f);
 					break;
-				case 3: // string
+				case 103: // string
 					size2 = spackf(&buf2, &packsz2, "s", &prim->data.s);
 					break;
 			}
@@ -199,14 +200,13 @@ void Game::mainloop()
 
 		// Send clocksync
 		if( this_cycle.tv_sec >= prev_cycle.tv_sec+10 ) {
-			game->last_timestamp = this_cycle.tv_sec*1000 + this_cycle.tv_usec;
+			game->last_timestamp = (uint64_t)this_cycle.tv_sec*(uint64_t)1000 + (uint64_t)this_cycle.tv_usec;
 			tmpsize = spackf(&buf, &packsz, "L", game->last_timestamp);
 			game->SendMsg(CCmdTimeSync, tmpsize, buf, NULL);
 			strmem->Free(buf, packsz);
 			prev_cycle = this_cycle;
 		}
 		
-
 		// Process output
 		zerotime.tv_usec = zerotime.tv_sec = 0;
 		select(iHigh, NULL, &fdO, NULL, &zerotime);
@@ -214,9 +214,10 @@ void Game::mainloop()
 			buf = strmem->Alloc( 1024 );
 		}
 		bool found_file = false;
-		for( ituser = userL.begin(); ituser != userL.end(); )
+		ituser = usermap.begin();
+		while( ituser != usermap.end() )
 		{
-			user = *ituser;
+			user = ituser->second;
 			if( FD_ISSET(user->fSock, &fdO) ) {
 				if( game->reading_files && user->fReading ) {
 					int status = fread( buf, 1, 1024, user->fReading );
@@ -231,10 +232,10 @@ void Game::mainloop()
 							strmem->Free(fname, strlen(fname)+1);
 							user->reading_file_q.pop();
 						}
-						return;
+					} else {
+						found_file = true;
+						user->SendMsg( CCmdFileData, status, buf );
 					}
-					found_file = true;
-					user->SendMsg( CCmdFileData, status, buf );
 				} else if( game->reading_files && user->reading_ptr && user->reading_sz > 0 ) {
 					int status = user->reading_sz > user->inbufmax ? user->inbufmax : user->reading_sz;
 					user->SendMsg( CCmdFileData, status, user->reading_ptr );
@@ -258,7 +259,7 @@ void Game::mainloop()
 					if( OutputConnection(user) < 0 || user->bQuitting )
 					{
 						lprintf("connection close: quitting");
-						ituser = userL.erase(ituser);
+						ituser = usermap.erase(ituser);
 						user->SendQuit();
 						user->Close();
 						hfree(user, sizeof(User));
@@ -279,7 +280,7 @@ void Game::mainloop()
 			user = InitConnection();
 			if( user ) {
 				lprintf("InitConnection %u", user->fSock);
-				userL.push_back(user);
+				game->usermap[user->uid] = user;
 			}
 		}
 	}
@@ -298,11 +299,11 @@ Game::~Game()
 {
 }
 
-long long Game::GetTime()
+uint64_t Game::GetTime()
 {
 	struct timeval tv;
 	smalltimeofday(&tv, NULL);
-	return (long long)tv.tv_sec*(long long)1000 + (long long)tv.tv_usec/(long long)1000;
+	return (uint64_t)tv.tv_sec*(uint64_t)1000 + (uint64_t)tv.tv_usec/(uint64_t)1000;
 }
 
 void Game::IdentifyVar( char *name, int type, User *sender )
@@ -321,18 +322,23 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 		size = spackf(&buf, &alloced, "scl", name, type, v->objid );
 		sender->SendMsg( CCmdVarInfo, size, buf );
 
-		if( v->type == 0 ) { // it's an object
-		// send obj info
-			o = game->objects[v->objid];
-			if( o->last_update != 0 && !sender->authority ) {
-				ts_short = o->last_update - game->last_timestamp;
+		switch( v->type ) {
+			case 0: // object
+				o = game->objects[v->objid];
+				if( o->last_update != 0 && !sender->authority ) {
+					ts_short = o->last_update - game->last_timestamp;
 
-				lprintf("First time update obj %s: %f %f %f rotation %f %f %f %f", v->name, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3);
+					lprintf("First time update obj %s: %f %f %f rotation %f %f %f %f", v->name, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3);
 
-				strmem->Free( buf, alloced );
-				size = spackf(&buf, &alloced, "lifffffff", o->uid, ts_short, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3 );
-				sender->SendMsg( CCmdSetObjectPositionRotation, size, buf );
-			}
+					strmem->Free( buf, alloced );
+					size = spackf(&buf, &alloced, "lifffffff", o->uid, ts_short, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->r3 );
+					sender->SendMsg( CCmdSetObjectPositionRotation, size, buf );
+				}
+				break;
+			case 1: // collider
+				break;
+			case 2: // player-obj
+				break;
 		}
 	} else {
 		size = spackf(&buf, &alloced, "scl", name, type, game->top_var_id );
@@ -359,9 +365,9 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 
 }
 
-Object *Game::FindObject( u_long objid )
+Object *Game::FindObject( uint16_t objid )
 {
-	unordered_map<u_long, Object*>::iterator itobj;
+	unordered_map<uint16_t, Object*>::iterator itobj;
 	itobj = objects.find(objid);
 	if( itobj == objects.end() ) {
 		return NULL;
@@ -372,29 +378,31 @@ Object *Game::FindObject( u_long objid )
 void Game::SendMsg( char cmd, unsigned int size, char *data, User *exclude )
 {
 	User *user;
-	vector<User*>::iterator ituser;
+	unordered_map<uint16_t, User*>::iterator ituser;
 	char *buf=NULL;
 	long bufsz;
 	u_long alloced = 0;
 
 	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
-	for( ituser = userL.begin(); ituser != userL.end(); ituser++ )
+	ituser = usermap.begin();
+	while( ituser != usermap.end() )
 	{
-		user = *ituser;
+		user = ituser->second;
 		if( user != exclude )
 		{
 			Output(user, buf, bufsz);
 		}
+		ituser++;
 	}
 	strmem->Free(buf, alloced);
 	
 }
 void Game::PickNewAuthority( void )
 {
-	vector<User*>::iterator ituser;
+	unordered_map<uint16_t, User*>::iterator ituser;
 
-	ituser = userL.begin();
-	if( ituser == userL.end() ) {
+	ituser = usermap.begin();
+	if( ituser == usermap.end() ) {
 		lprintf("No users, waiting for host.");
 		firstUser = true;
 		// no users found
@@ -402,7 +410,7 @@ void Game::PickNewAuthority( void )
 		return;
 	}
 	lprintf("Changing host.");
-	User *user = *ituser;
+	User *user = ituser->second;
 	char *buf;
 	u_long alloced = 0;
 	long size;

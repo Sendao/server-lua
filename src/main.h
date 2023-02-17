@@ -34,13 +34,17 @@ using namespace std;
 typedef class User User;
 typedef class Object Object;
 typedef class Game Game;
+typedef class Animation Animation;
+
+typedef struct _AnimParam AnimParam;
+typedef struct _LookSource LookSource;
 
 typedef struct _VarData VarData;
 typedef struct _Primitive Primitive;
 
 struct _VarData
 {
-	u_long objid;
+	uint16_t objid;
 	char *name;
 	int type;
 };
@@ -78,13 +82,83 @@ enum {
 	CCmdUserQuit
 };
 
+enum {
+	// CHARACTER
+	CNetCharacterAbility,
+	CNetCharacterItemAbility,
+	CNetCharacterPickup,
+	CNetCharacterEquipItem,
+	CNetCharacterLoadDefaultLoadout,
+	CNetFire,
+	CNetStartReload,
+	CNetReload,
+	CNetReloadComplete,
+	CNetMeleeHitCollider,
+	CNetThrowItem,
+	CNetEnableThrowable,
+	CNetMagicAction,
+	CNetMagicCast,
+	CNetMagicImpact,
+	CNetMagicStop,
+	CNetFlashlightToggle,
+	CNetSetRotation,
+	CNetSetPosition,
+	CNetResetPositionRotation,
+	CNetSetPositionAndRotation,
+	CNetSetActive,
+
+	// ANIMATOR
+	CNetAnimation,
+	CNetInitAnimation,
+	CNetInitItemAnimation,
+
+	// LOOK SOURCE
+	CNetPlayerLook,
+
+	// TRANSFORM
+	CNetTransform
+};
+
+enum
+{
+	ParamX = 1,
+	ParamZ = 2,
+	ParamPitch = 4,
+	ParamYaw = 8,
+	ParamSpeed = 16,
+	ParamHeight = 32,
+	ParamMoving = 64,
+	ParamAiming = 128,
+	ParamMoveSet = 256,
+	ParamAbility = 512,
+	ParamAbilityInt = 1024,
+	ParamAbilityFloat = 2048
+};
+
+enum
+{
+	LookDistance = 1,  // The Look Direction Distance has changed.
+	LookPitch = 2,                  // The Pitch has changed.
+	LookPosition = 4,           // The Look Position has changed.
+	LookDirection = 8,          // The Look Direction has changed.
+};
+
+enum
+{
+	TransformPosition = 1,  // The Position has changed.
+	TransformRotation = 2,  // The Rotation has changed.
+	TransformScale = 4,     // The Scale has changed.
+	TransformPlatform = 8,  // The Platform has changed.
+};
+
+
+
 // lua.cpp
 extern sol::state lua;
 void init_lua(void);
 
 // user.cpp
-typedef void (User::*cmdcall)(char *,long);
-
+typedef void (User::*cmdcall)(char *,uint16_t);
 
 void init_commands(void);
 
@@ -156,28 +230,27 @@ class Game
 
 	public:
 	unordered_map<string,VarData*> varmap;
-	u_long top_var_id = 1;
-	unordered_map<u_long,VarData*> varmap_by_id;
+	uint16_t top_var_id = 1;
+	unordered_map<uint16_t,VarData*> varmap_by_id;
 
-	unordered_map<u_long,Primitive*> datamap;
-	unordered_map<u_long,User*> datamap_whichuser;
-	unordered_set<u_long> dirtyset;
+	unordered_map<uint16_t,Primitive*> datamap;
+	unordered_map<uint16_t,User*> datamap_whichuser;
+	unordered_set<uint16_t> dirtyset;
 
 	bool reading_files = false;
 	unordered_map<string, FileInfo*> files;
 
-	vector<User*> userL;
-
-	unordered_map<u_long, Object*> objects;
+	unordered_map<uint16_t, User*> usermap;
+	unordered_map<uint16_t, Object*> objects;
 
 	public:
-	long long last_update, last_timestamp;
+	uint64_t last_update, last_timestamp;
 
 	public:
 	void mainloop(void);
-	long long GetTime(void);
+	uint64_t GetTime(void);
 	void IdentifyVar( char *name, int type, User *sender );
-	Object *FindObject( u_long uid );
+	Object *FindObject( uint16_t uid );
 	void SendMsg( char cmd, unsigned int size, char *data, User *exclude=NULL );
 	void PickNewAuthority( void );
 };
@@ -190,17 +263,51 @@ class Object
 	~Object();
 
 	public:
-	u_long uid;
+	uint16_t uid;
 	char *name;
 
-	long long last_update;
+	uint64_t last_update;
 	float x, y, z;
 	float r0, r1, r2, r3;
-	long long prev_update;
+	uint64_t prev_update;
 	float prev_x, prev_y, pre_z;
 	float prev_r0, prev_r1, prev_r2, prev_r3;
 };
 
+
+struct _LookSource
+{
+	float distance;
+	float pitch;
+	float x,y,z;
+	float dirx, diry, dirz;
+};
+
+struct _AnimParam
+{
+	int itemid;
+	int stateindex;
+	int substateindex;
+};
+
+class Animation
+{
+	public:
+	Animation();
+	~Animation();
+
+	public:
+	float x, z;
+	float pitch, yaw;
+	float speed;
+	int height;
+	bool moving, aiming;
+	int moveSetID;
+	int abilityIndex;
+	int abilityInt;
+	float abilityFloat;
+	vector<AnimParam> params;
+};
 
 class User
 {
@@ -234,35 +341,48 @@ class User
 	long reading_sz;
 	FILE *fReading;
 	queue<char*> reading_file_q; // todo: this should be a queue (FIFO)
-	long long clocksync;
-	long long last_update;
+	uint64_t clocksync;
+	uint64_t last_update;
 
-	int uid;
+	uint16_t uid;
 	float x, y, z;
 	float r0, r1, r2, r3;
+	bool snapAnimator;
+	bool stopAllAbilities;
+
+	Animation *anim;
+	LookSource *look;
+
+	bool hasplatform;
+	uint16_t platid;
+	float px, py, pz;
+	float vx, vy, vz;
+	float pr0, pr1, pr2, pr3;
+	float scalex, scaley, scalez;
 
 	public:
 	void Close(void);
 	void ProcessMessages(void);
 	void SendQuit(void);
 	void SendMsg( char cmd, unsigned int size, char *data );
+	void SendTo( User * ); // sends all data
 
 	public: // commands (client controlled)
-	void Quit(char *data, long sz);
-	void SetKeyValue(char *data, long sz);
-	void RunLuaFile(char *data, long sz);
-	void RunLuaCommand(char *data, long sz);
-	void GetFileList(char *data, long sz);
-	void GetFile(char *data, long sz);
+	void Quit(char *data, uint16_t sz);
+	void SetKeyValue(char *data, uint16_t sz);
+	void RunLuaFile(char *data, uint16_t sz);
+	void RunLuaCommand(char *data, uint16_t sz);
+	void GetFileList(char *data, uint16_t sz);
+	void GetFile(char *data, uint16_t sz);
 	void GetFileS(char *filename);
-	void IdentifyVar(char *data, long sz);
-	void SetVar(char *data, long sz);
-	void ClockSync(char *data, long sz);
-	void CreateObject(char *data, long sz);
-	void SetObjectPositionRotation(char *data, long sz);
-	void Register(char *data, long sz);
-	void DynPacket(char *data, long sz);
-	void Packet(char *data, long sz);
+	void IdentifyVar(char *data, uint16_t sz);
+	void SetVar(char *data, uint16_t sz);
+	void ClockSync(char *data, uint16_t sz);
+	void CreateObject(char *data, uint16_t sz);
+	void SetObjectPositionRotation(char *data, uint16_t sz);
+	void Register(char *data, uint16_t sz);
+	void DynPacket(char *data, uint16_t sz);
+	void Packet(char *data, uint16_t sz);
 };
 
 

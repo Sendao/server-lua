@@ -1,28 +1,44 @@
 #include "main.h"
 
 cmdcall commands[256];
+unsigned int sizes[256];
 using namespace std::placeholders; 
 
 void init_commands( void )
 {
 	User *p=NULL;
 	int i;
-	for( i=0; i<256; i++ )
+	for( i=0; i<256; i++ ) {
 		commands[i] = NULL;
+		sizes[i] = 0;
+	}
 
 	commands[SCmdSetKeyValue] = &User::SetKeyValue;
+	sizes[SCmdSetKeyValue] = 0;
 	commands[SCmdRunLuaFile] = &User::RunLuaFile;
+	sizes[SCmdRunLuaFile] = 0;
 	commands[SCmdRunLuaCommand] = &User::RunLuaCommand;
+	sizes[SCmdRunLuaCommand] = 0;
 	commands[SCmdGetFileList] = &User::GetFileList;
+	sizes[SCmdGetFileList] = 0;
 	commands[SCmdGetFile] = &User::GetFile;
+	sizes[SCmdGetFile] = 0;
 	commands[SCmdIdentifyVar] = &User::IdentifyVar;
+	sizes[SCmdIdentifyVar] = 0;
 	commands[SCmdSetVar] = &User::SetVar;
+	sizes[SCmdSetVar] = 0;
 	commands[SCmdClockSync] = &User::ClockSync;
+	sizes[SCmdClockSync] = 0;
 	commands[SCmdSetObjectPositionRotation] = &User::SetObjectPositionRotation;
+	sizes[SCmdSetObjectPositionRotation] = 0;
 	commands[SCmdRegister]= &User::Register;
+	sizes[SCmdRegister] = 0;
 	commands[SCmdDynPacket] = &User::DynPacket;
+	sizes[SCmdDynPacket] = 0;
 	commands[SCmdPacket] = &User::Packet;
+	sizes[SCmdPacket] = 0;
 	commands[SCmdQuit] = &User::Quit;
+	sizes[SCmdQuit] = 0;
 }
 
 int top_uid = 0;
@@ -49,6 +65,15 @@ User::User(void)
 	reading_ptr = NULL;
 	uid = top_uid;
 	top_uid++;
+
+	snapAnimator = false;
+	stopAllAbilities = false;
+
+	anim = (Animation*)halloc(sizeof(Animation));
+	new(anim) Animation();
+
+	look = (LookSource*)halloc(sizeof(LookSource));
+	new(look) LookSource();
 }
 
 User::~User(void)
@@ -78,7 +103,7 @@ void User::Close( void )
 		close( fSock );
 }
 
-void User::Quit( char *data, long sz )
+void User::Quit( char *data, uint16_t sz )
 {
 	bQuitting = true;
 }
@@ -99,7 +124,11 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 	long bufsz;
 	u_long alloced = 0;
 
-	bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
+	if( sizes[cmd] == 0 ) {
+		bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
+	} else {
+		bufsz = spackf(&buf, &alloced, "cx", cmd, size, data ); // do not include size
+	}
 	Output( this, buf, bufsz );
 	strmem->Free( buf, alloced );
 }
@@ -111,30 +140,36 @@ void User::ProcessMessages(void)
 	int sz;
 	char code, *data;
 	string buf;
-	int x;
+	uint16_t x;
 
 	//lprintf("Process %d messages", (int)messages.size());
 
 	for( it=messages.begin(); it != messages.end(); it++ ) {
 		ptr = *it;
 		code = *(char *)ptr;
-		sz = (*(ptr+1) << 8) | (*(ptr+2)&0xFF);
+		if( sizes[code] == 0 ) {
+			sz = (*(ptr+1) << 8) | (*(ptr+2)&0xFF);
+		} else {
+			sz = sizes[code];
+		}
 		ptr += 3;
 		if( commands[code] != NULL ) {
 			//lprintf("Found code %d length %lld", (int)code, sz);
 			std::bind( commands[code], this, _1, _2 )( ptr, sz );
+		} else {
+			lprintf("Unknown command code %d", (int)code);
 		}
 		strmem->Free( *it, sz+3 );
 	}
 	messages.clear();
 }
 
-void User::SetKeyValue( char *data, long sz )
+void User::SetKeyValue( char *data, uint16_t sz )
 {
-	u_long key;
+	uint16_t key;
 	char *ptr;
 	Primitive *obj;
-	unordered_map<u_long,Primitive*>::iterator it;
+	unordered_map<uint16_t,Primitive*>::iterator it;
 
 	ptr = sunpackf(data, "l", &key);
 	it = game->datamap.find(key);
@@ -165,17 +200,17 @@ void User::SetKeyValue( char *data, long sz )
 	game->dirtyset.insert( key );
 }
 
-void User::RunLuaFile( char *data, long sz )
+void User::RunLuaFile( char *data, uint16_t sz )
 {
 
 }
 
-void User::RunLuaCommand( char *data, long sz )
+void User::RunLuaCommand( char *data, uint16_t sz )
 {
 
 }
 
-void User::GetFileList( char *data, long sz )
+void User::GetFileList( char *data, uint16_t sz )
 {
 	unordered_map<string, FileInfo*>::iterator it;
 
@@ -200,7 +235,7 @@ void User::GetFileList( char *data, long sz )
 	this->SendMsg( CCmdEndOfFileList, 0, NULL );
 }
 
-void User::GetFile( char *data, long sz )
+void User::GetFile( char *data, uint16_t sz )
 {
 	char *filename = strmem->Alloc( sz + 1 );
 	memcpy( filename, data, sz );
@@ -268,21 +303,21 @@ void User::GetFileS( char *filename )
 
 
 
-void User::ClockSync( char *data, long sz )
+void User::ClockSync( char *data, uint16_t sz )
 {
-	long long time, userclock;
+	uint64_t time, userclock;
 
 	sunpackf(data, "L", &userclock);
 	time = game->GetTime();
 
 	this->last_update = time;
 	this->clocksync = time - userclock; // measured in hours
-	lprintf("Set clocksync for user to %llu", this->clocksync);
+	lprintf("Set clocksync for user %u to %llu", uid, this->clocksync);
 }
 
 
-
-void User::IdentifyVar( char *data, long sz )
+// Identifies a var by type and name
+void User::IdentifyVar( char *data, uint16_t sz )
 {
 	char *name;
 	char type;
@@ -293,14 +328,15 @@ void User::IdentifyVar( char *data, long sz )
 	strmem->Free(name, strlen(name)+1);
 }
 
-void User::SetVar( char *data, long sz )
+// For setting primitives.
+void User::SetVar( char *data, uint16_t sz )
 {
 	char *ptr;
-	u_long objid;
+	uint16_t objid;
 	VarData *v;
-	unordered_map<u_long,VarData*>::iterator it;
+	unordered_map<uint16_t,VarData*>::iterator it;
 	Primitive *p;
-	unordered_map<u_long,Primitive*>::iterator it2;
+	unordered_map<uint16_t,Primitive*>::iterator it2;
 
 	ptr = sunpackf(data, "l", &objid);
 	it = game->varmap_by_id.find(objid);
@@ -333,28 +369,23 @@ void User::SetVar( char *data, long sz )
 		case 3: // string
 			sunpackf(ptr, "s", &p->data.s);
 			break;
-			/*
-		case 4: // buffer (binary string) -- needs length
-			sunpackf(ptr, "p", /obj.data.plen/, &obj.data.p);
-			break;
-			*/
 	}
 
 	game->datamap_whichuser[objid] = this;
 	game->dirtyset.insert( objid );
 }
 
-void User::SetObjectPositionRotation( char *data, long sz )
+void User::SetObjectPositionRotation( char *data, uint16_t sz )
 {
-	u_long objid;
+	uint16_t objid;
 	float x,y,z;
 	float r0,r1,r2,r3;
 	int timestamp_short;
 	Object *obj;
 	VarData *v;
-	unordered_map<u_long,Object*>::iterator it;
+	unordered_map<uint16_t,Object*>::iterator it;
 
-	sunpackf(data, "lifffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2, &r3);
+	sunpackf(data, "iifffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2, &r3);
 
 	it = game->objects.find( objid );
 	if( it == game->objects.end() ) {
@@ -370,7 +401,7 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	obj->r1 = r1;
 	obj->r2 = r2;
 	obj->r3 = r3;
-	obj->last_update = this->last_update + (long long)timestamp_short;
+	obj->last_update = this->last_update + (uint64_t)timestamp_short;
 
 	char *buf;
 	u_long alloced = 0;
@@ -385,71 +416,278 @@ void User::SetObjectPositionRotation( char *data, long sz )
 	//lprintf("Updated %llu: %f %f %f rotation set to %f %f %f %f", objid, x, y, z, r0, r1, r2, r3);
 }
 
-void User::Register( char *data, long sz )
+//Register: Tells this user where all other users are.
+// Also registers the target user with all other users.
+// All user data should be loaded before this is called.
+void User::Register( char *data, uint16_t sz )
 {
-	sunpackf(data, "fffffff", &this->x, &this->y, &this->z, &this->r0, &this->r1, &this->r2, &this->r3);
-
 	char *buf;
 	long size;
 	u_long alloced = 0;
+	User *otheruser;
+	unordered_map<uint16_t,User*>::iterator ituser;
+
+	sunpackf(data, "ffffff", &this->x, &this->y, &this->z, &this->r0, &this->r1, &this->r2);
+	
 
 	size = spackf(&buf, &alloced, "ci", this->authority?1:0, this->uid);
 	SendMsg( CCmdRegisterUser, size, buf );
 	strmem->Free( buf, alloced );
+	lprintf("Register: Found user %u at %f %f %f", this->uid, this->x, this->y, this->z);
 
-	User *otheruser;
-	vector<User*>::iterator ituser;
-
-	for( ituser = game->userL.begin(); ituser != game->userL.end(); ituser++ ) {
-		otheruser = *ituser;
-		if( otheruser == this ) continue;
-		size = spackf(&buf, &alloced, "ifffffff", otheruser->uid, otheruser->x, otheruser->y, otheruser->z, otheruser->r0, otheruser->r1, otheruser->r2, otheruser->r3);
-		SendMsg( CCmdUser, size, buf );
-		strmem->Free( buf, alloced );
+	ituser = game->usermap.begin();
+	while( ituser != game->usermap.end() ) {
+		otheruser = ituser->second;
+		if( otheruser != this )
+			otheruser->SendTo(this);
+		ituser++;
 	}
 
-	size = spackf(&buf, &alloced, "ifffffff", this->uid, this->x, this->y, this->z, this->r0, this->r1, this->r2, this->r3);
-	game->SendMsg( CCmdUser, size, buf, this );
-	strmem->Free( buf, alloced );
+	this->SendTo(NULL); // sends to all
 }
 
-void User::DynPacket( char *data, long sz )
+void User::SendTo( User *otheruser )
 {
-	char *buf, *ptr;
+	// generate all the needed packets and send to otheruser/all.
+	char *buf, *buf2, **buffers;
+	u_long alloced = 0, *alloceds;
+	long size, *sizes, totalsize;
+	uint16_t timestamp_short;
+	AnimParam ap, &apptr=ap;
+
+	lprintf("Send user %u to %u", this->uid, otheruser?otheruser->uid:0);
+	timestamp_short = (int)(this->last_update - game->last_timestamp); // maybe we should use the current time instead. This is the time since the last update.
+
+// newuser packet
+	size = spackf(&buf, &alloced, "iffffff", uid, x, y, z, r0, r1, r2);
+	if( !otheruser ) {
+		game->SendMsg( CCmdUser, size, buf, this );
+	} else {
+		otheruser->SendMsg( CCmdUser, size, buf );
+	}
+	strmem->Free( buf, alloced );
+	buf = NULL; alloced = 0;
+
+// position + rotation
+	size = spackf(&buf, &alloced, "iiiffffffcc", CNetSetPositionAndRotation, uid, timestamp_short,
+			x, y, z, r0, r1, r2, true, true);
+	if( !otheruser )
+		game->SendMsg( CCmdPacket, size, buf, this );
+	else
+		otheruser->SendMsg( CCmdPacket, size, buf );
+	strmem->Free( buf, alloced );
+	buf=NULL; alloced = 0;
+
+//! inventory
+
+
+// transform
+	char dirtyfull = 255;
+	size = spackf(&buf, &alloced, "iiiicFFFFFF", CNetTransform, uid, timestamp_short, 13, dirtyfull,
+		1000.0, px, 1000.0, py, 1000.0, pz,
+		1000.0, pr0, 1000.0, pr1, 1000.0, pr2);
+	if( !otheruser )
+		game->SendMsg( CCmdDynPacket, size, buf, this );
+	else
+		otheruser->SendMsg( CCmdDynPacket, size, buf );
+	strmem->Free( buf, alloced );
+	buf=NULL; alloced = 0;
+
+// look source
+	size = spackf(&buf, &alloced, "iiiicFFFFFFFF", CNetPlayerLook, uid, timestamp_short, 17, dirtyfull,
+		1000.0, look->distance, 1000.0, look->pitch,
+		1000.0, look->x, 1000.0, look->y, 1000.0, look->z,
+		1000.0, look->dirx, 1000.0, look->diry, 1000.0, look->dirz);
+	if( !otheruser )
+		game->SendMsg( CCmdDynPacket, size, buf, this );
+	else
+		otheruser->SendMsg( CCmdDynPacket, size, buf );
+	strmem->Free( buf, alloced );
+	buf=NULL; alloced = 0;
+
+// animation
+	size = spackf(&buf, &alloced, "iiiiFFFFFicciiiF", CNetInitAnimation, uid, timestamp_short, 22,
+			1000.0, anim->x, 1000.0, anim->z, 1000.0, anim->pitch, 1000.0, anim->yaw, 1000.0, anim->speed,
+			anim->height, anim->moving, anim->aiming,
+			anim->moveSetID, anim->abilityIndex, anim->abilityInt,
+			1000.0, anim->abilityFloat);
+	if( !otheruser )
+		game->SendMsg( CCmdDynPacket, size, buf, this );
+	else
+		otheruser->SendMsg( CCmdDynPacket, size, buf );
+	strmem->Free( buf, alloced );
+	buf=NULL; alloced = 0;
+
+// animation parameters
+	for( int i=0; i<anim->params.size(); i++ ) {
+		apptr = anim->params[i];
+		size = spackf(&buf, &alloced, "iiiiiii", CNetInitItemAnimation, uid, timestamp_short, i, apptr.itemid, apptr.stateindex, apptr.substateindex);
+		if( !otheruser )
+			game->SendMsg( CCmdPacket, size, buf, this );
+		else
+			otheruser->SendMsg( CCmdPacket, size, buf );
+		strmem->Free( buf, alloced );
+		buf=NULL; alloced = 0;
+	}
+}
+
+void User::DynPacket( char *data, uint16_t sz )
+{
+	char *buf, *ptr, *ptr1;
 	long size;
 	u_long alloced=0;
 	int timestamp_short;
-	int cmd, objtgt;
-	long long this_update;
+	uint16_t cmd, objtgt;
+	uint16_t dirtyflags;
+	uint64_t this_update;
+	float x,y,z;
+	float rx,ry,rz,rw;
+	int i;
+	int dynlen;
 
-	ptr = sunpackf(data, "iii", &cmd, &objtgt, &timestamp_short);
+	ptr1 = ptr = sunpackf(data, "iiii", &cmd, &objtgt, &timestamp_short, &dynlen);
 
-	this_update = this->last_update + (long long)timestamp_short;
-
+	this_update = this->last_update + (uint64_t)timestamp_short;
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "iii", cmd, objtgt, timestamp_short);
+	// animation:
+	float pitch, yaw, speed;
+	int height;
+	char moving, aiming;
+	int moveSetID, abilityIndex, abilityInt;
+	float abilityFloat;
+	uint16_t itemflags;
+	unsigned char dirtybyte;
+	int itemid, stateindex, substateindex;
+	Animation *anim;
+	AnimParam animparam, &apptr=animparam;
+
+	// look source:
+	switch( cmd ) {
+		case CNetAnimation:
+			ptr = sunpackf(ptr, "i", &dirtyflags);
+			if( (dirtyflags&ParamX) != 0 ) {
+				ptr = sunpackf(ptr, "F", 1000.0, &anim->x);
+			}
+			if( (dirtyflags&ParamZ) != 0 ) {
+				ptr = sunpackf(ptr, "F", 1000.0, &anim->z);
+			}
+			if( (dirtyflags&ParamPitch) != 0) {
+				ptr = sunpackf(ptr, "F", 1000.0, &anim->pitch);
+			}
+			if( (dirtyflags&ParamYaw) != 0) {
+				ptr = sunpackf(ptr, "F", 1000.0, &anim->yaw);
+			}
+			if( (dirtyflags&ParamSpeed) != 0) {
+				ptr = sunpackf(ptr, "F", 1000.0, &anim->speed);
+			}
+			if( (dirtyflags&ParamHeight) != 0) {
+				ptr = sunpackf(ptr, "i", &anim->height);
+			}
+			if( (dirtyflags&ParamMoving) != 0) {
+				ptr = sunpackf(ptr, "c", &anim->moving);
+			}
+			if( (dirtyflags&ParamAiming) != 0) {
+				ptr = sunpackf(ptr, "c", &anim->aiming);
+			}
+			if( (dirtyflags&ParamMoveSet) != 0) {
+				ptr = sunpackf(ptr, "i", &anim->moveSetID);
+			}
+			if( (dirtyflags&ParamAbility) != 0) {
+				ptr = sunpackf(ptr, "i", &anim->abilityIndex);
+			}
+			if( (dirtyflags&ParamAbilityInt) != 0) {
+				ptr = sunpackf(ptr, "i", &anim->abilityInt);
+			}
+			if( (dirtyflags&ParamAbilityFloat) != 0) {
+				ptr = sunpackf(ptr, "F", 1000.0, &anim->abilityFloat);
+			}
+			ptr = sunpackf(ptr, "i", &itemflags);
+			for( i=0; i<16; i++ ){
+				if( itemflags&(1<<i) == 0 ) {
+					continue;
+				}
+				animparam.itemid = animparam.stateindex = animparam.substateindex = 0;
+				while( i >= anim->params.size() ) {
+					anim->params.push_back( animparam );
+				}
+
+				apptr = anim->params[ i ];
+				ptr = sunpackf(ptr, "iii", &apptr.itemid, &apptr.stateindex, &apptr.substateindex);
+			}
+			break;
+		case CNetPlayerLook:
+			ptr = sunpackf(ptr, "c", &dirtybyte);
+			if( (dirtybyte&LookDistance) != 0 ) {
+				ptr = sunpackf(ptr, "F", 1000.0, &look->distance);
+			}
+
+			if( (dirtybyte&LookPitch) != 0 ) {
+				ptr = sunpackf(ptr, "F", 1000.0, &look->pitch);
+			}
+
+			if( (dirtybyte&LookPosition) != 0 ) {
+				ptr = sunpackf(ptr, "FFF", 1000.0, &look->x, 1000.0, &look->y, 1000.0, &look->z);
+			}
+
+			if( (dirtybyte&LookDirection) != 0 ) {
+				ptr = sunpackf(ptr, "FFF", 1000.0, &look->dirx, 1000.0, &look->diry, 1000.0, &look->dirz);
+			}
+			break;
+		case CNetTransform:
+			ptr = sunpackf(ptr, "c", &dirtybyte);
+			if( (dirtybyte&TransformPlatform) != 0 ) {
+				hasplatform = true;
+				ptr = sunpackf(ptr, "i", &platid);
+				if( (dirtybyte&TransformPosition) != 0 ) {
+					ptr = sunpackf(ptr, "FFF", 1000.0, &px, 1000.0, &py, 1000.0, &pz);
+					vx = vy = vz = 0;
+				}
+				if( (dirtybyte&TransformRotation) != 0 ) {
+					ptr = sunpackf(ptr, "FFF", 1000.0, &pr0, 1000.0, &pr1, 1000.0, &pr2);
+				}
+			} else {
+				hasplatform = false;
+				platid = 0;
+				if( (dirtybyte&TransformPosition) != 0 ) {
+					ptr = sunpackf(ptr, "FFFFFF", 1000.0, &px, 1000.0, &py, 1000.0, &pz, 1000.0, &vx, 1000.0, &vy, 1000.0, &vz);
+				}
+				if( (dirtybyte&TransformRotation) != 0 ) {
+					ptr = sunpackf(ptr, "FFF", 1000.0, &pr0, 1000.0, &pr1, 1000.0, &pr2);
+				}
+			}
+			if( (dirtybyte&TransformScale) != 0 ) {
+				ptr = sunpackf(ptr, "FFF", 1000.0, &scalex, 1000.0, &scaley, 1000.0, &scalez);
+			}
+			break;
+	}
+
+	size = spackf(&buf, &alloced, "iiii", cmd, objtgt, timestamp_short, dynlen);
 	char *buf2 = strmem->Alloc( sz );
 	memcpy( buf2, buf, size );
-	memcpy( buf2+size, ptr, sz-size );
+	memcpy( buf2+size, ptr1, sz-size );
 
 	game->SendMsg( CCmdDynPacket, sz, buf2, this );
 	strmem->Free( buf2, sz );
 	strmem->Free( buf, alloced );
 }
 
-void User::Packet( char *data, long sz )
+void User::Packet( char *data, uint16_t sz )
 {
 	char *buf, *ptr;
 	long size;
 	u_long alloced=0;
-	int timestamp_short;
-	int cmd, objtgt;
-	long long this_update;
+	uint16_t timestamp_short;
+	uint16_t cmd, objtgt;
+	uint64_t this_update;
+	User *otheruser;
+	float x,y,z;
+	float r0,r1,r2;
 
 	ptr = sunpackf(data, "iii", &cmd, &objtgt, &timestamp_short);
+	lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
 
-	this_update = this->last_update + (long long)timestamp_short;
+	this_update = this->last_update + (uint64_t)timestamp_short;
 
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
@@ -462,25 +700,39 @@ void User::Packet( char *data, long sz )
 	strmem->Free( buf2, sz );
 	strmem->Free( buf, alloced );
 
-	if( cmd == 0 ) { // update user position
-		vector<User*>::iterator ituser;
-		User *otheruser;
-
-		for( ituser = game->userL.begin(); ituser != game->userL.end(); ituser++ ) {
-			otheruser = *ituser;
-			if( otheruser->uid == objtgt ) {
-				float x,y,z;
-				float r0,r1,r2,r3;
-				sunpackf(ptr, "ffffff", &x, &y, &z, &r0, &r1, &r2, &r3);
+	switch( cmd ) {
+		case CNetSetPositionAndRotation:
+			otheruser = game->usermap[objtgt];
+			if( otheruser ) {
+				sunpackf(ptr, "ffffffcc", &x, &y, &z, &r0, &r1, &r2, &otheruser->snapAnimator, &otheruser->stopAllAbilities);
 				otheruser->x = x;
 				otheruser->y = y;
 				otheruser->z = z;
 				otheruser->r0 = r0;
 				otheruser->r1 = r1;
 				otheruser->r2 = r2;
-				otheruser->r3 = r3;
+				lprintf("Set user %d position and rotation to %f %f %f %f %f %f", objtgt, x, y, z, r0, r1, r2);
 				otheruser->last_update = this_update;
 			}
-		}
+			break;
+		case CNetSetPosition:
+			otheruser = game->usermap[objtgt];
+			if( otheruser ) {
+				sunpackf(ptr, "fff", &x, &y, &z);
+				otheruser->x = x;
+				otheruser->y = y;
+				otheruser->z = z;
+				otheruser->last_update = this_update;
+			}
+			break;
+		case CNetSetRotation:
+			otheruser = game->usermap[objtgt];
+			if( otheruser ) {
+				sunpackf(ptr, "fff", &r0, &r1, &r2);
+				otheruser->r0 = r0;
+				otheruser->r1 = r1;
+				otheruser->r2 = r2;
+			}
+			break;
 	}
 }

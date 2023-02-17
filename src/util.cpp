@@ -271,9 +271,10 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 	unsigned int *ilen;
 	long *lptr;
 	long long *llptr;
-	int *iptr;
+	int *iptr, ival;
+	unsigned int uilen;
 	unsigned char *smol;
-	float *pf;
+	float *pf, maxbase;
 	char *c, **p, **s;
 	union FloatChar {
 		float f;
@@ -306,6 +307,13 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				*lptr = *buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3);
 				buffer += 4;
 				continue;
+			case 'F': // short
+				ival = *buffer << 8 | *(buffer+1);
+				maxbase = va_arg(args, double);
+				pf = (float*)va_arg(args, float*);
+				*pf = (float)ival / ((float)32767 / maxbase);
+				buffer += 2;
+				continue;
 			case 'f':
 				FloatChar x;
 				x.c[0] = *buffer;
@@ -337,10 +345,12 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				*len = *buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3);
 				buffer += 4;
 				p = (char**)va_arg(args, char**);
-				*p = strmem->Alloc(*len+1);
 				if( *len != 0 ) {
+					*p = strmem->Alloc(*len+1);
 					memcpy(*p, buffer, *len);
 					buffer += *len;
+				} else {
+					*p = NULL;
 				}
 				continue;
 			case 'v': // use an int for length
@@ -348,10 +358,12 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				*ilen = (unsigned int)*buffer<<8 | (unsigned int)*(buffer+1);
 				buffer += 2;
 				p = (char**)va_arg(args, char**);
-				*p = strmem->Alloc(*ilen+1);
 				if( *ilen != 0 ) {
+					*p = strmem->Alloc(*ilen+1);
 					memcpy(*p, buffer, *ilen);
 					buffer += *ilen;
+				} else {
+					*p = NULL;
 				}
 				continue;
 			case 'p': // use unsigned char for length
@@ -359,12 +371,24 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				*smol = *(unsigned char*)buffer;
 				buffer ++;
 				p = (char**)va_arg(args, char**);
-				*p = strmem->Alloc(*smol);
 				if( *smol != 0 ) {
+					*p = strmem->Alloc(*smol);
 					memcpy(*p, buffer, *smol);
 					buffer += *smol;
+				} else {
+					*p = NULL;
 				}
 				continue;
+			case 'x': // use external length
+				uilen = va_arg(args, int);
+				p = (char**)va_arg(args, char**);
+				if( uilen != 0 ) {
+					*p = strmem->Alloc(uilen);
+					memcpy(*p, buffer, uilen);
+					buffer += uilen;
+				} else {
+					*p = NULL;
+				}
 		}
 	}
 	va_end(args);
@@ -389,6 +413,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 	unsigned long len;
 	unsigned int ilen;
 	unsigned char smol;
+	float maxbase, fv;
 	char c, *p, *s;
 
 	va_start(args, fmt);
@@ -422,6 +447,14 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				buffer += sizeof(float);
 				bufsz += sizeof(float);
 				continue;
+			case 'F':
+				maxbase = (float)va_arg(args, double);
+				fv = (float)va_arg(args, double);
+				i = (int)roundf( fv * ( 32767.0/maxbase ) );
+				*(buffer) = (i >> 8) & 0xFF;
+				*(buffer+1) = (i) & 0xFF;
+				buffer += 2;
+				bufsz += 2;
 			case 'i':
 				i = (int)va_arg(args, int);
 				while( bufsz+2 >= *alloced ) {
@@ -543,6 +576,12 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					buffer += smol;
 					bufsz += smol;
 				}
+				continue;
+			case 'x': // external length. do not add length to stream.
+				ilen = va_arg(args, unsigned int);
+				memcpy(buffer, p, ilen);
+				buffer += ilen;
+				bufsz += ilen;
 				continue;
 		}
 	}
