@@ -341,14 +341,14 @@ namespace CNet {
 
                 if( packetSize != 0 ) {
                     if( packetSizes.ContainsKey(icmd) && packetSizes[icmd] != packetSize )
-                        Debug.Log("Warning: packet size for command " + icmd + " already set to " + packetSizes[icmd] + " (new size: " + packetSize + ")");
+                        Debug.Log("Warning: packet size for command " + cmd + " already set to " + packetSizes[icmd] + " (new size: " + packetSize + ")");
                     packetSizes[icmd] = packetSize;
                 }
             }
             commandHandlers[icmd][tgt] = callback;
             if( waitingHandlers.ContainsKey(tgt) ) {
                 if( waitingHandlers[tgt].ContainsKey(icmd) ) {
-                    Debug.Log("Got " + waitingHandlers[tgt][icmd].Count + " waiting packets for " + icmd + " " + tgt);
+                    Debug.Log("Got " + waitingHandlers[tgt][icmd].Count + " waiting packets for " + cmd + " " + tgt);
                     foreach( PacketData data in waitingHandlers[tgt][icmd] ) {
                         callback((ulong)( (long)data.ts + this.net_clock_offset ), data.stream);
                     }
@@ -543,22 +543,24 @@ namespace CNet {
 
             Debug.Log("NewUser Create Avatar at " + startPos + " " + startRot);
             var dynamicCharacterAvatar = CharactersManager.Instance.CreateDynamicCharacter(startPos, r1,
-                                CharactersManager.CharacterFeatures.Pedestrian, CharactersManager.CharacterQuality.NotImportant);
+                                CharactersManager.CharacterFeatures.Pedestrian, CharactersManager.CharacterQuality.Full);
             if (!dynamicCharacterAvatar) {
                 Debug.Log("NewUser rejected");
                 return;
             }
 
-            Debug.Log("NewUser Build Avatar");
+            var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
+            //characterBuilder.m_Build = false;
+            characterBuilder.m_AIAgent = true;
+            characterBuilder.m_AddItems = true;
+
             Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
             dynamicCharacterAvatar.BuildCharacter();
             Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
 
-            Debug.Log("NewUser Add to serverUserObjects");
             serverUserObjects[uid] = dynamicCharacterAvatar.gameObject;
 
             Debug.Log("NewUser Get CNetId");
-            
             CNetId cni = dynamicCharacterAvatar.GetComponent<CNetId>();
             cni.local = false;
             cni.id = uid;
@@ -651,7 +653,7 @@ namespace CNet {
                         waitingHandlers[tgt][cmd] = new List<PacketData>();
                     }
                     p = new PacketData();
-                    p.ts = ts;
+                    p.ts = (ulong)( (long)ts + this.net_clock_offset );
                     p.stream = param;
                     waitingHandlers[tgt][cmd].Add(p);
                 }
@@ -663,7 +665,7 @@ namespace CNet {
                     waitingHandlers[tgt][cmd] = new List<PacketData>();
                 }
                 p = new PacketData();
-                p.ts = ts;
+                p.ts = (ulong)( (long)ts + this.net_clock_offset );
                 p.stream = param;
                 waitingHandlers[tgt][cmd].Add(p);
             }
@@ -684,13 +686,24 @@ namespace CNet {
 
             if( dataptr != null ) {
                 dataptr.Reduce();
-                if( dataptr.used != packetSizes[icmd] ) {
-                    Debug.LogError("Packet size mismatch: " + icmd + " from: " + tgt + ": found " + dataptr.used + ", expected " + packetSizes[icmd]);
-                    return; // Do not send it.
+                if( packetSizes.ContainsKey(icmd) ) {
+                    if( dataptr.used != packetSizes[icmd] ) {
+                        Debug.LogError("Packet size mismatch: " + icmd + " from: " + tgt + ": found " + dataptr.used + ", expected " + packetSizes[icmd]);
+                        return; // Do not send it.
+                    }
                 }
                 sb.AddBytes(dataptr.ptr);
             }
             Debug.Log("SendPacket " + cmd + " for " + tgt + " with " + sb.used + " bytes, " + (instantSend?"instant":"delayed"));
+            /*
+            byte b;
+            int i;
+            sb.Reduce();
+            for( i=0; i<sb.used; i++ ) {
+                b = sb.ptr[i];
+                Debug.Log("Packet: " + b);
+            }
+            */
             SendMessage(SCommand.Packet, sb, instantSend?0:code);
         }
         public void SendPacket( CNetFlag cmd, uint tgt, byte[] data, bool instantSend=false )
@@ -707,13 +720,15 @@ namespace CNet {
             sb.AddUint(ts_short);
 
             if( data != null ) {
-                if( data.Length != packetSizes[icmd] ) {
-                    Debug.LogError("Packet size mismatch: " + icmd + " from: " + tgt + ": found " + data.Length + ", expected " + packetSizes[icmd]);
-                    return; // Do not send it.
+                if( packetSizes.ContainsKey(icmd) ) {
+                    if( data.Length != packetSizes[icmd] ) {
+                        Debug.LogError("Packet size mismatch: " + icmd + " from: " + tgt + ": found " + data.Length + ", expected " + packetSizes[icmd]);
+                        return; // Do not send it.
+                    }
                 }
                 sb.AddBytes(data);
             }
-            Debug.Log("SendPacket " + cmd + " for " + tgt + " with " + sb.used + " bytes, " + (instantSend?"instant":"delayed"));
+            //Debug.Log("SendPacket " + cmd + " for " + tgt + " with " + sb.used + " bytes, " + (instantSend?"instant":"delayed"));
             SendMessage(SCommand.Packet, sb, instantSend?0:code);
         }
         public void RecvPacket( NetStringReader stream )
@@ -728,22 +743,40 @@ namespace CNet {
             ts = ts_short + last_game_time;
 
             NetStringReader param;
+            PacketData p;
             if( packetSizes.ContainsKey(cmd) ) {
                 detail = stream.ReadFixedBytes(packetSizes[cmd]);
-                param = new NetStringReader(detail);
             } else {
-                param = null;
+                detail = stream.ReadFixedBytes( stream.data.Length - stream.offset );
             }
+            param = new NetStringReader(detail);
 
             if( commandHandlers.ContainsKey(cmd) ) {
                 if( commandHandlers[cmd].ContainsKey(tgt) ) {
                     commandHandlers[cmd][tgt]((ulong)( (long)ts + this.net_clock_offset ), param);
                 } else {
-                    Debug.Log("Unknown object: " + tgt);
+                    if( !waitingHandlers.ContainsKey(tgt) ) {
+                        waitingHandlers[tgt] = new Dictionary<uint, List<PacketData>>();
+                    }
+                    if( !waitingHandlers[tgt].ContainsKey(cmd) ) {
+                        waitingHandlers[tgt][cmd] = new List<PacketData>();
+                    }
+                    p = new PacketData();
+                    p.ts = (ulong)( (long)ts + this.net_clock_offset );
+                    p.stream = param;
+                    waitingHandlers[tgt][cmd].Add(p);
                 }
             } else {
-                Debug.Log("Unknown command: " + cmd);
-            }
+                if( !waitingHandlers.ContainsKey(tgt) ) {
+                    waitingHandlers[tgt] = new Dictionary<uint, List<PacketData>>();
+                }
+                if( !waitingHandlers[tgt].ContainsKey(cmd) ) {
+                    waitingHandlers[tgt][cmd] = new List<PacketData>();
+                }
+                p = new PacketData();
+                p.ts = (ulong)( (long)ts + this.net_clock_offset );
+                p.stream = param;
+                waitingHandlers[tgt][cmd].Add(p);            }
         }
 
 
@@ -830,8 +863,6 @@ namespace CNet {
 
                     if( data != null )
                         send(data);
-                    else
-                        Debug.Log("Message with no data: " + cmd);
                 }
                 _sendQSig.Set();
             } else {
@@ -859,8 +890,8 @@ namespace CNet {
 
                     if( data != null )
                         send(data);
-                    else
-                        Debug.Log("Message with no data: " + cmd);
+                    //else
+                    //    Debug.Log("Message with no data: " + cmd);
                 }
                 _sendQSig.Set();
             } else {
@@ -882,12 +913,12 @@ namespace CNet {
                 elapsed=1.0f;
             }
             if( second_bytes+additionalData+data.Length > max_out_bps*elapsed ) {
-                Debug.Log("overflow to delayQ");
+                //Debug.Log("overflow to delayQ");
                 delayQ.Enqueue(data);
                 return;
             }
             if( delayQ.Count > 0 ) { // do not let any data through if we have data in the delay queue
-                Debug.Log("delayQ blocking data");
+                //Debug.Log("delayQ blocking data");
                 delayQ.Enqueue(data);
                 return;
             }
@@ -922,7 +953,7 @@ namespace CNet {
                     lock (_sendQLock) {
                         sendQ.Enqueue(data);
                     }
-                    Debug.Log("flushQueue: " + data.Length + " bytes");
+                    //Debug.Log("flushQueue: " + data.Length + " bytes");
                     if( data.Length != 3 && second_bytes > elapsed*max_out_bps ) { // do not end if we just sent a header.
                         Debug.Log("end on flushQueue");
                         break;
@@ -943,7 +974,7 @@ namespace CNet {
                 return;
             }
             if( sendBuffers.Count > 0 )
-                Debug.Log("sendPackets: " + sendBuffers.Count);
+                //Debug.Log("sendPackets: " + sendBuffers.Count);
             lock( _sendQLock ) {
                 List<long> keys = new List<long>();
                 _sendQSig.Reset();
@@ -969,7 +1000,7 @@ namespace CNet {
         }
 
         public void sendBuffer(long code, byte[] head, byte[] data) {
-            Debug.Log("sendBuffer(" + code + ")");
+            //Debug.Log("sendBuffer(" + code + ")");
             sendHeaders[code] = head;
             sendBuffers[code] = data;
         }

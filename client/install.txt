@@ -1,10 +1,27 @@
 -> Create an object to hold Network scripts.
--> place NetSocket and CNetItemTracker on.
+-> place NetSocket and CNetItemTracker and CNetBPS(optional, shows BPS speed display) on.
 -> fill out the item tracker list?
 
 -> place CNetId on the Player object.
 -> place CNetAnimatorMonitor on the Player object aswell, then copy the two graphs (forward and horizontal movement) from the standard 'animatormonitor'
 -> remove the old animatormonitor from the player object
+
+
+-> Modify UMACharacterBuilder:
+Modify this header:[Header("Build events")]
+So it looks like this:
+        [Tooltip("Events that are executed after the character has been created.")]
+        public UMADataEvent m_CharacterCreated;
+        public delegate void afterBuildCharacter(GameObject obj);
+        public static event afterBuildCharacter AfterBuildCharacter;
+
+Modify the following code to look like this:
+		Debug.Log("Finished Building character"); isCreated = true;
+		if( AfterBuildCharacter != null )
+		{
+			AfterBuildCharacter(data.gameObject);
+		}
+
 
 Notes:
 - packets are deduped so we may drop some and need to use instantSend=true

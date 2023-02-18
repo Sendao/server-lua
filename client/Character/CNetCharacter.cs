@@ -45,7 +45,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterLoadDefaultLoadout, id.id, OnLoadDefaultLoadout, 0 );
 
 		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterAbility, id.id, OnAbilityActive, 3 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemAbility, id.id, OnItemAbilityActive, 40 );
+		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemAbility, id.id, OnItemAbilityActive, 3 );
 		//NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemActive, id.id, OnItemActive, 40 );
 
 		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterEquipItem, id.id, OnEquipItem, 5 );
@@ -69,12 +69,13 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		NetSocket.Instance.RegisterPacket( CNetFlag.FlashlightToggle, id.id, OnFlashlightToggle, 1 );
 
 		NetSocket.Instance.RegisterPacket( CNetFlag.PushRigidbody, id.id, OnPushRigidbody, 36 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.SetRotation, id.id, OnSetRotation, 16 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.SetPosition, id.id, OnSetPosition, 16 );
+		NetSocket.Instance.RegisterPacket( CNetFlag.SetRotation, id.id, OnSetRotation, 13 );
+		NetSocket.Instance.RegisterPacket( CNetFlag.SetPosition, id.id, OnSetPosition, 13 );
 		NetSocket.Instance.RegisterPacket( CNetFlag.ResetPositionRotation, id.id, OnResetPositionRotation, 0 );
 		NetSocket.Instance.RegisterPacket( CNetFlag.SetPositionAndRotation, id.id, OnSetPositionAndRotation, 32 );
 
 		NetSocket.Instance.RegisterPacket( CNetFlag.SetActive, id.id, OnSetActive, 2 );
+		Debug.Log("Character registered for packet events.");
 	}
 
 	private void Start()
@@ -88,11 +89,9 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		if( !id.local ) {
 			id.RegisterChild( this );
 			PickupItems();
-		}
-
-		// AI agents should be disabled on the client.
-		if (!id.local && gameObject.GetComponent<LocalLookSource>() != null) {
-			//characterLocomotion.enabled = false;
+		} else {
+			EventHandler.RegisterEvent<Ability, bool>(gameObject, "OnCharacterAbilityActive", EvtAbilityActive);
+			EventHandler.RegisterEvent<ItemAbility, bool>(gameObject, "OnCharacterItemAbilityActive", EvtItemAbilityActive);
 		}
 	}
 	
@@ -118,6 +117,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddInt( slotID );
 		stream.AddByte( equip ? (byte)1 : (byte)0 );
 
+		Debug.Log("EquipUnequipItem");
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterEquipItem, id.id, stream );
 
 		DoEquipItem(itemID, slotID, equip);
@@ -216,17 +216,27 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 
 		var items = gameObject.GetComponentsInChildren<Item>(true);
 		for (int i = 0; i < items.Length; ++i) {
+			Debug.Log("PickupItems: " + i);
 			items[i].Pickup();
 		}
 	}
 
+	public void EvtAbilityActive(Ability ability, bool active)
+	{
+		NetStringBuilder stream = new NetStringBuilder();
+		stream.AddUint( (uint)ability.Index );
+		stream.AddBool( active );
+
+		Debug.Log("Cnet: AbilityActive1: " + ability.Index + " " + active);
+		NetSocket.Instance.SendPacket( CNetFlag.CharacterAbility, id.id, stream, true );
+	}
 	public void AbilityActive(uint abilityIndex, bool active)
 	{
 		NetStringBuilder stream = new NetStringBuilder();
 		stream.AddUint( abilityIndex );
 		stream.AddBool( active );
 
-		NetSocket.Instance.SendPacket( CNetFlag.CharacterAbility, id.id, stream );
+		NetSocket.Instance.SendPacket( CNetFlag.CharacterAbility, id.id, stream, true );
 
 		DoAbilityActive(abilityIndex, active);
 	}
@@ -234,6 +244,8 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	{
 		uint abilityIndex = stream.ReadUint();
 		bool active = stream.ReadBool();
+
+		Debug.Log("OnAbilityActive: " + abilityIndex + " " + active);
 
 		DoAbilityActive(abilityIndex, active);
 	}
@@ -246,13 +258,25 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		}
 	}
 
+	public void EvtItemAbilityActive(ItemAbility ability, bool active)
+	{
+		NetStringBuilder stream = new NetStringBuilder();
+		stream.AddUint( (uint)ability.Index );
+		stream.AddBool( active );
+
+		Debug.Log("Cnet: ItemAbilityActive1: " + ability.Index + " " + active);
+
+		NetSocket.Instance.SendPacket( CNetFlag.CharacterItemAbility, id.id, stream, true );
+	}
 	public void ItemAbilityActive(uint abilityIndex, bool active)
 	{
 		NetStringBuilder stream = new NetStringBuilder();
 		stream.AddUint( abilityIndex );
 		stream.AddBool( active );
 
-		NetSocket.Instance.SendPacket( CNetFlag.CharacterItemAbility, id.id, stream );
+		Debug.Log("Cnet: ItemAbilityActive2: " + abilityIndex + " " + active);
+
+		NetSocket.Instance.SendPacket( CNetFlag.CharacterItemAbility, id.id, stream, true );
 
 		DoItemAbilityActive(abilityIndex, active);
 	}
@@ -260,6 +284,8 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	{
 		uint abilityIndex = stream.ReadUint();
 		bool active = stream.ReadBool();
+
+		Debug.Log("OnItemAbilityActive: " + abilityIndex + " " + active);
 
 		DoItemAbilityActive(abilityIndex, active);
 	}

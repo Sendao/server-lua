@@ -196,10 +196,10 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 				var velocity = stream.ReadShortVector3();
 				if (!initialSync) {
 					// Account for the lag.
-					var lag = Mathf.Abs((float)(NetSocket.Instance.last_netupdate - ts));
-					Debug.Log("Lastupdate: " + NetSocket.Instance.last_netupdate + ", this: " + ts + ", dist: " + lag + " velocity: " + velocity*lag);
+					var lag = Mathf.Abs((float)(NetSocket.Instance.last_netupdate - ts)/1000.0f);
 					if( lag < 0 ) lag = 0;
 					if( lag > 1 ) lag = 1;
+					Debug.Log("Lastupdate: " + NetSocket.Instance.last_netupdate + ", this: " + ts + ", dist: " + lag + " velocity: " + velocity*lag);
 					netPosition += velocity * lag;
 				}
 				initialSync = false;
@@ -213,7 +213,9 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 		}
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
+			Debug.Log("Scale was " + transform.localScale);
 			transform.localScale = stream.ReadShortVector3();
+			Debug.Log("Change scale to " + transform.localScale);
 		}
 	}
 

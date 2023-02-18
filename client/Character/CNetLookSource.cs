@@ -79,16 +79,18 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
 
     public Vector3 LookDirection(Vector3 lookPosition, bool characterLookDirection, int layerMask, bool includeRecoil, bool includeMovementSpread)
     {
+        //Debug.Log("LookDirection(" + lookPosition + ", " + characterLookDirection + ", " + layerMask + ", " + includeRecoil + ", " + includeMovementSpread + ")");
         var collisionLayerEnabled = characterLocomotion.CollisionLayerEnabled;
         characterLocomotion.EnableColliderCollisionLayer(false);
 
         // Cast a ray from the look source point in the forward direction. The look direction is then the vector from the look position to the hit point.
         RaycastHit hit;
         Vector3 direction;
-        if (Physics.Raycast(netLookPosition, netLookDirection, out hit, netLookDirectionDistance, layerMask, QueryTriggerInteraction.Ignore)) {
+        if (Physics.Raycast(netLookPosition, characterLookDirection ? transform.forward : netLookDirection, out hit, netLookDirectionDistance, layerMask, QueryTriggerInteraction.Ignore)) {
             direction = (hit.point - lookPosition).normalized;
         } else {
             direction = netLookDirection;
+            //Debug.Log("LookDirection: no hit, return netLookDirection " + netLookDirection);
         }
 
         characterLocomotion.EnableColliderCollisionLayer(collisionLayerEnabled);
@@ -103,6 +105,7 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
         }
 
         var serializationRate = (1f / NetSocket.Instance.updateRate) * remoteInterpolationMultiplayer;
+        
         netLookDirectionDistance = Mathf.MoveTowards(netLookDirectionDistance, netTargetLookDirectionDistance, 
                                                         Mathf.Abs(netTargetLookDirectionDistance - netLookDirectionDistance) * serializationRate);
         netPitch = Mathf.MoveTowards(netPitch, netTargetPitch, Mathf.Abs(netTargetPitch - netPitch) * serializationRate);
@@ -115,11 +118,11 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
         if( id.local && lookSource != null) {
             NetStringBuilder sb = new NetStringBuilder();
             byte dirtyFlag = 0;
-            if( Mathf.Abs( netLookDirectionDistance - lookSource.LookDirectionDistance ) > 0.1f ) {
+            if( Mathf.Abs( netLookDirectionDistance - lookSource.LookDirectionDistance ) > 0.01f ) {
                 dirtyFlag |= (byte)LookDirtyFlags.Distance;
                 netLookDirectionDistance = lookSource.LookDirectionDistance;
             }
-            if( Mathf.Abs( netPitch - lookSource.Pitch ) > 0.1f ) {
+            if( Mathf.Abs( netPitch - lookSource.Pitch ) > 0.01f ) {
                 dirtyFlag |= (byte)LookDirtyFlags.Pitch;
                 netPitch = lookSource.Pitch;
             }
@@ -151,14 +154,13 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
                 sb.AddShortVector3(netLookDirection);
             }
 
-
             NetSocket.Instance.SendDynPacket( CNetFlag.PlayerLook, id.id, sb );
         }
     }
     public void OnUpdate( ulong ts, NetStringReader stream )
     {
         var dirtyFlag = stream.ReadByte();
-        Debug.Log("CNetLookSource Dirtyflag: " + dirtyFlag + ", size: " + stream.data.Length);
+        //Debug.Log("CNetLookSource Dirtyflag: " + dirtyFlag + ", size: " + stream.data.Length);
 
         if( (dirtyFlag&(byte)LookDirtyFlags.Distance) != 0 ) {
             netTargetLookDirectionDistance = stream.ReadShortFloat();
@@ -170,8 +172,9 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
             netTargetLookPosition = stream.ReadShortVector3();
         }
         if( (dirtyFlag&(byte)LookDirtyFlags.Direction) != 0 ) {
-            netTargetLookDirection = stream.ReadShortVector3();
+            netTargetLookDirection = stream.ReadShortVector3().normalized;
         }
+        Debug.Log("CNetLookSource Dirtyflag: " + dirtyFlag + ", new direction: " + netTargetLookDirection);
         if (initialSync) {
             netLookDirectionDistance = netTargetLookDirectionDistance;
             netPitch = netTargetPitch;
@@ -184,5 +187,6 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
     private void OnDestroy()
     {
         NetSocket.Instance.RemoveNetObject( this );
-    }
+        EventHandler.UnregisterEvent<ILookSource>(gameObject, "OnCharacterAttachLookSource", OnAttachLookSource);
+     }
 }
