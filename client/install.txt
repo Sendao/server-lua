@@ -1,0 +1,18 @@
+-> Create an object to hold Network scripts.
+-> place NetSocket and CNetItemTracker on.
+-> fill out the item tracker list?
+
+-> place CNetId on the Player object.
+-> place CNetAnimatorMonitor on the Player object aswell, then copy the two graphs (forward and horizontal movement) from the standard 'animatormonitor'
+-> remove the old animatormonitor from the player object
+
+Notes:
+- packets are deduped so we may drop some and need to use instantSend=true
+
+Questions:
+- how many updates per second is optimal for current CPU use and network availability?
+
+
+Next to do:
+ - need to send a timestamp as soon as registered
+
