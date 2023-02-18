@@ -468,7 +468,7 @@ int InputConnection(User *user)
 		while( p < endpt ) {
 			cmdByte = *p;
 			ilen = (int)((*(p+1)<<8) | (*(p+2)&0xFF));
-			//lprintf("Got packet %d size %d", cmdByte, ilen);
+			//lprintf("Got cmd %d size %d", cmdByte, ilen);
 			if( ilen == 0 ) {
 				msgbuf = strmem->Alloc(3);
 				memcpy( msgbuf, p, 3 );

@@ -3,21 +3,17 @@
 Contains no actual LUA.
 
 # Next up:
-- RPCs
-- kinematic controller movement
+- item and object updates
+- IK updates
 
 # In progress:
-- rigid body movement
 
 # Completed:
 
-- tcp sockets
-- stream compression
-- file listing
-- basic lua interface
-- file i/o
-- basic packeting
-- authoritative client
+- basic server
+- compression
+- file transfers
+- character updates (mostly)
 
 # MinGW Instructions:
 

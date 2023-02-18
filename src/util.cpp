@@ -409,6 +409,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 	va_list args;
 	long l;
 	long long ll;
+	int16_t i16;
 	int i;
 	unsigned long len;
 	unsigned int ilen;
@@ -450,11 +451,15 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 			case 'F':
 				maxbase = (float)va_arg(args, double);
 				fv = (float)va_arg(args, double);
-				i = (int)roundf( fv * ( 32767.0/maxbase ) );
-				*(buffer) = (i >> 8) & 0xFF;
-				*(buffer+1) = (i) & 0xFF;
+				i16 = (int16_t)roundf( fv * ( 32767.0/maxbase ) );
+				if( i16 == 0 && fv != 0.0 ) {
+					lprintf("i16==0, fv=%f", fv);
+				}
+				*(buffer) = (i16 >> 8);
+				*(buffer+1) = (i16 & 0xFF);
 				buffer += 2;
 				bufsz += 2;
+				continue;
 			case 'i':
 				i = (int)va_arg(args, int);
 				while( bufsz+2 >= *alloced ) {

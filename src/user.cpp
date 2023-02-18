@@ -6,7 +6,6 @@ using namespace std::placeholders;
 
 void init_commands( void )
 {
-	User *p=NULL;
 	int i;
 	for( i=0; i<256; i++ ) {
 		commands[i] = NULL;
@@ -62,6 +61,7 @@ User::User(void)
 	state = 0;
 	x = y = z = 0;
 	r0 = r1 = r2 = r3 = 0;
+	scalex = scaley = scalez = 1;
 	reading_ptr = NULL;
 	uid = top_uid;
 	top_uid++;
@@ -74,6 +74,10 @@ User::User(void)
 
 	look = (LookSource*)halloc(sizeof(LookSource));
 	new(look) LookSource();
+	look->x = look->y = look->z = 0;
+	look->dirx = 0;
+	look->diry = 0;
+	look->dirz = -1;
 }
 
 User::~User(void)
@@ -136,9 +140,9 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 void User::ProcessMessages(void)
 {
 	vector<char*>::iterator it;
-	char *ptr;
+	char *ptr, *pread;
 	int sz;
-	char code, *data;
+	unsigned char code;
 	string buf;
 	uint16_t x;
 
@@ -146,15 +150,24 @@ void User::ProcessMessages(void)
 
 	for( it=messages.begin(); it != messages.end(); it++ ) {
 		ptr = *it;
-		code = *(char *)ptr;
+		code = *(unsigned char *)ptr;
 		if( sizes[code] == 0 ) {
 			sz = (*(ptr+1) << 8) | (*(ptr+2)&0xFF);
+			//lprintf("Message %d size: %d", code, sz);
 		} else {
 			sz = sizes[code];
+			lprintf("Size set for code %d", code);
 		}
 		ptr += 3;
 		if( commands[code] != NULL ) {
-			//lprintf("Found code %d length %lld", (int)code, sz);
+			/*
+			if( code == SCmdPacket ) {
+				for( pread = ptr; pread != ptr+sz; pread++ ) {
+					x = *pread;
+					lprintf("Packet: %d", x);
+				}
+			}
+			*/
 			std::bind( commands[code], this, _1, _2 )( ptr, sz );
 		} else {
 			lprintf("Unknown command code %d", (int)code);
@@ -459,7 +472,7 @@ void User::SendTo( User *otheruser )
 	timestamp_short = (int)(this->last_update - game->last_timestamp); // maybe we should use the current time instead. This is the time since the last update.
 
 // newuser packet
-	size = spackf(&buf, &alloced, "iffffff", uid, x, y, z, r0, r1, r2);
+	size = spackf(&buf, &alloced, "iffffff", uid, px, py, pz, r0, r1, r2);
 	if( !otheruser ) {
 		game->SendMsg( CCmdUser, size, buf, this );
 	} else {
@@ -483,9 +496,12 @@ void User::SendTo( User *otheruser )
 
 // transform
 	char dirtyfull = 255;
-	size = spackf(&buf, &alloced, "iiiicFFFFFF", CNetTransform, uid, timestamp_short, 13, dirtyfull,
+	char dirtypart = TransformPosition|TransformRotation|TransformScale;
+	size = spackf(&buf, &alloced, "iiiicFFFFFFFFFFFF", CNetTransform, uid, timestamp_short, 25, dirtypart,
 		1000.0, px, 1000.0, py, 1000.0, pz,
-		1000.0, pr0, 1000.0, pr1, 1000.0, pr2);
+		1000.0, vx, 1000.0, vy, 1000.0, vz,
+		1000.0, pr0, 1000.0, pr1, 1000.0, pr2,
+		1000.0, scalex, 1000.0, scaley, 1000.0, scalez);
 	if( !otheruser )
 		game->SendMsg( CCmdDynPacket, size, buf, this );
 	else
@@ -547,6 +563,7 @@ void User::DynPacket( char *data, uint16_t sz )
 	int dynlen;
 
 	ptr1 = ptr = sunpackf(data, "iiii", &cmd, &objtgt, &timestamp_short, &dynlen);
+	//lprintf("Got dyn packet: %u %u %u %d", cmd, objtgt, timestamp_short, dynlen);
 
 	this_update = this->last_update + (uint64_t)timestamp_short;
 	timestamp_short = (int)(this_update - game->last_timestamp);
@@ -565,6 +582,7 @@ void User::DynPacket( char *data, uint16_t sz )
 
 	// look source:
 	switch( cmd ) {
+		/* do not save animations I guess
 		case CNetAnimation:
 			ptr = sunpackf(ptr, "i", &dirtyflags);
 			if( (dirtyflags&ParamX) != 0 ) {
@@ -616,7 +634,7 @@ void User::DynPacket( char *data, uint16_t sz )
 				apptr = anim->params[ i ];
 				ptr = sunpackf(ptr, "iii", &apptr.itemid, &apptr.stateindex, &apptr.substateindex);
 			}
-			break;
+			break;*/
 		case CNetPlayerLook:
 			ptr = sunpackf(ptr, "c", &dirtybyte);
 			if( (dirtybyte&LookDistance) != 0 ) {
@@ -633,6 +651,7 @@ void User::DynPacket( char *data, uint16_t sz )
 
 			if( (dirtybyte&LookDirection) != 0 ) {
 				ptr = sunpackf(ptr, "FFF", 1000.0, &look->dirx, 1000.0, &look->diry, 1000.0, &look->dirz);
+				lprintf("New look dir: %f %f %f", look->dirx, look->diry, look->dirz);
 			}
 			break;
 		case CNetTransform:
@@ -686,7 +705,7 @@ void User::Packet( char *data, uint16_t sz )
 	float r0,r1,r2;
 
 	ptr = sunpackf(data, "iii", &cmd, &objtgt, &timestamp_short);
-	lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
+	//lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
 
 	this_update = this->last_update + (uint64_t)timestamp_short;
 
@@ -703,6 +722,7 @@ void User::Packet( char *data, uint16_t sz )
 
 	switch( cmd ) {
 		case CNetSetPositionAndRotation:
+			lprintf("read CNetSetPositionAndRotation");
 			otheruser = game->usermap[objtgt];
 			if( otheruser ) {
 				sunpackf(ptr, "ffffffcc", &x, &y, &z, &r0, &r1, &r2, &otheruser->snapAnimator, &otheruser->stopAllAbilities);
@@ -717,6 +737,7 @@ void User::Packet( char *data, uint16_t sz )
 			}
 			break;
 		case CNetSetPosition:
+			lprintf("read CNetSetPosition");
 			otheruser = game->usermap[objtgt];
 			if( otheruser ) {
 				sunpackf(ptr, "fff", &x, &y, &z);
@@ -727,6 +748,7 @@ void User::Packet( char *data, uint16_t sz )
 			}
 			break;
 		case CNetSetRotation:
+			lprintf("read CNetSetRotation");
 			otheruser = game->usermap[objtgt];
 			if( otheruser ) {
 				sunpackf(ptr, "fff", &r0, &r1, &r2);
