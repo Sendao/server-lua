@@ -505,7 +505,7 @@ void User::SendTo( User *otheruser )
 	strmem->Free( buf, alloced );
 	buf=NULL; alloced = 0;
 
-// animation
+/* animation
 	size = spackf(&buf, &alloced, "iiiiFFFFFicciiiF", CNetInitAnimation, uid, timestamp_short, 22,
 			1000.0, anim->x, 1000.0, anim->z, 1000.0, anim->pitch, 1000.0, anim->yaw, 1000.0, anim->speed,
 			anim->height, anim->moving, anim->aiming,
@@ -517,8 +517,9 @@ void User::SendTo( User *otheruser )
 		otheruser->SendMsg( CCmdDynPacket, size, buf );
 	strmem->Free( buf, alloced );
 	buf=NULL; alloced = 0;
+*/
 
-// animation parameters
+/* animation parameters
 	for( int i=0; i<anim->params.size(); i++ ) {
 		apptr = anim->params[i];
 		size = spackf(&buf, &alloced, "iiiiiii", CNetInitItemAnimation, uid, timestamp_short, i, apptr.itemid, apptr.stateindex, apptr.substateindex);
@@ -528,7 +529,7 @@ void User::SendTo( User *otheruser )
 			otheruser->SendMsg( CCmdPacket, size, buf );
 		strmem->Free( buf, alloced );
 		buf=NULL; alloced = 0;
-	}
+	} */
 }
 
 void User::DynPacket( char *data, uint16_t sz )
