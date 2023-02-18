@@ -101,9 +101,6 @@ namespace CNet
 			mid = (short)(data[offset+0] << 8 | (data[offset+1] & 0xFF));
 			float res = (float)mid / ((float)short.MaxValue / max);
 
-			if( res == 0 ) {
-				Debug.Log("Res is 0 detail bytes are: " + data[offset] + ", " + data[offset+1]);
-			}
 			offset += 2;
 
 			return res;

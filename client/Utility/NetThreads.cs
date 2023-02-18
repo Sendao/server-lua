@@ -168,7 +168,7 @@ namespace CNet
                             //Debug.Log("Compressed size: " + compressedSize + " not ready yet.");
                             break;
                         }
-                        Debug.Log("Compressed size: " + compressedSize + ", buffer size: " + readlen + ", readbuffers: " + readbuffer[ptr+1] + ", " + readbuffer[ptr+2] + ", " + readbuffer[ptr+3] + ", " + readbuffer[ptr+4] + ", " + readbuffer[ptr+5] + ", " + readbuffer[ptr+6]);
+                        //Debug.Log("Compressed size: " + compressedSize + ", buffer size: " + readlen + ", readbuffers: " + readbuffer[ptr+1] + ", " + readbuffer[ptr+2] + ", " + readbuffer[ptr+3] + ", " + readbuffer[ptr+4] + ", " + readbuffer[ptr+5] + ", " + readbuffer[ptr+6]);
                         ptr += 5;
 
                         var compressedStream = new MemoryStream(readbuffer, ptr, compressedSize);
@@ -193,7 +193,7 @@ namespace CNet
                             tmpbuf[0] = cmdByte;
                             tmpbuf[1] = decompressedData[deptr-2];
                             tmpbuf[2] = decompressedData[deptr-1];
-                            Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
+                            //Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
                             if( smallSize != 0 )
                                 Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                             recv_bytes += tmpbuf.Length;

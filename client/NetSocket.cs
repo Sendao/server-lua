@@ -162,26 +162,6 @@ namespace CNet {
             }
         }
 
-        public void BuildPlayer( GameObject obj )
-        {
-            CNetId id = obj.GetComponent<CNetId>();
-            if( foundMainUser ) {
-                Debug.Log("Found another player: " + id.id);
-                id.local = false;
-            } else {
-                Debug.Log("Found main player: " + id.id);
-                foundMainUser=true;
-                id.local = true;
-            }
-            obj.AddComponent<CNetCharacter>();
-            if( id.local ) {
-                RegisterUser( obj.GetComponent<CNetCharacter>() );
-            }
-            obj.AddComponent<CNetInfo>();
-            obj.AddComponent<CNetLookSource>();
-            obj.AddComponent<CNetCharacterLocomotionHandler>();
-            obj.AddComponent<CNetTransform>();
-        }
 
         public void RegisterNetObject( ICNetUpdate obj ) {
             netObjects.Add( obj );
@@ -527,6 +507,31 @@ namespace CNet {
             rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
         }
 
+        public void BuildPlayer( GameObject obj )
+        {
+            CNetId id = obj.GetComponent<CNetId>();
+            if( foundMainUser ) {
+                Debug.Log("Found another player: " + id.id);
+                id.local = false;
+            } else {
+                Debug.Log("Found main player: " + id.id);
+                foundMainUser=true;
+                id.local = true;
+            }
+            obj.AddComponent<CNetCharacter>();
+            if( id.local ) {
+                RegisterUser( obj.GetComponent<CNetCharacter>() );
+            } else {
+                var characterBuilder = obj.GetComponent<UMACharacterBuilder>();
+                characterBuilder.m_AIAgent = false;
+            }
+            obj.AddComponent<CNetInfo>();
+            obj.AddComponent<CNetLookSource>();
+            obj.AddComponent<CNetCharacterLocomotionHandler>();
+            obj.AddComponent<CNetTransform>();
+            obj.AddComponent<CNetMecanim>();
+        }
+
         public void NewUser(NetStringReader stream)
         {
             uint uid = stream.ReadUint();
@@ -551,12 +556,12 @@ namespace CNet {
 
             var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
             //characterBuilder.m_Build = false;
-            characterBuilder.m_AIAgent = true;
+            characterBuilder.m_AIAgent = false;
+            characterBuilder.m_AssignCamera = false;
             characterBuilder.m_AddItems = true;
 
             Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
             dynamicCharacterAvatar.BuildCharacter();
-            Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
 
             serverUserObjects[uid] = dynamicCharacterAvatar.gameObject;
 

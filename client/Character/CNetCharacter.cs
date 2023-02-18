@@ -88,7 +88,11 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 
 		if( !id.local ) {
 			id.RegisterChild( this );
+			Debug.Log("PickupItems()");
 			PickupItems();
+			Debug.Log("LoadDefaultLoadout()");
+	        DoLoadDefaultLoadout();
+			Debug.Log("done");
 		} else {
 			EventHandler.RegisterEvent<Ability, bool>(gameObject, "OnCharacterAbilityActive", EvtAbilityActive);
 			EventHandler.RegisterEvent<ItemAbility, bool>(gameObject, "OnCharacterItemAbilityActive", EvtItemAbilityActive);
@@ -97,8 +101,10 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	
 	public void LoadDefaultLoadout()
 	{
-		Debug.Log("Cnetchar: LoadDefaultLoadout()");
-		NetSocket.Instance.SendPacket( CNetFlag.CharacterLoadDefaultLoadout, id.id );
+		if( id.local ) {
+			Debug.Log("Cnetchar: LoadDefaultLoadout()");
+			NetSocket.Instance.SendPacket( CNetFlag.CharacterLoadDefaultLoadout, id.id );
+		}
 		DoLoadDefaultLoadout();
 	}
 	private void OnLoadDefaultLoadout(ulong ts, NetStringReader stream)
@@ -140,6 +146,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		var invId = CNetItemTracker.GetItem(itemIdentifier);
 		var item = inventory.GetItem(invId, slotID);
 		if (item == null) {
+			Debug.LogError("Error: Item not found in inventory.");
 			return;
 		}
 

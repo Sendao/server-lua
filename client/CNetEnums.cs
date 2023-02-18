@@ -76,6 +76,11 @@ namespace CNet
 
 		// OBJECTS - TRANSFORM
 		ObjTransformUpdate,
+
+		// MECANIM
+		MecContinuousUpdate,
+		MecDiscreteUpdate,
+		MecSetup
 	};
 
 	public enum AnimDirtyFlags : short

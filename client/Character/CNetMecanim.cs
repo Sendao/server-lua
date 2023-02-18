@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
+using CNet;
 
-/*
-public class CNetMecanim : MonoBehaviour, CNetUpdate
+public class CNetMecanim : MonoBehaviour, ICNetUpdate
 {
     public enum ParameterType
     {
@@ -30,19 +30,13 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         public int LayerIndex;
     }
 
-    #if PHOTON_DEVELOP
-    public PhotonAnimatorView ReceivingSender;
-    #endif
-
     private bool TriggerUsageWarningDone;
     
     private Animator animator;
-
-    private PhotonStreamQueue m_StreamQueue = new PhotonStreamQueue(120);
+    private CNetId cni;
 
     [HideInInspector]
     private List<SynchronizedParameter> m_SynchronizeParameters = new List<SynchronizedParameter>();
-
     [HideInInspector]
     private List<SynchronizedLayer> m_SynchronizeLayers = new List<SynchronizedLayer>();
 
@@ -55,30 +49,37 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
     private void Awake()
     {
         this.animator = GetComponent<Animator>();
+        this.cni = GetComponent<CNetId>();
+    }
+
+    private void Start()
+    {
+        if( !cni.local ) {
+            cni.RegisterChild( this );
+        }
     }
 
     private void Update()
     {
-        if (this.animator.applyRootMotion && this.photonView.IsMine == false && PhotonNetwork.IsConnected == true)
-        {
+        if (this.animator.applyRootMotion && !this.cni.local && NetSocket.Instance.connected )
             this.animator.applyRootMotion = false;
-        }
 
         if( !NetSocket.Instance.connected ) {
-            this.m_StreamQueue.Reset();
             return;
         }
 
-        if (this.photonView.IsMine == true)
+        if (this.cni.local)
         {
-            this.SerializeDataContinuously();
-
+            this.ContinuousUpdate();
             this.CacheDiscreteTriggers();
         }
-        else
-        {
-            this.DeserializeDataContinuously();
-        }
+    }
+
+    public void Register()
+    {
+		NetSocket.Instance.RegisterPacket( CNetFlag.MecContinuousUpdate, cni.id, DoContinuousUpdate );
+		NetSocket.Instance.RegisterPacket( CNetFlag.MecDiscreteUpdate, cni.id, DoDiscreteUpdate );
+		NetSocket.Instance.RegisterPacket( CNetFlag.MecSetup, cni.id, DoSetup );
     }
 
     public void CacheDiscreteTriggers()
@@ -121,10 +122,7 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         int index = this.m_SynchronizeLayers.FindIndex(item => item.LayerIndex == layerIndex);
 
         if (index == -1)
-        {
             return SynchronizeType.Disabled;
-        }
-
         return this.m_SynchronizeLayers[index].SynchronizeType;
     }
 
@@ -133,10 +131,7 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         int index = this.m_SynchronizeParameters.FindIndex(item => item.Name == name);
 
         if (index == -1)
-        {
             return SynchronizeType.Disabled;
-        }
-
         return this.m_SynchronizeParameters[index].SynchronizeType;
     }
 
@@ -178,59 +173,17 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         }
     }
 
-    private void NetUpdate()
-    {
-        DiscreteUpdate();
-        ContinuousUpdate();
-    }
-
+    
     private void ContinuousUpdate()
     {
-        NetStringBuilder sb;
+        NetStringBuilder sb = new NetStringBuilder();
 
         if (this.animator == null)
         {
             return;
         }
 
-        for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
-        {
-            if (this.m_SynchronizeLayers[i].SynchronizeType == SynchronizeType.Continuous)
-            {
-                this.m_StreamQueue.SendNext(this.animator.GetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex));
-            }
-        }
-
-        for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
-        {
-            SynchronizedParameter parameter = this.m_SynchronizeParameters[i];
-
-            if (parameter.SynchronizeType == SynchronizeType.Continuous)
-            {
-                switch (parameter.Type)
-                {
-                    case ParameterType.Bool:
-                        this.m_StreamQueue.SendNext(this.animator.GetBool(parameter.Name));
-                        break;
-                    case ParameterType.Float:
-                        this.m_StreamQueue.SendNext(this.animator.GetFloat(parameter.Name));
-                        break;
-                    case ParameterType.Int:
-                        this.m_StreamQueue.SendNext(this.animator.GetInteger(parameter.Name));
-                        break;
-                    case ParameterType.Trigger:
-                        this.m_StreamQueue.SendNext(this.animator.GetBool(parameter.Name));
-                        break;
-                }
-            }
-        }
-    }
-
-
-    private void DoUpdateContinuous(long ts, NetStringReader stream)
-    {
-        if (this.m_StreamQueue.HasQueuedObjects() == false)
-        {
+        if (this.m_WasSynchronizeTypeChanged == true) {
             return;
         }
 
@@ -238,7 +191,7 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         {
             if (this.m_SynchronizeLayers[i].SynchronizeType == SynchronizeType.Continuous)
             {
-                this.animator.SetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex, (float) this.m_StreamQueue.ReceiveNext());
+                sb.AddFloat(this.animator.GetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex));
             }
         }
 
@@ -251,16 +204,53 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
                 switch (parameter.Type)
                 {
                     case ParameterType.Bool:
-                        this.animator.SetBool(parameter.Name, (bool) this.m_StreamQueue.ReceiveNext());
+                        sb.AddBool(this.animator.GetBool(parameter.Name));
                         break;
                     case ParameterType.Float:
-                        this.animator.SetFloat(parameter.Name, (float) this.m_StreamQueue.ReceiveNext());
+                        sb.AddFloat(this.animator.GetFloat(parameter.Name));
                         break;
                     case ParameterType.Int:
-                        this.animator.SetInteger(parameter.Name, (int) this.m_StreamQueue.ReceiveNext());
+                        sb.AddInt(this.animator.GetInteger(parameter.Name));
                         break;
                     case ParameterType.Trigger:
-                        this.animator.SetBool(parameter.Name, (bool) this.m_StreamQueue.ReceiveNext());
+                        sb.AddBool(this.animator.GetBool(parameter.Name));
+                        break;
+                }
+            }
+        }
+		NetSocket.Instance.SendPacket( CNetFlag.MecContinuousUpdate, cni.id, sb, true );
+    }
+
+
+    private void DoContinuousUpdate(ulong ts, NetStringReader stream)
+    {
+        for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
+        {
+            if (this.m_SynchronizeLayers[i].SynchronizeType == SynchronizeType.Continuous)
+            {
+                this.animator.SetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex, stream.ReadFloat());
+            }
+        }
+
+        for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
+        {
+            SynchronizedParameter parameter = this.m_SynchronizeParameters[i];
+
+            if (parameter.SynchronizeType == SynchronizeType.Continuous)
+            {
+                switch (parameter.Type)
+                {
+                    case ParameterType.Bool:
+                        this.animator.SetBool(parameter.Name, stream.ReadBool());
+                        break;
+                    case ParameterType.Float:
+                        this.animator.SetFloat(parameter.Name, stream.ReadFloat());
+                        break;
+                    case ParameterType.Int:
+                        this.animator.SetInteger(parameter.Name, stream.ReadInt());
+                        break;
+                    case ParameterType.Trigger:
+                        this.animator.SetBool(parameter.Name, stream.ReadBool());
                         break;
                 }
             }
@@ -275,13 +265,12 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         {
             if (this.m_SynchronizeLayers[i].SynchronizeType == SynchronizeType.Discrete)
             {
-                stream.SendNext(this.animator.GetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex));
+                sb.AddFloat(this.animator.GetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex));
             }
         }
 
         for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
         {
-            
             SynchronizedParameter parameter = this.m_SynchronizeParameters[i];
     
             if (parameter.SynchronizeType == SynchronizeType.Discrete)
@@ -289,25 +278,25 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
                 switch (parameter.Type)
                 {
                     case ParameterType.Bool:
-                        stream.SendNext(this.animator.GetBool(parameter.Name));
+                        sb.AddBool(this.animator.GetBool(parameter.Name));
                         break;
                     case ParameterType.Float:
-                        stream.SendNext(this.animator.GetFloat(parameter.Name));
+                        sb.AddFloat(this.animator.GetFloat(parameter.Name));
                         break;
                     case ParameterType.Int:
-                        stream.SendNext(this.animator.GetInteger(parameter.Name));
+                        sb.AddInt(this.animator.GetInteger(parameter.Name));
                         break;
                     case ParameterType.Trigger:
                         if (!TriggerUsageWarningDone)
                         {
                             TriggerUsageWarningDone = true;
-                            Debug.Log("PhotonAnimatorView: When using triggers, make sure this component is last in the stack.\n" +
+                            Debug.Log("Network: When using triggers, make sure this component is last in the stack.\n" +
                                         "If you still experience issues, implement triggers as a regular RPC \n" +
-                                        "or in custom IPunObservable component instead",this);
+                                        "or in custom observable component instead",this);
                         
                         }
                         // here we can't rely on the current real state of the trigger, we might have missed its raise
-                        stream.SendNext(this.m_raisedDiscreteTriggersCache.Contains(parameter.Name));
+                        sb.AddBool(this.m_raisedDiscreteTriggersCache.Contains(parameter.Name));
                         break;
                 }
             }
@@ -315,15 +304,16 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
 
         // reset the cache, we've synchronized.
         this.m_raisedDiscreteTriggersCache.Clear();
+		NetSocket.Instance.SendPacket( CNetFlag.MecDiscreteUpdate, cni.id, sb );
     }
 
-    private void DoUpdateDiscrete(long ts, NetStringReader stream)
+    private void DoDiscreteUpdate(ulong ts, NetStringReader stream)
     {
         for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
         {
             if (this.m_SynchronizeLayers[i].SynchronizeType == SynchronizeType.Discrete)
             {
-                this.animator.SetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex, (float) stream.ReceiveNext());
+                this.animator.SetLayerWeight(this.m_SynchronizeLayers[i].LayerIndex, stream.ReadFloat());
             }
         }
 
@@ -336,35 +326,16 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
                 switch (parameter.Type)
                 {
                     case ParameterType.Bool:
-                        if (stream.PeekNext() is bool == false)
-                        {
-                            return;
-                        }
-                        this.animator.SetBool(parameter.Name, (bool) stream.ReceiveNext());
+                        this.animator.SetBool(parameter.Name, stream.ReadBool());
                         break;
                     case ParameterType.Float:
-                        if (stream.PeekNext() is float == false)
-                        {
-                            return;
-                        }
-
-                        this.animator.SetFloat(parameter.Name, (float) stream.ReceiveNext());
+                        this.animator.SetFloat(parameter.Name, stream.ReadFloat());
                         break;
                     case ParameterType.Int:
-                        if (stream.PeekNext() is int == false)
-                        {
-                            return;
-                        }
-
-                        this.animator.SetInteger(parameter.Name, (int) stream.ReceiveNext());
+                        this.animator.SetInteger(parameter.Name, stream.ReadInt());
                         break;
                     case ParameterType.Trigger:
-                        if (stream.PeekNext() is bool == false)
-                        {
-                            return;
-                        }
-
-                        if ((bool) stream.ReceiveNext())
+                        if ((bool) stream.ReadBool())
                         {
                             this.animator.SetTrigger(parameter.Name);
                         }
@@ -374,26 +345,9 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         }
     }
 
-    private void SerializeSynchronizationTypeState(PhotonStream stream)
+    public void DoSetup( ulong ts, NetStringReader stream )
     {
-        byte[] states = new byte[this.m_SynchronizeLayers.Count + this.m_SynchronizeParameters.Count];
-
-        for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
-        {
-            states[i] = (byte) this.m_SynchronizeLayers[i].SynchronizeType;
-        }
-
-        for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
-        {
-            states[this.m_SynchronizeLayers.Count + i] = (byte) this.m_SynchronizeParameters[i].SynchronizeType;
-        }
-
-        stream.SendNext(states);
-    }
-
-    private void DeserializeSynchronizationTypeState(PhotonStream stream)
-    {
-        byte[] state = (byte[]) stream.ReceiveNext();
+        byte[] state = (byte[]) stream.ReadShortBytes();
 
         for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
         {
@@ -406,47 +360,41 @@ public class CNetMecanim : MonoBehaviour, CNetUpdate
         }
     }
 
-    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
+    private void ReadSetup()
+    {
+        NetStringBuilder sb = new NetStringBuilder();
+        byte[] states = new byte[this.m_SynchronizeLayers.Count + this.m_SynchronizeParameters.Count];
+
+        for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
+        {
+            states[i] = (byte) this.m_SynchronizeLayers[i].SynchronizeType;
+        }
+
+        for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
+        {
+            states[this.m_SynchronizeLayers.Count + i] = (byte) this.m_SynchronizeParameters[i].SynchronizeType;
+        }
+
+        sb.AddShortBytes(states);
+        NetSocket.Instance.SendPacket( CNetFlag.MecSetup, cni.id, sb, true );
+    }
+
+
+    public void NetUpdate()
     {
         if (this.animator == null)
         {
             return;
         }
 
-        if (stream.IsWriting == true)
+        if (this.m_WasSynchronizeTypeChanged == true)
         {
-            if (this.m_WasSynchronizeTypeChanged == true)
-            {
-                this.m_StreamQueue.Reset();
-                this.SerializeSynchronizationTypeState(stream);
+            this.ReadSetup();
 
-                this.m_WasSynchronizeTypeChanged = false;
-            }
-
-            this.m_StreamQueue.Serialize(stream);
-            this.SerializeDataDiscretly(stream);
+            this.m_WasSynchronizeTypeChanged = false;
         }
-        else
-        {
-            #if PHOTON_DEVELOP
-            if( ReceivingSender != null )
-            {
-                ReceivingSender.OnPhotonSerializeView( stream, info );
-            }
-            else
-            #endif
-            {
-                if (stream.PeekNext() is byte[])
-                {
-                    this.DeserializeSynchronizationTypeState(stream);
-                }
 
-                this.m_StreamQueue.Deserialize(stream);
-                this.DeserializeDataDiscretly(stream);
-            }
-        }
+        this.DiscreteUpdate();
     }
 
-    #endregion
 }
-*/

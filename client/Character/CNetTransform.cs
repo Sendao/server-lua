@@ -73,12 +73,15 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 			characterLocomotion.SetPositionAndRotation(characterLocomotion.Platform.TransformPoint(netPlatformPrevRelativePosition), MathUtility.TransformQuaternion(characterLocomotion.Platform.rotation, netPlatformPrevRotationOffset), false);
 
 		} else {
-			if (characterFootEffects != null && (transform.position - netPosition).sqrMagnitude > 0.01f) {
-				//!characterFootEffects.CanPlaceFootstep = true;
+			if ((transform.position - netPosition).sqrMagnitude > 0.01f) {
+				if( characterFootEffects != null ) {
+					//characterFootEffects.CanPlaceFootstep = true;
+				}
+				//Debug.Log("Move distance " + distance*serializationRate + ": " + serializationRate);
+				transform.position = Vector3.MoveTowards(transform.position, netPosition, distance * serializationRate);
+				transform.rotation = Quaternion.RotateTowards(transform.rotation, netRotation, angle * serializationRate);
 			}
-			Debug.Log("Move distance " + distance*serializationRate + ": " + serializationRate);
-			transform.position = Vector3.MoveTowards(transform.position, netPosition, distance * serializationRate);
-			transform.rotation = Quaternion.RotateTowards(transform.rotation, netRotation, angle * serializationRate);
+
 		}
 	}
 
@@ -161,7 +164,7 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 	public void DoUpdate(ulong ts, NetStringReader stream)
 	{
 		byte dirtyFlag = stream.ReadByte();
-		Debug.Log($"NetTransform DoUpdate {dirtyFlag}");
+		//Debug.Log($"NetTransform DoUpdate {dirtyFlag}");
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Platform) != 0) {
 			uint platformId = stream.ReadUint();
 
@@ -197,9 +200,9 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 				if (!initialSync) {
 					// Account for the lag.
 					var lag = Mathf.Abs((float)(NetSocket.Instance.last_netupdate - ts)/1000.0f);
+					//Debug.Log("Lastupdate: " + NetSocket.Instance.last_netupdate + ", this: " + ts + ", dist: " + lag + " velocity: " + velocity*lag);
 					if( lag < 0 ) lag = 0;
 					if( lag > 1 ) lag = 1;
-					Debug.Log("Lastupdate: " + NetSocket.Instance.last_netupdate + ", this: " + ts + ", dist: " + lag + " velocity: " + velocity*lag);
 					netPosition += velocity * lag;
 				}
 				initialSync = false;
@@ -213,9 +216,7 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 		}
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
-			Debug.Log("Scale was " + transform.localScale);
 			transform.localScale = stream.ReadShortVector3();
-			Debug.Log("Change scale to " + transform.localScale);
 		}
 	}
 

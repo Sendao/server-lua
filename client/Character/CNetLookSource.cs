@@ -74,7 +74,8 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
         if (characterLookDirection) {
             return transform.forward;
         }
-        return netLookDirection;
+        Vector3 direction = -netLookDirection;
+        return direction;
     }
 
     public Vector3 LookDirection(Vector3 lookPosition, bool characterLookDirection, int layerMask, bool includeRecoil, bool includeMovementSpread)
@@ -89,8 +90,10 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
         if (Physics.Raycast(netLookPosition, characterLookDirection ? transform.forward : netLookDirection, out hit, netLookDirectionDistance, layerMask, QueryTriggerInteraction.Ignore)) {
             direction = (hit.point - lookPosition).normalized;
         } else {
-            direction = netLookDirection;
-            //Debug.Log("LookDirection: no hit, return netLookDirection " + netLookDirection);
+            Vector3 diff = lookPosition - netLookPosition;
+            //Debug.Log("LookDiff: " + diff + ", Look: " + netLookDirection);
+            direction = -netLookDirection;
+            //Debug.Log("Look: " + direction);
         }
 
         characterLocomotion.EnableColliderCollisionLayer(collisionLayerEnabled);
@@ -174,7 +177,7 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetUpdate
         if( (dirtyFlag&(byte)LookDirtyFlags.Direction) != 0 ) {
             netTargetLookDirection = stream.ReadShortVector3().normalized;
         }
-        Debug.Log("CNetLookSource Dirtyflag: " + dirtyFlag + ", new direction: " + netTargetLookDirection);
+        //Debug.Log("CNetLookSource Dirtyflag: " + dirtyFlag + ", new direction: " + netTargetLookDirection);
         if (initialSync) {
             netLookDirectionDistance = netTargetLookDirectionDistance;
             netPitch = netTargetPitch;
