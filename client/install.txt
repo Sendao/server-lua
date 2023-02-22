@@ -43,7 +43,7 @@ edit both player objects... the PlayerCharacter, and the prefab accessed through
 		var dynamicCharacterAvatar = CreateDynamicCharacter(position, heading, CharacterFeatures.Pedestrian, CharactersManager.CharacterQuality.Full);
 		if (!dynamicCharacterAvatar) {
 			Debug.Log("NewUser rejected");
-			return;
+			return null;
 		}
 
 		var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
