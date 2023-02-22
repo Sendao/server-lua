@@ -36,34 +36,32 @@ namespace CNet
 					}
 				}
 			}
-			Debug.Log("Registering " + this.name + " with type " + type);
-
 			// - parent		
 
 			// Register with the main controller - this will set the 'id' field
-			NetSocket.Instance.RegisterId(this, this.name, type);
+			if( type != 2 ) {
+				NetSocket.Instance.RegisterId(this, this.name, type);
+			}
 		}
 
-		private List<ICNetUpdate> children = new List<ICNetUpdate>();
+		private List<ICNetReg> children = new List<ICNetReg>();
 
-		public void RegisterChild( ICNetUpdate child )
+		public void RegisterChild( ICNetReg child )
 		{
-			if( registered && !local ) {
+			if( registered ) {
 				child.Register();
-			}
-			lock( _registerlock  ) {
-				children.Add( child );
-				Debug.Log("RegisterChild " + child.GetType().ToString() + " " + children.Count);
+			} else {
+				lock( _registerlock  ) {
+					children.Add( child );
+				}
 			}
 		}
 
 		public void Register()
 		{
-			Debug.Log("Registering " + children.Count + " children");
-			if( local ) {
-				Debug.LogError("Registering local object to receive updates makes no sense");
-			}
 			lock( _registerlock ) {
+				Debug.Log("Registering " + this.name + " with type " + type);
+
 				foreach( var child in children ) {
 					child.Register();
 				}

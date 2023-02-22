@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using CNet;
 
-public class CNetMecanim : MonoBehaviour, ICNetUpdate
+public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
 {
     public enum ParameterType
     {
@@ -30,19 +30,47 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
         public int LayerIndex;
     }
 
+    //These fields are only used in the CustomEditor for this script and would trigger a
+    //"this variable is never used" warning, which I am suppressing here
+    #pragma warning disable 0414
+
+    [HideInInspector]
+    [SerializeField]
+    private bool ShowLayerWeightsInspector = true;
+
+    [HideInInspector]
+    [SerializeField]
+    private bool ShowParameterInspector = true;
+
+    #pragma warning restore 0414
+
+
     private bool TriggerUsageWarningDone;
     
     private Animator animator;
     private CNetId cni;
+    private RuntimeAnimatorController controller;
+    private string current_controller;
+
+    class ControlDetails
+    {
+        public string name;
+        public List<SynchronizedParameter> parameters = new List<SynchronizedParameter>();
+        public List<SynchronizedLayer> layers = new List<SynchronizedLayer>();
+    };
 
     [HideInInspector]
     private List<SynchronizedParameter> m_SynchronizeParameters = new List<SynchronizedParameter>();
+
     [HideInInspector]
     private List<SynchronizedLayer> m_SynchronizeLayers = new List<SynchronizedLayer>();
 
+    [HideInInspector]
+    [SerializeField]
+    private Dictionary<string, ControlDetails> controllers = new Dictionary<string, ControlDetails>();
+
     private Vector3 m_ReceiverPosition;
     private float m_LastDeserializeTime;
-    private bool m_WasSynchronizeTypeChanged = true;
 
     List<string> m_raisedDiscreteTriggersCache = new List<string>();
 
@@ -54,9 +82,56 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
 
     private void Start()
     {
+        if (this.animator != null)
+        {
+            RuntimeAnimatorController rc = this.GetEffectiveController(this.animator);
+            if( rc == null ) {
+                controller = null;
+                current_controller = "None";
+                Debug.Log("No controller");
+            } else {
+                this.SetController(rc.name);
+            }
+        } else {
+            Debug.LogError("Mecanim requires animator");
+        }
         if( !cni.local ) {
             cni.RegisterChild( this );
+        } else {
+            NetSocket.Instance.RegisterNetObject( this );
         }
+    }
+
+    private RuntimeAnimatorController GetEffectiveController(Animator animator)
+    {
+        RuntimeAnimatorController controller = animator.runtimeAnimatorController;
+
+        AnimatorOverrideController overrideController = controller as AnimatorOverrideController;
+        while (overrideController != null)
+        {
+            controller = overrideController.runtimeAnimatorController;
+            overrideController = controller as AnimatorOverrideController;
+        }
+
+        return controller;
+    }
+
+    public void SetController( string name )
+    {
+        //this.animator.runtimeAnimatorController = controller;
+        //this.controller = this.GetEffectiveController(this.animator) as UnityEditor.Animations.AnimatorController;
+        current_controller = name;
+        if( !controllers.ContainsKey( current_controller ) ) {
+            Debug.Log("New controller " + current_controller);
+            ControlDetails ctrl = new ControlDetails();
+            ctrl.name = current_controller;
+            ctrl.parameters = new List<SynchronizedParameter>();
+            ctrl.layers = new List<SynchronizedLayer>();
+            controllers[current_controller] = ctrl;
+        }
+        m_SynchronizeParameters = controllers[current_controller].parameters;
+        m_SynchronizeLayers = controllers[current_controller].layers;
+        Debug.Log("Set controller to " + name);
     }
 
     private void Update()
@@ -64,12 +139,22 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
         if (this.animator.applyRootMotion && !this.cni.local && NetSocket.Instance.connected )
             this.animator.applyRootMotion = false;
 
-        if( !NetSocket.Instance.connected ) {
+        if( !NetSocket.Instance.registered ) {
             return;
         }
 
         if (this.cni.local)
         {
+            if( controller != animator.runtimeAnimatorController ) {
+                RuntimeAnimatorController rc = this.GetEffectiveController(this.animator) as RuntimeAnimatorController;
+                if( controller != rc ) {
+                    controller = rc;
+                    this.SetController(rc.name);
+                    ReadSetup();
+                }
+            } else if( controller == null ) {
+                return;
+            }
             this.ContinuousUpdate();
             this.CacheDiscreteTriggers();
         }
@@ -117,6 +202,44 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
         return this.m_SynchronizeParameters;
     }
 
+/*
+    private void PopulateLayers()
+    {
+        if (this.animator == null)
+        {
+            return;
+        }
+
+        this.m_SynchronizeParameters.Clear();
+        for (int i = 0; i < controller.parameters.Length; ++i) {
+            var parameter = controller.parameters[i];
+            if (parameter.type == AnimatorControllerParameterType.Bool)
+            {
+                this.m_SynchronizeParameters.Add(new SynchronizedParameter() { Name = parameter.name, Type = ParameterType.Bool, SynchronizeType = SynchronizeType.Discrete });
+            }
+            else if (parameter.type == AnimatorControllerParameterType.Float)
+            {
+                this.m_SynchronizeParameters.Add(new SynchronizedParameter() { Name = parameter.name, Type = ParameterType.Float, SynchronizeType = SynchronizeType.Discrete });
+            }
+            else if (parameter.type == AnimatorControllerParameterType.Int)
+            {
+                this.m_SynchronizeParameters.Add(new SynchronizedParameter() { Name = parameter.name, Type = ParameterType.Int, SynchronizeType = SynchronizeType.Discrete });
+            }
+            else if (parameter.type == AnimatorControllerParameterType.Trigger)
+            {
+                this.m_SynchronizeParameters.Add(new SynchronizedParameter() { Name = parameter.name, Type = ParameterType.Trigger, SynchronizeType = SynchronizeType.Discrete });
+            }
+        }
+        this.m_SynchronizeLayers.Clear();
+        for (int i = 0; i < this.controller.layers.Length; ++i)
+        {
+            this.m_SynchronizeLayers.Add(new SynchronizedLayer() { LayerIndex = i, SynchronizeType = SynchronizeType.Discrete });
+        }
+
+        Debug.Log("Setup Layers for Mecanim system");
+    }
+*/
+
     public SynchronizeType GetLayerSynchronizeType(int layerIndex)
     {
         int index = this.m_SynchronizeLayers.FindIndex(item => item.LayerIndex == layerIndex);
@@ -137,11 +260,6 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
 
     public void SetLayerSynchronized(int layerIndex, SynchronizeType synchronizeType)
     {
-        if (Application.isPlaying == true)
-        {
-            this.m_WasSynchronizeTypeChanged = true;
-        }
-
         int index = this.m_SynchronizeLayers.FindIndex(item => item.LayerIndex == layerIndex);
 
         if (index == -1)
@@ -156,11 +274,6 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
 
     public void SetParameterSynchronized(string name, ParameterType type, SynchronizeType synchronizeType)
     {
-        if (Application.isPlaying == true)
-        {
-            this.m_WasSynchronizeTypeChanged = true;
-        }
-
         int index = this.m_SynchronizeParameters.FindIndex(item => item.Name == name);
 
         if (index == -1)
@@ -178,12 +291,8 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
     {
         NetStringBuilder sb = new NetStringBuilder();
 
-        if (this.animator == null)
+        if (this.animator == null || this.controller == null)
         {
-            return;
-        }
-
-        if (this.m_WasSynchronizeTypeChanged == true) {
             return;
         }
 
@@ -218,6 +327,8 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
                 }
             }
         }
+        if( sb.used == 0 ) // don't bother sending empty packets.
+            return;
 		NetSocket.Instance.SendPacket( CNetFlag.MecContinuousUpdate, cni.id, sb, true );
     }
 
@@ -304,6 +415,8 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
 
         // reset the cache, we've synchronized.
         this.m_raisedDiscreteTriggersCache.Clear();
+        if( sb.used == 0 ) // don't bother sending empty packets.
+            return;
 		NetSocket.Instance.SendPacket( CNetFlag.MecDiscreteUpdate, cni.id, sb );
     }
 
@@ -345,38 +458,59 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
         }
     }
 
-    public void DoSetup( ulong ts, NetStringReader stream )
-    {
-        byte[] state = (byte[]) stream.ReadShortBytes();
-
-        for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
-        {
-            this.m_SynchronizeLayers[i].SynchronizeType = (SynchronizeType) state[i];
-        }
-
-        for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
-        {
-            this.m_SynchronizeParameters[i].SynchronizeType = (SynchronizeType) state[this.m_SynchronizeLayers.Count + i];
-        }
-    }
-
     private void ReadSetup()
     {
         NetStringBuilder sb = new NetStringBuilder();
-        byte[] states = new byte[this.m_SynchronizeLayers.Count + this.m_SynchronizeParameters.Count];
 
+        sb.AddInt( this.m_SynchronizeLayers.Count );
         for (int i = 0; i < this.m_SynchronizeLayers.Count; ++i)
         {
-            states[i] = (byte) this.m_SynchronizeLayers[i].SynchronizeType;
+            sb.AddByte( (byte) this.m_SynchronizeLayers[i].SynchronizeType );
         }
 
+        sb.AddInt( this.m_SynchronizeParameters.Count );
         for (int i = 0; i < this.m_SynchronizeParameters.Count; ++i)
         {
-            states[this.m_SynchronizeLayers.Count + i] = (byte) this.m_SynchronizeParameters[i].SynchronizeType;
+            sb.AddByte( (byte) this.m_SynchronizeParameters[i].SynchronizeType );
+            sb.AddByte( (byte) this.m_SynchronizeParameters[i].Type );
+            sb.AddString( this.m_SynchronizeParameters[i].Name );
+        }
+        Debug.Log("Send Mec Setup");
+        NetSocket.Instance.SendPacket( CNetFlag.MecSetup, cni.id, sb, true );
+    }
+
+    public void DoSetup( ulong ts, NetStringReader stream )
+    {
+        int layerCount = stream.ReadInt();
+
+        Debug.Log("Recv Mec Setup");
+        for (int i = 0; i < layerCount; ++i)
+        {
+            if( i >= this.m_SynchronizeLayers.Count ) {
+                this.m_SynchronizeLayers.Add(new SynchronizedLayer {LayerIndex = i, SynchronizeType = (SynchronizeType)stream.ReadByte()});
+            } else {
+                this.m_SynchronizeLayers[i].SynchronizeType = (SynchronizeType) stream.ReadByte();
+            }
         }
 
-        sb.AddShortBytes(states);
-        NetSocket.Instance.SendPacket( CNetFlag.MecSetup, cni.id, sb, true );
+        int paramCount = stream.ReadInt();
+        byte synctype, type;
+        string name;
+        for (int i = 0; i < paramCount; ++i)
+        {
+            synctype = stream.ReadByte();
+            type = stream.ReadByte();
+            name = stream.ReadString();
+
+            if( i >= this.m_SynchronizeParameters.Count ) {
+                this.m_SynchronizeParameters.Add(new SynchronizedParameter {Name = name, SynchronizeType = (SynchronizeType)synctype, Type = (ParameterType)type});
+            } else {
+                this.m_SynchronizeParameters[i].Name = name;
+                this.m_SynchronizeParameters[i].SynchronizeType = (SynchronizeType)synctype;
+                this.m_SynchronizeParameters[i].Type = (ParameterType)type;
+            }
+        }
+        Debug.Log("MecSetup complete");
     }
 
 
@@ -384,16 +518,16 @@ public class CNetMecanim : MonoBehaviour, ICNetUpdate
     {
         if (this.animator == null)
         {
+            Debug.Log("No animator on netmecanim");
             return;
         }
 
-        if (this.m_WasSynchronizeTypeChanged == true)
-        {
-            this.ReadSetup();
-
-            this.m_WasSynchronizeTypeChanged = false;
+        if( controller != animator.runtimeAnimatorController ) {
+            RuntimeAnimatorController rc = this.GetEffectiveController(this.animator) as RuntimeAnimatorController;
+            controller = rc;
+            this.SetController(rc.name);
+            ReadSetup();
         }
-
         this.DiscreteUpdate();
     }
 

@@ -12,7 +12,10 @@ namespace CNet
         SetObjectPositionRotation,
         Register,
         DynPacket,
-        Packet
+        Packet,
+		Quit,
+		PacketTo,
+		DynPacketTo,
     };
 
     public enum CCommand {
@@ -33,6 +36,7 @@ namespace CNet
     };
 
 	public enum CNetFlag : byte {
+		InvalidMessage,
 		// CHARACTER
 		CharacterAbility,
 		CharacterItemAbility,
@@ -62,6 +66,8 @@ namespace CNet
 
 		// ANIMATOR
 		Animation,
+		RequestAnimation,
+		RequestItemAnimation,
 		InitAnimation,
 		InitItemAnimation,
 
@@ -80,7 +86,32 @@ namespace CNet
 		// MECANIM
 		MecContinuousUpdate,
 		MecDiscreteUpdate,
-		MecSetup
+		MecSetup,
+
+		// ATTRIBUTES
+		RequestAttributeSet,
+		AttributeSet,
+
+		// HEALTH
+		Damage,
+		Death,
+		Heal,
+
+		// INTERACTABLES
+		Interact,
+		Respawn,
+		
+		// MORE CHARACTER
+		RequestCharacter,
+		CharacterPickup1,
+		CharacterPickupUsable,
+		CharacterStartAbility,
+		CharacterStartItemAbility
+	};
+
+	public enum CNetEvent : byte
+	{
+		NewPlayer,
 	};
 
 	public enum AnimDirtyFlags : short

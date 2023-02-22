@@ -14,10 +14,46 @@ namespace CNet
 
 		public NetStringReader(byte[] ptr) {
 			data = ptr;
+			offset = 0;
+		}
+		public object[] ReadObjects() {
+			if( offset == data.Length )
+				return null;
+			List<object> res = new List<object>();
+			while( offset < data.Length ) {
+				byte type = ReadByte();
+				if( type == 0 ) {
+					res.Add( ReadByte() );
+				} else if( type == 1 ) {
+					res.Add( ReadBool() );
+				} else if( type == 2 ) {
+					res.Add( ReadInt() );
+				} else if( type == 3 ) {
+					res.Add( ReadUint() );
+				} else if( type == 4 ) {
+					res.Add( ReadLong() );
+				} else if( type == 5 ) {
+					res.Add( ReadULongLong() );
+				} else if( type == 6 ) {
+					res.Add( ReadFloat() );
+				} else if( type == 7 ) {
+					res.Add( ReadDouble() );
+				} else if( type == 8 ) {
+					res.Add( ReadVector3() );
+				} else if( type == 9 ) {
+					res.Add( ReadVector2() );
+				} else if( type == 10 ) {
+					res.Add( ReadString() );
+				} else {
+					Debug.LogError("ReadObjects: unknown type");
+					break;
+				}
+			}
+			return res.ToArray();
 		}
 		public byte ReadByte() {
 			if( offset+sizeof(byte) > data.Length ) {
-				Debug.Log("ReadByte: out of range");
+				Debug.LogError("ReadByte: out of range");
 				return 0;
 			}
 			byte res;
@@ -27,7 +63,7 @@ namespace CNet
 		}
 		public bool ReadBool() {
 			if( offset+sizeof(byte) > data.Length ) {
-				Debug.Log("ReadByte: out of range");
+				Debug.LogError("ReadByte: out of range");
 				return false;
 			}
 			bool res;
@@ -37,7 +73,7 @@ namespace CNet
 		}
 		public int ReadInt() {
 			if( offset+2 > data.Length ) {
-				Debug.Log("ReadInt: out of range");
+				Debug.LogError("ReadInt: out of range");
 				return 0;
 			}
 			int res;
@@ -47,7 +83,7 @@ namespace CNet
 		}
 		public uint ReadUint() {
 			if( offset+2 > data.Length ) {
-				Debug.Log("ReadInt: out of range");
+				Debug.LogError("ReadInt: out of range");
 				return 0;
 			}
 			uint res;
@@ -57,7 +93,7 @@ namespace CNet
 		}
 		public long ReadLong() {
 			if( offset+4 > data.Length ) {
-				Debug.Log("ReadLong: out of range");
+				Debug.LogError("ReadLong: out of range");
 				return 0;
 			}
 			long res;
@@ -68,7 +104,7 @@ namespace CNet
 		}
 		public long ReadLongLong() {
 			if( offset+8 > data.Length ) {
-				Debug.Log("ReadLong: out of range");
+				Debug.LogError("ReadLong: out of range");
 				return 0;
 			}
 			long res;
@@ -78,9 +114,32 @@ namespace CNet
 			offset += 8;
 			return res;
 		}
+		public ulong ReadULongLong() {
+			if( offset+8 > data.Length ) {
+				Debug.LogError("ReadLong: out of range");
+				return 0;
+			}
+			ulong res;
+			//res = System.BitConverter.ToInt64(data, offset);
+			res =   (ulong)data[offset+0] << 56 | (ulong)data[offset+1] << 48 | (ulong)data[offset+2] << 40 | (ulong)data[offset+3] << 32 |
+					(uint)data[offset+4] << 24 | (uint)data[offset+5] << 16 | (uint)data[offset+6] << 8 | (uint)(data[offset+7] & 0xFF);
+			offset += 8;
+			return res;
+		}
+		public double ReadDouble() {
+			if( offset+8 > data.Length ) {
+				Debug.LogError("ReadFloat: out of range");
+				return 0;
+			}
+			double res;
+			res = System.BitConverter.ToDouble(data, offset);
+			offset += 8;
+
+			return res;
+		}
 		public float ReadFloat() {
 			if( offset+4 > data.Length ) {
-				Debug.Log("ReadFloat: out of range");
+				Debug.LogError("ReadFloat: out of range");
 				return 0;
 			}
 			float res;
@@ -94,7 +153,7 @@ namespace CNet
 		}
 		public float ReadShortFloat(float max=1000f) {
 			if( offset+2 > data.Length ) {
-				Debug.Log("ReadShortFloat: out of range");
+				Debug.LogError("ReadShortFloat: out of range");
 				return 0;
 			}
 			short mid;
@@ -111,7 +170,7 @@ namespace CNet
 			string s;
 			
 			if( offset+len > data.Length ) {
-				Debug.Log("ReadString: out of range");
+				Debug.LogError("ReadString: out of range");
 				return "";
 			}
 			s = "";
@@ -126,7 +185,7 @@ namespace CNet
 			byte[] res;
 			
 			if( offset+len > data.Length ) {
-				Debug.Log("ReadFixedBytes: out of range");
+				Debug.LogError("ReadFixedBytes: out of range offset="+offset+", len="+len+", data.Length="+data.Length);
 				return null;
 			}
 			res = new byte[len];
@@ -140,7 +199,7 @@ namespace CNet
 			byte[] res;
 			
 			if( offset+len > data.Length ) {
-				Debug.Log("ReadShortBytes: out of range");
+				Debug.LogError("ReadShortBytes: out of range");
 				return null;
 			}
 			if( len == 0 ) {

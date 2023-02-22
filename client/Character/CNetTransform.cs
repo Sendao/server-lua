@@ -7,9 +7,8 @@ using CNet;
 using UnityEngine;
 
 [RequireComponent(typeof(CNetId))]
-public class CNetTransform: MonoBehaviour, ICNetUpdate
+public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 {
-	private float remoteInterpolationMultiplayer = 1.2f;
 	private CNetCharacter character;
 	private CNetId id;
 	private UltimateCharacterLocomotion characterLocomotion;
@@ -17,7 +16,16 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 
 	private Vector3 netPosition;
 	private Quaternion netRotation;
+	private Vector3 netEulers;
 	private Vector3 netScale;
+	private ulong lastUpdate = 0;
+
+	private static Vector3 east = new Vector3(0, 0, -1);
+
+	// setup: startval, maxaccel, maxspeed, mindist
+	private LagData<Vector3> lagPos = new LagData<Vector3>(Vector3.zero, 14f, 2.6f, 0.02f);
+	private LagData<Vector3> lagRot = new LagData<Vector3>(east, 6f, 3f, 0.25f);
+	private LagData<Vector3> lagScale = new LagData<Vector3>(Vector3.one, 0.2f, 0.1f, 0.05f);
 
 	private bool netOnPlatform;
 	private uint netPlatformId;
@@ -28,7 +36,7 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 
 	private float distance;
 	private float angle;
-	private bool initialSync = true;
+	private bool hasData = false;
 
 	private void Awake()
 	{
@@ -37,23 +45,28 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 		characterFootEffects = gameObject.GetCachedComponent<CharacterFootEffects>();
 		id = gameObject.GetComponent<CNetId>();
 
-		netPosition = transform.position;
-		netRotation = transform.rotation;
-		netScale = transform.localScale;
-
 		EventHandler.RegisterEvent(gameObject, "OnRespawn", OnRespawn);
 		EventHandler.RegisterEvent<bool>(gameObject, "OnCharacterImmediateTransformChange", OnImmediateTransformChange);
 
-		id.RegisterChild( this );
 		Debug.Log("CNetTransform woke up on " + id);
-		if( id.local ) {
-			NetSocket.Instance.RegisterNetObject( this );
-		}
 	}
 
 	public void Register()
 	{
 		NetSocket.Instance.RegisterPacket( CNetFlag.Transform, id.id, DoUpdate ); // dynamic packet
+	}
+
+	public void Start()
+	{
+		if( id.local ) {
+			NetSocket.Instance.RegisterNetObject( this );
+		} else {
+			lagPos.goal = lagPos.value = netPosition = transform.position;
+			lagRot.goal = lagRot.value = netEulers = transform.rotation * Vector3.forward;
+			lagScale.goal = lagScale.value = netScale = transform.localScale;
+
+			id.RegisterChild( this );
+		}
 	}
 
 	private void Update()
@@ -62,27 +75,48 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 			return;
 		}
 
-		var serializationRate = (1f / NetSocket.Instance.updateRate) * remoteInterpolationMultiplayer;
+		if( !hasData ) return;
+
+		System.TimeSpan ts = System.DateTime.Now - System.DateTime.UnixEpoch;
+		ulong now = (ulong)ts.TotalMilliseconds;
+		if( (now - lastUpdate) > 150 ) {
+			lastUpdate = now;
+		} else if( lagPos.updt > lastUpdate ) {
+			lastUpdate = lagPos.updt;
+		}
+
 		if (characterLocomotion.Platform != null) {
 			if (characterFootEffects != null && (netPlatformPrevRelativePosition - netPlatformRelativePosition).sqrMagnitude > 0.01f) {
-				//!characterFootEffects.CanPlaceFootstep = true;
+				characterFootEffects.CanPlaceFootstep = true;
 			}
 			
-			netPlatformPrevRelativePosition = Vector3.MoveTowards(netPlatformPrevRelativePosition, netPlatformRelativePosition, distance * serializationRate);
-			netPlatformPrevRotationOffset = Quaternion.RotateTowards(netPlatformPrevRotationOffset, netPlatformRotationOffset, angle * serializationRate);
-			characterLocomotion.SetPositionAndRotation(characterLocomotion.Platform.TransformPoint(netPlatformPrevRelativePosition), MathUtility.TransformQuaternion(characterLocomotion.Platform.rotation, netPlatformPrevRotationOffset), false);
+			//netPlatformPrevRelativePosition = Vector3.MoveTowards(netPlatformPrevRelativePosition, netPlatformRelativePosition, distance * serializationRate);
+			//netPlatformPrevRotationOffset = Quaternion.RotateTowards(netPlatformPrevRotationOffset, netPlatformRotationOffset, angle * serializationRate);
+			//characterLocomotion.SetPositionAndRotation(characterLocomotion.Platform.TransformPoint(netPlatformPrevRelativePosition), MathUtility.TransformQuaternion(characterLocomotion.Platform.rotation, netPlatformPrevRotationOffset), false);
 
 		} else {
 			if ((transform.position - netPosition).sqrMagnitude > 0.01f) {
 				if( characterFootEffects != null ) {
-					//characterFootEffects.CanPlaceFootstep = true;
+					characterFootEffects.CanPlaceFootstep = true;
 				}
+			}
 				//Debug.Log("Move distance " + distance*serializationRate + ": " + serializationRate);
+				/* old method:
 				transform.position = Vector3.MoveTowards(transform.position, netPosition, distance * serializationRate);
 				transform.rotation = Quaternion.RotateTowards(transform.rotation, netRotation, angle * serializationRate);
-			}
-
+				*/
+				// new method:
+				//Debug.Log("lagPos: " + lagPos.value + " -> " + lagPos.goal);
+			Lagger.Update( now, ref lagPos );
+			Lagger.Update( now, ref lagRot );
+			//Debug.Log("LDecid: " + lagPos.value);
+			transform.position = lagPos.value;
+			Quaternion q = new Quaternion();
+			q.SetLookRotation( lagRot.value.normalized );
+			transform.rotation = q;//Quaternion.SetLookRotation( lagRot.value.normalized );
 		}
+		Lagger.Update( now, ref lagScale );
+		transform.localScale = lagScale.value;
 	}
 
 	public void NetUpdate()
@@ -106,16 +140,21 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 			dirtyFlag |= (byte)TransformDirtyFlags.Platform;
 
 			var position = characterLocomotion.Platform.InverseTransformPoint(transform.position);
-			var rotation = MathUtility.InverseTransformQuaternion(characterLocomotion.Platform.rotation, transform.rotation);
+			//var rotation = MathUtility.InverseTransformQuaternion(characterLocomotion.Platform.rotation, transform.rotation);
+			var rotation = MathUtility.InverseTransformQuaternion(characterLocomotion.Platform.rotation, transform.rotation).eulerAngles;
 
 			if (position != netPosition) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Position;
 				netPosition = position;
 			}
 
-			if (rotation != netRotation) {
+			/*if (rotation != netRotation) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
 				netRotation = rotation;
+			}*/
+			if (rotation != netEulers) {
+				dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
+				netEulers = rotation;
 			}
 
 			if( dirtyFlag == 0 ) {
@@ -128,14 +167,14 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 				sb.AddShortVector3(position);
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-				sb.AddShortVector3(rotation.eulerAngles);
+				sb.AddShortVector3(rotation);
 			}
 		} else {
 			// Determine the changed objects before sending them.
 			if (transform.position != netPosition) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Position;
 			}
-			if (transform.rotation != netRotation) {
+			if (transform.rotation.eulerAngles != netEulers) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
 			}
 
@@ -150,8 +189,8 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 				netPosition = transform.position;
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-				sb.AddShortVector3(transform.eulerAngles);
-				netRotation = transform.rotation;
+				netEulers = transform.rotation * Vector3.forward;
+				sb.AddShortVector3(netEulers);
 			}
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
@@ -197,39 +236,41 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
 				netPosition = stream.ReadShortVector3();
 				var velocity = stream.ReadShortVector3();
-				if (!initialSync) {
-					// Account for the lag.
-					var lag = Mathf.Abs((float)(NetSocket.Instance.last_netupdate - ts)/1000.0f);
-					//Debug.Log("Lastupdate: " + NetSocket.Instance.last_netupdate + ", this: " + ts + ", dist: " + lag + " velocity: " + velocity*lag);
-					if( lag < 0 ) lag = 0;
-					if( lag > 1 ) lag = 1;
-					netPosition += velocity * lag;
-				}
-				initialSync = false;
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-				netRotation = Quaternion.Euler(stream.ReadShortVector3());
+				netEulers = stream.ReadShortVector3();
 			}
-
-			distance = Vector3.Distance(transform.position, netPosition);
-			angle = Quaternion.Angle(transform.rotation, netRotation);
 		}
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
-			transform.localScale = stream.ReadShortVector3();
+			netScale = stream.ReadShortVector3();
 		}
+
+		lagPos.goal = netPosition;
+		lagRot.goal = netEulers;
+		lagScale.goal = netScale;
+
+		Lagger.Speed( ts, ref lagPos );
+		Lagger.Speed( ts, ref lagRot );
+		Lagger.Speed( ts, ref lagScale );
+		lastUpdate = ts;
+		hasData = true;
 	}
 
 	private void OnRespawn()
 	{
 		netPosition = transform.position;
 		netRotation = transform.rotation;
+		netScale = transform.localScale;
+		netEulers = transform.rotation.eulerAngles;
 	}
 
 	private void OnImmediateTransformChange(bool snapAnimator)
 	{
 		netPosition = transform.position;
 		netRotation = transform.rotation;
+		netScale = transform.localScale;
+		netEulers = transform.rotation.eulerAngles;
 	}
 
 	private void OnDestroy()
