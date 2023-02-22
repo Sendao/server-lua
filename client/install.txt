@@ -31,6 +31,7 @@ edit both player objects... the PlayerCharacter, and the prefab accessed through
 	isCreated = true;
 
 -> Modify C:\imp\Assets\_IMPUNES\Scripts\Systems\CharactersManager.cs
+ - add 'using CNet'.
  - Start() should start like this:
 	NetSocket.Instance.RegisterCharacterManager(this.CreateRemoteAvatar);
 
