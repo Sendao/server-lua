@@ -1,9 +1,23 @@
-Fixes:
-- there's a (big) memory leak in strmem (it does not free allocated memory)
- (currently disabled)
 
-Max FPS:
- - max out fps at 100 (currently unlimited, at least 1 frame per 10s)
+Next up:
+- object pool
+- object rezzing
+- objects -> inventory
+
+
+Questions:
+ - when are objects rezzed
+ - are objectidentifiers and cnetids unique?
+ - how are colliders identified, where are they, etc
+
+
+
+Installation:
+ - add CNetId to player character and all spawnable objects
+
+
+
+
 
 Completed/working:
 - tcp sockets

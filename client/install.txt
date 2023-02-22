@@ -1,35 +1,61 @@
 -> Create an object to hold Network scripts.
 -> place NetSocket and CNetItemTracker and CNetBPS(optional, shows BPS speed display) on.
--> fill out the item tracker list?
+-> later, fill out the item tracker list, but this is not needed yet (for spawnable items)
 
--> place CNetId on the Player object.
--> place CNetAnimatorMonitor on the Player object aswell, then copy the two graphs (forward and horizontal movement) from the standard 'animatormonitor'
--> remove the old animatormonitor from the player object
+edit both player objects... the PlayerCharacter, and the prefab accessed through Systems>Characters Manager>PlayerCharacter
+- place scripts in this order:
+-> CNetId
+-> CNetInfo
+-> CNetAnimatorMonitor
+ * Copy the two graphs (Forward/horizontal movement) from the standard animator monitor
+ * Delete the old animator monitor, as we have subclassed it
+-> CNetCharacter
+-> CNetMecanim
 
+-> Reference the CNet assembly, inside the TwoNibble assembly definition
 
--> Modify UMACharacterBuilder:
-Modify this header:[Header("Build events")]
-So it looks like this:
-        [Tooltip("Events that are executed after the character has been created.")]
-        public UMADataEvent m_CharacterCreated;
-        public delegate void afterBuildCharacter(GameObject obj);
-        public static event afterBuildCharacter AfterBuildCharacter;
+-> Modify Assets\_IMPUNES\Scripts\CharacterController\UMACharacterBuilder.cs:
+- add a 'using CNet' definition.
+- modify this code:
+	if (m_AddHealth)
+	{
+		data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.AttributeManager>();
+		NetSocket.Instance.BuildHealthMonitors(data.gameObject);
+		data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.CharacterHealth>();
+		data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.CharacterRespawner>();
+	}
+- note we added BuildHealthMonitors.
+- modify this code, too:
+	Debug.Log("Finished Building character");
+	NetSocket.Instance.BuildPlayer(data.gameObject);
+	isCreated = true;
 
-Modify the following code to look like this:
-		Debug.Log("Finished Building character"); isCreated = true;
-		if( AfterBuildCharacter != null )
-		{
-			AfterBuildCharacter(data.gameObject);
+-> Modify C:\imp\Assets\_IMPUNES\Scripts\Systems\CharactersManager.cs
+ - Start() should start like this:
+	NetSocket.Instance.RegisterCharacterManager(this.CreateRemoteAvatar);
+
+	UMAAssetIndexer index = UMAAssetIndexer.Instance;
+	races = index.GetAllAssets<RaceData>();
+ - we register the createremoteavatar function.
+ - add this function:
+	public GameObject CreateRemoteAvatar(Vector3 position, float heading)
+	{
+		var dynamicCharacterAvatar = CreateDynamicCharacter(position, heading, CharacterFeatures.Pedestrian, CharactersManager.CharacterQuality.Full);
+		if (!dynamicCharacterAvatar) {
+			Debug.Log("NewUser rejected");
+			return;
 		}
 
+		var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
+		//characterBuilder.m_Build = false;
+		characterBuilder.m_AIAgent = false;
+		characterBuilder.m_AssignCamera = false;
+		characterBuilder.m_AddItems = true;
 
-Notes:
-- packets are deduped so we may drop some and need to use instantSend=true
+		Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
+		dynamicCharacterAvatar.BuildCharacter();
 
-Questions:
-- how many updates per second is optimal for current CPU use and network availability?
+		return dynamicCharacterAvatar.gameObject;
+	}
 
-
-Next to do:
- - need to send a timestamp as soon as registered
-
+You're done! Play to commence.

@@ -38,9 +38,13 @@ void init_commands( void )
 	sizes[SCmdPacket] = 0;
 	commands[SCmdQuit] = &User::Quit;
 	sizes[SCmdQuit] = 0;
+	commands[SCmdPacketTo] = &User::PacketTo;
+	sizes[SCmdPacketTo] = 0;
+	commands[SCmdDynPacketTo] = &User::DynPacketTo;
+	sizes[SCmdDynPacketTo] = 0;
 }
 
-int top_uid = 0;
+int top_uid = 1;
 
 User::User(void)
 {
@@ -468,11 +472,11 @@ void User::SendTo( User *otheruser )
 	uint16_t timestamp_short;
 	AnimParam ap, &apptr=ap;
 
-	lprintf("Send user %u to %u", this->uid, otheruser?otheruser->uid:0);
+	lprintf("Send user %u to %u", this->uid, otheruser?otheruser->uid:99);
 	timestamp_short = (int)(this->last_update - game->last_timestamp); // maybe we should use the current time instead. This is the time since the last update.
 
 // newuser packet
-	size = spackf(&buf, &alloced, "iffffff", uid, px, py, pz, r0, r1, r2);
+	size = spackf(&buf, &alloced, "uffffff", uid, x, y, z, r0, r1, r2);
 	if( !otheruser ) {
 		game->SendMsg( CCmdUser, size, buf, this );
 	} else {
@@ -482,7 +486,7 @@ void User::SendTo( User *otheruser )
 	buf = NULL; alloced = 0;
 
 // position + rotation
-	size = spackf(&buf, &alloced, "iiiffffffcc", CNetSetPositionAndRotation, uid, timestamp_short,
+	size = spackf(&buf, &alloced, "uuuffffffcc", CNetSetPositionAndRotation, uid, timestamp_short,
 			x, y, z, r0, r1, r2, true, true);
 	if( !otheruser )
 		game->SendMsg( CCmdPacket, size, buf, this );
@@ -497,7 +501,7 @@ void User::SendTo( User *otheruser )
 // transform
 	char dirtyfull = 255;
 	char dirtypart = TransformPosition|TransformRotation|TransformScale;
-	size = spackf(&buf, &alloced, "iiiicFFFFFFFFFFFF", CNetTransform, uid, timestamp_short, 25, dirtypart,
+	size = spackf(&buf, &alloced, "uuuicFFFFFFFFFFFF", CNetTransform, uid, timestamp_short, 25, dirtypart,
 		1000.0, px, 1000.0, py, 1000.0, pz,
 		1000.0, vx, 1000.0, vy, 1000.0, vz,
 		1000.0, pr0, 1000.0, pr1, 1000.0, pr2,
@@ -510,10 +514,11 @@ void User::SendTo( User *otheruser )
 	buf=NULL; alloced = 0;
 
 // look source
-	size = spackf(&buf, &alloced, "iiiicFFFFFFFF", CNetPlayerLook, uid, timestamp_short, 17, dirtyfull,
+	size = spackf(&buf, &alloced, "uuuicFFFFFFFF", CNetPlayerLook, uid, timestamp_short, 17, dirtyfull,
 		1000.0, look->distance, 1000.0, look->pitch,
 		1000.0, look->x, 1000.0, look->y, 1000.0, look->z,
 		1000.0, look->dirx, 1000.0, look->diry, 1000.0, look->dirz);
+	//lprintf("Sending lookdir %f %f %f to user %u", look->dirx, look->diry, look->dirz, otheruser? otheruser->uid : 255);
 	if( !otheruser )
 		game->SendMsg( CCmdDynPacket, size, buf, this );
 	else
@@ -562,79 +567,16 @@ void User::DynPacket( char *data, uint16_t sz )
 	int i;
 	int dynlen;
 
-	ptr1 = ptr = sunpackf(data, "iiii", &cmd, &objtgt, &timestamp_short, &dynlen);
+	ptr1 = ptr = sunpackf(data, "uuui", &cmd, &objtgt, &timestamp_short, &dynlen);
 	//lprintf("Got dyn packet: %u %u %u %d", cmd, objtgt, timestamp_short, dynlen);
 
 	this_update = this->last_update + (uint64_t)timestamp_short;
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
-	// animation:
-	float pitch, yaw, speed;
-	int height;
-	char moving, aiming;
-	int moveSetID, abilityIndex, abilityInt;
-	float abilityFloat;
-	uint16_t itemflags;
-	unsigned char dirtybyte;
-	int itemid, stateindex, substateindex;
-	Animation *anim;
-	AnimParam animparam, &apptr=animparam;
+	char dirtybyte;
 
 	// look source:
 	switch( cmd ) {
-		/* do not save animations I guess
-		case CNetAnimation:
-			ptr = sunpackf(ptr, "i", &dirtyflags);
-			if( (dirtyflags&ParamX) != 0 ) {
-				ptr = sunpackf(ptr, "F", 1000.0, &anim->x);
-			}
-			if( (dirtyflags&ParamZ) != 0 ) {
-				ptr = sunpackf(ptr, "F", 1000.0, &anim->z);
-			}
-			if( (dirtyflags&ParamPitch) != 0) {
-				ptr = sunpackf(ptr, "F", 1000.0, &anim->pitch);
-			}
-			if( (dirtyflags&ParamYaw) != 0) {
-				ptr = sunpackf(ptr, "F", 1000.0, &anim->yaw);
-			}
-			if( (dirtyflags&ParamSpeed) != 0) {
-				ptr = sunpackf(ptr, "F", 1000.0, &anim->speed);
-			}
-			if( (dirtyflags&ParamHeight) != 0) {
-				ptr = sunpackf(ptr, "i", &anim->height);
-			}
-			if( (dirtyflags&ParamMoving) != 0) {
-				ptr = sunpackf(ptr, "c", &anim->moving);
-			}
-			if( (dirtyflags&ParamAiming) != 0) {
-				ptr = sunpackf(ptr, "c", &anim->aiming);
-			}
-			if( (dirtyflags&ParamMoveSet) != 0) {
-				ptr = sunpackf(ptr, "i", &anim->moveSetID);
-			}
-			if( (dirtyflags&ParamAbility) != 0) {
-				ptr = sunpackf(ptr, "i", &anim->abilityIndex);
-			}
-			if( (dirtyflags&ParamAbilityInt) != 0) {
-				ptr = sunpackf(ptr, "i", &anim->abilityInt);
-			}
-			if( (dirtyflags&ParamAbilityFloat) != 0) {
-				ptr = sunpackf(ptr, "F", 1000.0, &anim->abilityFloat);
-			}
-			ptr = sunpackf(ptr, "i", &itemflags);
-			for( i=0; i<16; i++ ){
-				if( itemflags&(1<<i) == 0 ) {
-					continue;
-				}
-				animparam.itemid = animparam.stateindex = animparam.substateindex = 0;
-				while( i >= anim->params.size() ) {
-					anim->params.push_back( animparam );
-				}
-
-				apptr = anim->params[ i ];
-				ptr = sunpackf(ptr, "iii", &apptr.itemid, &apptr.stateindex, &apptr.substateindex);
-			}
-			break;*/
 		case CNetPlayerLook:
 			ptr = sunpackf(ptr, "c", &dirtybyte);
 			if( (dirtybyte&LookDistance) != 0 ) {
@@ -651,7 +593,6 @@ void User::DynPacket( char *data, uint16_t sz )
 
 			if( (dirtybyte&LookDirection) != 0 ) {
 				ptr = sunpackf(ptr, "FFF", 1000.0, &look->dirx, 1000.0, &look->diry, 1000.0, &look->dirz);
-				lprintf("New look dir: %f %f %f", look->dirx, look->diry, look->dirz);
 			}
 			break;
 		case CNetTransform:
@@ -682,7 +623,7 @@ void User::DynPacket( char *data, uint16_t sz )
 			break;
 	}
 
-	size = spackf(&buf, &alloced, "iiii", cmd, objtgt, timestamp_short, dynlen);
+	size = spackf(&buf, &alloced, "uuui", cmd, objtgt, timestamp_short, dynlen);
 	char *buf2 = strmem->Alloc( sz );
 	memcpy( buf2, buf, size );
 	memcpy( buf2+size, ptr1, sz-size );
@@ -704,14 +645,14 @@ void User::Packet( char *data, uint16_t sz )
 	float x,y,z;
 	float r0,r1,r2;
 
-	ptr = sunpackf(data, "iii", &cmd, &objtgt, &timestamp_short);
+	ptr = sunpackf(data, "uuu", &cmd, &objtgt, &timestamp_short);
 	//lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
 
 	this_update = this->last_update + (uint64_t)timestamp_short;
 
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "iii", cmd, objtgt, timestamp_short);
+	size = spackf(&buf, &alloced, "uuu", cmd, objtgt, timestamp_short);
 	char *buf2 = strmem->Alloc( sz );
 	memcpy( buf2, buf, size );
 	memcpy( buf2+size, ptr, sz-size );
@@ -722,7 +663,6 @@ void User::Packet( char *data, uint16_t sz )
 
 	switch( cmd ) {
 		case CNetSetPositionAndRotation:
-			lprintf("read CNetSetPositionAndRotation");
 			otheruser = game->usermap[objtgt];
 			if( otheruser ) {
 				sunpackf(ptr, "ffffffcc", &x, &y, &z, &r0, &r1, &r2, &otheruser->snapAnimator, &otheruser->stopAllAbilities);
@@ -737,7 +677,6 @@ void User::Packet( char *data, uint16_t sz )
 			}
 			break;
 		case CNetSetPosition:
-			lprintf("read CNetSetPosition");
 			otheruser = game->usermap[objtgt];
 			if( otheruser ) {
 				sunpackf(ptr, "fff", &x, &y, &z);
@@ -748,7 +687,6 @@ void User::Packet( char *data, uint16_t sz )
 			}
 			break;
 		case CNetSetRotation:
-			lprintf("read CNetSetRotation");
 			otheruser = game->usermap[objtgt];
 			if( otheruser ) {
 				sunpackf(ptr, "fff", &r0, &r1, &r2);
@@ -758,4 +696,77 @@ void User::Packet( char *data, uint16_t sz )
 			}
 			break;
 	}
+}
+
+void User::DynPacketTo( char *data, uint16_t sz )
+{
+	char *buf, *ptr, *ptr1;
+	long size;
+	u_long alloced=0;
+	int timestamp_short;
+	uint16_t cmd, objtgt;
+	uint16_t dirtyflags, cmdto;
+	uint64_t this_update;
+	float x,y,z;
+	float rx,ry,rz,rw;
+	int i;
+	int dynlen;
+
+	ptr1 = ptr = sunpackf(data, "uuuui", &cmd, &cmdto, &objtgt, &timestamp_short, &dynlen);
+	//lprintf("Got dyn packet: %u %u %u %d", cmd, objtgt, timestamp_short, dynlen);
+
+	this_update = this->last_update + (uint64_t)timestamp_short;
+	timestamp_short = (int)(this_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "uuui", cmd, objtgt, timestamp_short, dynlen);
+	char *buf2 = strmem->Alloc( sz );
+	memcpy( buf2, buf, size );
+	memcpy( buf2+size, ptr1, sz-size );
+
+	unordered_map<uint16_t, User*>::iterator it = game->usermap.find(cmdto);
+	if( it != game->usermap.end() ) {
+		it->second->SendMsg( CCmdPacket, sz, buf2 );
+	} else {
+		lprintf("User %u not found", cmdto);
+	}
+
+	strmem->Free( buf2, sz );
+	strmem->Free( buf, alloced );
+}
+
+void User::PacketTo( char *data, uint16_t sz )
+{
+	char *buf, *ptr;
+	long size;
+	uint16_t cmdto;
+	u_long alloced=0;
+	uint16_t timestamp_short;
+	uint16_t cmd, objtgt;
+	uint64_t this_update;
+	unordered_map<uint16_t, User*>::iterator it;
+	User *otheruser;
+	float x,y,z;
+	float r0,r1,r2;
+
+	ptr = sunpackf(data, "uuuu", &cmd, &cmdto, &objtgt, &timestamp_short);
+	//lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
+
+	this_update = this->last_update + (uint64_t)timestamp_short;
+
+	timestamp_short = (int)(this_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "uuu", cmd, objtgt, timestamp_short);
+	char *buf2 = strmem->Alloc( sz );
+	memcpy( buf2, buf, size );
+	memcpy( buf2+size, ptr, sz-size );
+
+	it = game->usermap.find(cmdto);
+	if( it != game->usermap.end() ) {
+		it->second->SendMsg( CCmdPacket, sz, buf2 );
+	} else {
+		lprintf("User %d not found", cmdto);
+	}
+
+	strmem->Free( buf2, sz );
+	strmem->Free( buf, alloced );
 }

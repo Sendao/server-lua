@@ -272,7 +272,11 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 	long *lptr;
 	long long *llptr;
 	int *iptr, ival;
+	uint16_t *uiptr;
+	int16_t i16val;
 	unsigned int uilen;
+	uint32_t *ulptr;
+	uint64_t *ullptr;
 	unsigned char *smol;
 	float *pf, maxbase;
 	char *c, **p, **s;
@@ -286,6 +290,11 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 	{
 		switch( *fmt++ )
 		{
+			case 'b':
+				smol = va_arg(args, unsigned char*);
+				*smol = *buffer;
+				buffer++;
+				continue;
 			case 'c':
 				c = (char*)va_arg(args, char*);
 				*c = *buffer;
@@ -293,25 +302,42 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'i':
 				iptr = va_arg(args, int*);
-				*iptr = *buffer << 8 | *(buffer+1);
+				*iptr = (int16_t)(*buffer << 8 | *(buffer+1) & 0xFF);
 				buffer += 2;
+				continue;
+			case 'u':
+				uiptr = (uint16_t*)va_arg(args, uint16_t*);
+				*uiptr = (uint16_t)(*buffer << 8) | *(buffer+1) & 0xFF;
+				buffer += 2;
+				continue;
+			case 'l':
+				lptr = va_arg(args, long*);
+				*lptr = (int32_t)*buffer << 24 | (int32_t)*(buffer+1) << 16 | (int32_t)*(buffer+2) << 8 | *(buffer+3) & 0xFF;
+				buffer += 4;
+				continue;
+			case 'm':
+				ulptr = va_arg(args, uint32_t*);
+				*ulptr = (uint32_t)*buffer << 24 | (uint32_t)*(buffer+1) << 16 | (uint32_t)*(buffer+2) << 8 | *(buffer+3) & 0xFF;
+				buffer += 4;
 				continue;
 			case 'L':
 				llptr = va_arg(args, long long*);
 				// note we have to convert first 4 to long long. others don't have to be.
-				*llptr = (long long)*buffer << 56 | (long long)*(buffer+1) << 48 | (long long)*(buffer+2) << 40 | (long long)*(buffer+3) << 32 | *(buffer+4) << 24 | *(buffer+5) << 16 | *(buffer+6) << 8 | *(buffer+7);
+				*llptr = (long long)*buffer << 56 | (long long)*(buffer+1) << 48 | (long long)*(buffer+2) << 40 | (long long)*(buffer+3) << 32 |
+							(long long)*(buffer+4) << 24 | (long)*(buffer+5) << 16 | (long)*(buffer+6) << 8 | *(buffer+7) & 0xFF;
 				buffer += 8;
-				break;
-			case 'l':
-				lptr = va_arg(args, long*);
-				*lptr = *buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3);
-				buffer += 4;
+				continue;
+			case 'M':
+				ullptr = va_arg(args, uint64_t*);
+				*ullptr = (uint64_t)*buffer << 56 | (uint64_t)*(buffer+1) << 48 | (uint64_t)*(buffer+2) << 40 | (uint64_t)*(buffer+3) << 32 |
+							(uint64_t)*(buffer+4) << 24 | (uint32_t)*(buffer+5) << 16 | (uint32_t)*(buffer+6) << 8 | *(buffer+7) & 0xFF;
+				buffer += 8;
 				continue;
 			case 'F': // short
-				ival = *buffer << 8 | *(buffer+1);
+				i16val = (int16_t)(*buffer << 8 | *(buffer+1) & 0xFF);
 				maxbase = va_arg(args, double);
 				pf = (float*)va_arg(args, float*);
-				*pf = (float)ival / ((float)32767 / maxbase);
+				*pf = (float)i16val / ((float)32767 / maxbase);
 				buffer += 2;
 				continue;
 			case 'f':
@@ -342,7 +368,7 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'V':
 				len = va_arg(args, unsigned long*);
-				*len = *buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3);
+				*len = (uint64_t)(*buffer << 24 | *(buffer+1) << 16 | *(buffer+2) << 8 | *(buffer+3) & 0xFF);
 				buffer += 4;
 				p = (char**)va_arg(args, char**);
 				if( *len != 0 ) {
@@ -355,7 +381,7 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'v': // use an int for length
 				ilen = va_arg(args, unsigned int*);
-				*ilen = (unsigned int)*buffer<<8 | (unsigned int)*(buffer+1);
+				*ilen = (uint16_t)( *buffer<<8 | *(buffer+1) & 0xFF );
 				buffer += 2;
 				p = (char**)va_arg(args, char**);
 				if( *ilen != 0 ) {
@@ -411,6 +437,9 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 	long long ll;
 	int16_t i16;
 	int i;
+	uint16_t u;
+	uint32_t ul;
+	uint64_t ull;
 	unsigned long len;
 	unsigned int ilen;
 	unsigned char smol;
@@ -472,6 +501,18 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				buffer += 2;
 				bufsz += 2;
 				continue;
+			case 'u':
+				u = (uint16_t)va_arg(args, unsigned int);
+				while( bufsz+2 >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*alloced *= 2;
+					buffer = buf + bufsz;
+				}
+				*buffer = (u >> 8) & 0xFF;
+				*(buffer+1) = (u) & 0xFF;
+				buffer += 2;
+				bufsz += 2;
+				continue;
 			case 'l':
 				l = va_arg(args, long);
 				while( bufsz+sizeof(long) >= *alloced ) {
@@ -486,9 +527,23 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				buffer += 4;
 				bufsz += 4;
 				continue;
+			case 'm':
+				ul = (uint32_t)va_arg(args, unsigned long);
+				while( bufsz+4 >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*alloced *= 2;
+					buffer = buf + bufsz;
+				}
+				*(buffer) = (ul >> 24) & 0xFF;
+				*(buffer+1) = (ul >> 16) & 0xFF;
+				*(buffer+2) = (ul >> 8) & 0xFF;
+				*(buffer+3) = (ul) & 0xFF;
+				buffer += 4;
+				bufsz += 4;
+				continue;
 			case 'L':
 				ll = va_arg(args, long long);
-				while( bufsz+sizeof(long long) >= *alloced ) {
+				while( bufsz+8 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
 					buffer = buf + bufsz;
@@ -501,8 +556,26 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				*(buffer+5) = (ll >> 16) & 0xFF;
 				*(buffer+6) = (ll >> 8) & 0xFF;
 				*(buffer+7) = (ll) & 0xFF;
-				buffer += sizeof(long long);
-				bufsz += sizeof(long long);
+				buffer += 8;
+				bufsz += 8;
+				continue;
+			case 'M':
+				ull = (uint64_t)va_arg(args, unsigned long long);
+				while( bufsz+8 >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*alloced *= 2;
+					buffer = buf + bufsz;
+				}
+				*(buffer) = (ull >> 56) & 0xFF;
+				*(buffer+1) = (ull >> 48) & 0xFF;
+				*(buffer+2) = (ull >> 40) & 0xFF;
+				*(buffer+3) = (ull >> 32) & 0xFF;
+				*(buffer+4) = (ull >> 24) & 0xFF;
+				*(buffer+5) = (ull >> 16) & 0xFF;
+				*(buffer+6) = (ull >> 8) & 0xFF;
+				*(buffer+7) = (ull) & 0xFF;
+				buffer += 8;
+				bufsz += 8;
 				continue;
 			case 's':
 				s = va_arg(args, char*);

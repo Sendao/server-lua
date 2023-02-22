@@ -287,7 +287,7 @@ void Game::mainloop()
 }
 
 inline long compare_usec( struct timeval *high, struct timeval *low ) {
-	return (((high->tv_sec-low->tv_sec)*1000000)+(high->tv_usec-low->tv_usec));
+	return (((high->tv_sec-low->tv_sec)*1000)+(high->tv_usec-low->tv_usec));
 }
 
 
@@ -303,7 +303,7 @@ uint64_t Game::GetTime()
 {
 	struct timeval tv;
 	smalltimeofday(&tv, NULL);
-	return (uint64_t)tv.tv_sec*(uint64_t)1000 + (uint64_t)tv.tv_usec/(uint64_t)1000;
+	return (uint64_t)tv.tv_sec*(uint64_t)1000 + (uint64_t)tv.tv_usec;
 }
 
 void Game::IdentifyVar( char *name, int type, User *sender )

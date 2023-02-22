@@ -62,7 +62,9 @@ enum {
 	SCmdRegister,
 	SCmdDynPacket,
 	SCmdPacket,
-	SCmdQuit
+	SCmdQuit,
+	SCmdPacketTo,
+	SCmdDynPacketTo,
 };
 
 enum {
@@ -83,6 +85,7 @@ enum {
 };
 
 enum {
+	CNetInvalidMessage,//0
 	// CHARACTER
 	CNetCharacterAbility,
 	CNetCharacterItemAbility,
@@ -110,8 +113,11 @@ enum {
 	CNetSetPositionAndRotation,
 	CNetSetActive,
 
+
 	// ANIMATOR
 	CNetAnimation,
+	CNetRequestAnimation,
+	CNetRequestItemAnimation,
 	CNetInitAnimation,
 	CNetInitItemAnimation,
 
@@ -119,7 +125,30 @@ enum {
 	CNetPlayerLook,
 
 	// TRANSFORM
-	CNetTransform
+	CNetTransform,
+	// OBJECTS - RIGIDBODY
+	CNetRigidbodyUpdate,
+
+	// OBJECTS - TRANSFORM
+	CNetObjTransformUpdate,
+
+	// MECANIM
+	CNetMecContinuousUpdate,
+	CNetMecDiscreteUpdate,
+	CNetMecSetup,
+
+	// ATTRIBUTES
+	CNetRequestAttributeSet,
+	CNetAttributeSet,
+
+	// HEALTH
+	CNetDamage,
+	CNetDeath,
+	CNetHeal,
+
+	// INTERACTABLES
+	CNetInteract,
+	CNetRespawn
 };
 
 enum
@@ -386,6 +415,8 @@ class User
 	void Register(char *data, uint16_t sz);
 	void DynPacket(char *data, uint16_t sz);
 	void Packet(char *data, uint16_t sz);
+	void DynPacketTo(char *data, uint16_t sz);
+	void PacketTo(char *data, uint16_t sz);
 };
 
 

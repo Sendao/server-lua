@@ -170,7 +170,7 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
-		lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
+		//lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
 
 		do {
 			strm.avail_out = 1024;
@@ -195,7 +195,7 @@ int OutputConnection(User *user)
 		} while( strm.avail_out == 0 );
 
 		deflateEnd(&strm);
-		lprintf("Compressed to %d bytes.", tgtsz);
+		//lprintf("Compressed to %d bytes.", tgtsz);
 
 		// reset the outbuf
 		user->outbuf = user->outbuf_memory;
@@ -351,7 +351,7 @@ int InputConnection(User *user)
 				p--;
 				break;
 			}
-			lprintf("Compressed data packet: %ld bytes", sz);
+			//lprintf("Compressed data packet: %ld bytes", sz);
 			p += 4;
 
 			strm.zalloc = Z_NULL;
@@ -396,7 +396,7 @@ int InputConnection(User *user)
 
 					cmdByte = *subptr;
 					ilen = (int)( *(subptr+1)<<8 | (*(subptr+2)&0xFF) );
-					lprintf("ilen=%d", ilen);
+					//lprintf("ilen=%d", ilen);
 					if( subend != NULL && subptr+3+ilen > subend ) {
 						int remainder = 3+ilen - (subend - subptr);
 
@@ -429,14 +429,14 @@ int InputConnection(User *user)
 						leftover = strmem->Alloc( subend2-subptr );
 						memcpy( leftover, subptr, subend2-subptr );
 						leftover_sz = subend2 - subptr;
-						lprintf("Leftover: %d", leftover_sz);
+						//lprintf("Leftover: %d", leftover_sz);
 						break;
 					} else {
 						msgbuf = strmem->Alloc( ilen+3 );
 						memcpy( msgbuf, subptr, ilen+3 );
 						subptr += ilen + 3;
 						user->messages.push_back( msgbuf );
-						lprintf("Red compressed packet of %d (%d)", ilen);
+						//lprintf("Red compressed packet of %d (%d)", ilen);
 					}
 				} while( subptr != subend2 );
 
