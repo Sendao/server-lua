@@ -26,6 +26,48 @@ namespace CNet {
             ptr = newmem;
         }
 
+        public void AddObjects( object[] values ) {
+            int i;
+            for( i=0; i<values.Length; i++ ) {
+                if( values[i] is byte ) {
+                    AddByte( 0 );
+                    AddByte( (byte)values[i] );
+                } else if( values[i] is bool ) {
+                    AddByte( 1 );
+                    AddBool( (bool)values[i] );
+                } else if( values[i] is int ) {
+                    AddByte( 2 );
+                    AddInt( (int)values[i] );
+                } else if( values[i] is uint ) {
+                    AddByte( 3 );
+                    AddUint( (uint)values[i] );
+                } else if( values[i] is long ) {
+                    AddByte( 4 );
+                    AddLong( (long)values[i] );
+                } else if( values[i] is ulong ) {
+                    AddByte( 5 );
+                    AddULongLong( (ulong)values[i] );
+                } else if( values[i] is float ) {
+                    AddByte( 6 );
+                    AddFloat( (float)values[i] );
+                } else if( values[i] is double ) {
+                    AddByte( 7 );
+                    AddDouble( (double)values[i] );
+                } else if( values[i] is Vector3 ) {
+                    AddByte( 8 );
+                    AddVector3( (Vector3)values[i] );
+                } else if( values[i] is Vector2 ) {
+                    AddByte( 9 );
+                    AddVector2( (Vector2)values[i] );
+                } else if( values[i] is string ) {
+                    AddByte( 10 );
+                    AddString( (string)values[i] );
+                } else {
+                    Debug.LogError("NetStringBuilder: unknown type: "+values[i].GetType());
+                }
+            }
+        }
+
         public void AddVector3(Vector3 value) {
             AddFloat(value.x);
             AddFloat(value.y);
@@ -129,6 +171,14 @@ namespace CNet {
             x.CopyTo(ptr, used);
             used += 4;
         }
+        public void AddDouble(double value) {
+            while( used+8 > alloced ) {
+                AllocMore();
+            }
+            byte[] x = System.BitConverter.GetBytes(value);
+            x.CopyTo(ptr, used);
+            used += 8;
+        }
         public void AddShort(float value, float max=1000f) {
             AddShortFloat(value,max);
         }
@@ -164,13 +214,13 @@ namespace CNet {
         }
 
         public void AddShortBytes(byte[] data) {
-            int len = data.Length;
+            uint len = (uint)data.Length;
             while( used+len+2 > alloced )
                 AllocMore();
             ptr[used+0] = (byte)((len>>8) & 0xff);
             ptr[used+1] = (byte)(len&0xFF);
-            System.Buffer.BlockCopy(data, 0, ptr, used+2, len);
-            used += len+2;
+            System.Buffer.BlockCopy(data, 0, ptr, used+2, (int)len);
+            used += (int)len+2;
         }
 
         public void Reduce() {

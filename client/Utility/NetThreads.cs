@@ -44,10 +44,8 @@ namespace CNet
                         foreach( byte[] dataitem in parent.sendQ ) {
                             totalSize += lastSize = dataitem.Length;
                         }
-                        if( lastSize == 3 && totalSize > 3 ) {
-                            totalSize -= 3;
-                        } else if( totalSize == 3 ) {
-                            break;
+                        if( totalSize == 3 ) {
+                            break; // just a header? don't send it yet
                         }
                     }
 
@@ -193,7 +191,7 @@ namespace CNet
                             tmpbuf[0] = cmdByte;
                             tmpbuf[1] = decompressedData[deptr-2];
                             tmpbuf[2] = decompressedData[deptr-1];
-                            //Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
+                            Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
                             if( smallSize != 0 )
                                 Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                             recv_bytes += tmpbuf.Length;

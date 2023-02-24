@@ -17,65 +17,18 @@ using UnityEngine;
 using System.Collections.Generic;
 
 [RequireComponent(typeof(CNetId))]
-public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
+public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetReg
 {
 	private UltimateCharacterLocomotion characterLocomotion;
 	private InventoryBase inventory;
-    //private List<IItemIdentifier> itemIds;
+    private List<IItemIdentifier> itemIds;
 	private CNetId id;
 
 	private bool itemsPickedUp;
 
 	private void Awake()
 	{
-		characterLocomotion = gameObject.GetComponent<UltimateCharacterLocomotion>();
-		inventory = gameObject.GetComponent<InventoryBase>();
 		id = gameObject.GetComponent<CNetId>();
-		//itemIds = inventory.GetAllItemIdentifiers();
-	}
-
-	public void NetUpdate()
-	{
-
-	}
-
-
-	public void Register()
-	{
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterLoadDefaultLoadout, id.id, OnLoadDefaultLoadout, 0 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterAbility, id.id, OnAbilityActive, 3 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemAbility, id.id, OnItemAbilityActive, 3 );
-		//NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemActive, id.id, OnItemActive, 40 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterEquipItem, id.id, OnEquipItem, 5 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterPickup, id.id, OnPickup, 8 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.CharacterDropAll, id.id, OnRemoveAllItems, 0 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.Fire, id.id, OnFire, 0 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.StartReload, id.id, OnStartReload, 4 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.Reload, id.id, OnReload, 1 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.ReloadComplete, id.id, OnReloadComplete, 6 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.MeleeHitCollider, id.id, OnMeleeHitCollider, 34 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.ThrowItem, id.id, OnThrowItem, 4 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.EnableThrowable, id.id, OnEnableThrowable, 4 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.MagicAction, id.id, OnMagicAction, 6 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.MagicCast, id.id, OnMagicCast, 32 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.MagicImpact, id.id, OnMagicImpact, 34 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.MagicStop, id.id, OnMagicStop, 8 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.FlashlightToggle, id.id, OnFlashlightToggle, 1 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.PushRigidbody, id.id, OnPushRigidbody, 36 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.SetRotation, id.id, OnSetRotation, 13 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.SetPosition, id.id, OnSetPosition, 13 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.ResetPositionRotation, id.id, OnResetPositionRotation, 0 );
-		NetSocket.Instance.RegisterPacket( CNetFlag.SetPositionAndRotation, id.id, OnSetPositionAndRotation, 32 );
-
-		NetSocket.Instance.RegisterPacket( CNetFlag.SetActive, id.id, OnSetActive, 2 );
-		Debug.Log("Character registered for packet events.");
 	}
 
 	private void Start()
@@ -84,18 +37,67 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		inventory = gameObject.GetComponent<InventoryBase>();
 
 		Debug.Log("Cnetchar: loco=" + characterLocomotion + " inv=" + inventory + ", id=" + id.id);
-		//itemIds = inventory.GetAllItemIdentifiers();
+		itemIds = inventory.GetAllItemIdentifiers();
 
+		id.RegisterChild( this );
+	}
+
+	public void Register()
+	{
+		inventory = gameObject.GetComponent<InventoryBase>();
+		characterLocomotion = gameObject.GetComponent<UltimateCharacterLocomotion>();
+		Debug.Log("Character " + id.id + " registering for packet events.");
+		itemIds = inventory.GetAllItemIdentifiers();
 		if( !id.local ) {
-			id.RegisterChild( this );
-			Debug.Log("PickupItems()");
-			PickupItems();
-			Debug.Log("LoadDefaultLoadout()");
-	        DoLoadDefaultLoadout();
-			Debug.Log("done");
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterLoadDefaultLoadout, id.id, OnLoadDefaultLoadout, 0 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterAbility, id.id, OnAbilityActive, 3 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemAbility, id.id, OnItemAbilityActive, 3 );
+			//NetSocket.Instance.RegisterPacket( CNetFlag.CharacterItemActive, id.id, OnItemActive, 40 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterEquipItem, id.id, OnEquipItem, 5 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterPickup, id.id, OnPickup, 8 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterDropAll, id.id, OnRemoveAllItems, 0 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.Fire, id.id, OnFire, 0 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.StartReload, id.id, OnStartReload, 4 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.Reload, id.id, OnReload, 1 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.ReloadComplete, id.id, OnReloadComplete, 6 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.MeleeHitCollider, id.id, OnMeleeHitCollider, 36 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.ThrowItem, id.id, OnThrowItem, 4 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.EnableThrowable, id.id, OnEnableThrowable, 4 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.MagicAction, id.id, OnMagicAction, 6 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.MagicCast, id.id, OnMagicCast, 32 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.MagicImpact, id.id, OnMagicImpact, 34 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.MagicStop, id.id, OnMagicStop, 8 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.FlashlightToggle, id.id, OnFlashlightToggle, 1 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.PushRigidbody, id.id, OnPushRigidbody, 36 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.SetRotation, id.id, OnSetRotation, 13 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.SetPosition, id.id, OnSetPosition, 13 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.ResetPositionRotation, id.id, OnResetPositionRotation, 0 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.SetPositionAndRotation, id.id, OnSetPositionAndRotation, 32 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.SetActive, id.id, OnSetActive, 2 );
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterPickup1, id.id, OnPickup1, 4 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterPickupUsable, id.id, OnPickupUsable, 10 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterStartAbility, id.id, OnStartAbility );
+			NetSocket.Instance.RegisterPacket( CNetFlag.CharacterStartItemAbility, id.id, OnStartItemAbility );
+
+			//todo: send requestcharacter packet to server
+			NetStringBuilder sb = new NetStringBuilder();
+			sb.AddUint(id.id);
+			NetSocket.Instance.SendPacket( CNetFlag.RequestCharacter, id.id, sb );
+
 		} else {
 			EventHandler.RegisterEvent<Ability, bool>(gameObject, "OnCharacterAbilityActive", EvtAbilityActive);
 			EventHandler.RegisterEvent<ItemAbility, bool>(gameObject, "OnCharacterItemAbilityActive", EvtItemAbilityActive);
+
+			NetSocket.Instance.RegisterPacket( CNetFlag.RequestCharacter, id.id, OnRequestCharacter, 2 );
 		}
 	}
 	
@@ -105,7 +107,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 			Debug.Log("Cnetchar: LoadDefaultLoadout()");
 			NetSocket.Instance.SendPacket( CNetFlag.CharacterLoadDefaultLoadout, id.id );
 		}
-		DoLoadDefaultLoadout();
 	}
 	private void OnLoadDefaultLoadout(ulong ts, NetStringReader stream)
 	{
@@ -113,7 +114,75 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	}
 	private void DoLoadDefaultLoadout()
 	{
+		Debug.Log("LoadDefaultLoadout()");
 		inventory.LoadDefaultLoadout();
+	}
+
+	public void OnRequestCharacter(ulong ts, NetStringReader stream)
+	{
+		NetStringBuilder sb;
+		if (inventory != null) {
+
+			// Notify the joining player of the ItemIdentifiers that the player has within their inventory.
+			var items = inventory.GetAllItems();
+			for (int i = 0; i < items.Count; ++i) {
+				var item = items[i];
+
+				sb = new NetStringBuilder();
+				sb.AddUint( item.ItemIdentifier.ID );
+				sb.AddInt( inventory.GetItemIdentifierAmount(item.ItemIdentifier) );
+				NetSocket.Instance.SendPacket( CNetFlag.CharacterPickup1, id.id, sb );
+
+				if (item.DropPrefab != null) {
+					// Usable Items have a separate ItemIdentifiers amount.
+					var itemActions = item.ItemActions;
+					for (int j = 0; j < itemActions.Length; ++j) {
+						var usableItem = itemActions[j] as IUsableItem;
+						if (usableItem == null) {
+							continue;
+						}
+
+						var consumableItemIdentifierAmount = usableItem.GetConsumableItemIdentifierAmount();
+						if (consumableItemIdentifierAmount > 0 || consumableItemIdentifierAmount == -1) { // -1 is used by the grenade to indicate that there is only one item.
+							sb = new NetStringBuilder();
+							sb.AddUint( item.ItemIdentifier.ID );
+							sb.AddInt( item.SlotID );
+							sb.AddInt( itemActions[j].ID );
+							sb.AddInt( inventory.GetItemIdentifierAmount(usableItem.GetConsumableItemIdentifier()) );
+							sb.AddInt( consumableItemIdentifierAmount );
+							NetSocket.Instance.SendPacket( CNetFlag.CharacterPickupUsable, id.id, sb );
+						}
+					}
+				}
+			}
+
+			// Ensure the correct item is equipped in each slot.
+			for (int i = 0; i < inventory.SlotCount; ++i) {
+				var item = inventory.GetActiveItem(i);
+				if (item == null) {
+					continue;
+				}
+				sb = new NetStringBuilder();
+				sb.AddUint( item.ItemIdentifier.ID );
+				sb.AddInt( i );
+				sb.AddBool( true );
+				NetSocket.Instance.SendPacket( CNetFlag.CharacterEquipItem, id.id, sb );
+			}
+		}
+		for (int i = 0; i < characterLocomotion.ActiveAbilityCount; ++i) {
+			var activeAbility = characterLocomotion.ActiveAbilities[i];
+			sb = new NetStringBuilder();
+			sb.AddInt( activeAbility.Index );
+			sb.AddObjects( activeAbility.GetNetworkStartData() );
+			NetSocket.Instance.SendDynPacket( CNetFlag.CharacterStartAbility, id.id, sb );
+		}
+		for (int i = 0; i < characterLocomotion.ActiveItemAbilityCount; ++i) {
+			var activeItemAbility = characterLocomotion.ActiveItemAbilities[i];
+			sb = new NetStringBuilder();
+			sb.AddInt( activeItemAbility.Index );
+			sb.AddObjects( activeItemAbility.GetNetworkStartData() );
+			NetSocket.Instance.SendDynPacket( CNetFlag.CharacterStartItemAbility, id.id, sb );
+		}
 	}
 
 	public void EquipUnequipItem(uint itemID, int slotID, bool equip)
@@ -121,20 +190,21 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		NetStringBuilder stream = new NetStringBuilder();
 		stream.AddUint( itemID );
 		stream.AddInt( slotID );
-		stream.AddByte( equip ? (byte)1 : (byte)0 );
+		stream.AddBool( equip );
 
 		Debug.Log("EquipUnequipItem");
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterEquipItem, id.id, stream );
-
-		DoEquipItem(itemID, slotID, equip);
 	}
 	private void OnEquipItem(ulong ts, NetStringReader stream)
 	{
 		uint itemID = stream.ReadUint();
 		int slotID = stream.ReadInt();
-		bool equip = stream.ReadByte() == 1;
+		bool equip = stream.ReadBool();
+
+		Debug.Log("Received EquipUnequipItem");
 
 		if( equip && !characterLocomotion.Alive) {
+			Debug.Log("Not alive!");
 			return;
 		}
 
@@ -143,7 +213,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	private void DoEquipItem(uint itemIdentifier, int slotID, bool equip)
 	{
 		//var invId = GetInventoryID(itemIdentifier);
-		var invId = CNetItemTracker.GetItem(itemIdentifier);
+		var invId = GetItemID(itemIdentifier);
 		var item = inventory.GetItem(invId, slotID);
 		if (item == null) {
 			Debug.LogError("Error: Item not found in inventory.");
@@ -161,6 +231,19 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		}
 	}
 
+	public IItemIdentifier GetItemID(uint itemIdentifierID)
+	{
+		for( int i = 0; i < itemIds.Count; i++ ) {
+			if( itemIds[i].ID == itemIdentifierID ) {
+				if( i == itemIds[i].ID ) {
+					Debug.Log("Self-same id " + i + " " + itemIds[i].ID);
+				}
+				return itemIds[i];
+			}
+		}
+		return null;
+	}
+
 	public void ItemIdentifierPickup(uint itemIdentifierID, int amount, int slotID, bool immediatePickup, bool forceEquip)
 	{
 		NetStringBuilder stream = new NetStringBuilder();
@@ -171,9 +254,8 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddByte( forceEquip ? (byte)1 : (byte)0 );
 
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterPickup, id.id, stream );
-
-		DoPickup(itemIdentifierID, amount, slotID, immediatePickup, forceEquip);
 	}
+
 	private void OnPickup(ulong ts, NetStringReader stream)
 	{
 		uint itemIdentifierID = (uint)stream.ReadInt();
@@ -186,12 +268,98 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	}
 	private void DoPickup(uint itemIdentifierID, int amount, int slotID, bool immediatePickup, bool forceEquip)
 	{        
-		var itemIdentifier = CNetItemTracker.GetItem(itemIdentifierID);
+		var itemIdentifier = GetItemID(itemIdentifierID);
 		if (itemIdentifier == null) {
 			return;
 		}
 
+		Debug.Log("DoPickup()");
 		inventory.Pickup(itemIdentifier, amount, slotID, immediatePickup, forceEquip);
+	}
+
+	private void OnPickup1(ulong ts, NetStringReader stream)
+	{
+		uint itemIdentifierID = (uint)stream.ReadInt();
+		int amount = stream.ReadInt();
+
+		DoPickup1(itemIdentifierID, amount);
+	}
+	private void DoPickup1(uint itemIdentifierID, int amount)
+	{
+		var itemIdentifier = GetItemID(itemIdentifierID);
+		inventory.Pickup(itemIdentifier, amount, -1, false, false, false);
+	}
+
+	private void OnPickupUsable(ulong ts, NetStringReader stream)
+	{
+		uint itemIdentifierID = (uint)stream.ReadInt();
+		int slotID = stream.ReadInt();
+		int itemActionID = stream.ReadInt();
+		int amount = stream.ReadInt();
+		int consumableAmount = stream.ReadInt();
+
+		DoPickupUsable(itemIdentifierID, slotID, itemActionID, amount, consumableAmount);
+	}
+	private void DoPickupUsable(uint itemIdentifierID, int slotID, int itemActionID, int amount, int consumableAmount)
+	{
+		var itemType = GetItemID(itemIdentifierID);
+		if (itemType == null) {
+			Debug.Log("PickupUsable: Can't find item id " + itemIdentifierID);
+			return;
+		}
+
+		var item = inventory.GetItem(itemType, slotID);
+		if (item == null) {
+			return;
+		}
+
+		var usableItemAction = item.GetItemAction(itemActionID) as IUsableItem;
+		if (usableItemAction == null) {
+			return;
+		}
+
+		// The IUsableItem has two counts: the first count is from the inventory, and the second count is set on the actual ItemAction.
+		inventory.Pickup(usableItemAction.GetConsumableItemIdentifier(), amount, -1, false, false, false);
+		usableItemAction.SetConsumableItemIdentifierAmount(consumableAmount);
+	}
+
+	private void OnStartAbility(ulong ts, NetStringReader stream)
+	{
+		int abilityIndex = stream.ReadInt();
+		object[] data = stream.ReadObjects();
+		DoCharacterStartAbility(abilityIndex, data);
+	}
+	private void OnStartItemAbility(ulong ts, NetStringReader stream)
+	{
+		int abilityIndex = stream.ReadInt();
+		object[] data = stream.ReadObjects();
+		DoCharacterStartItemAbility(abilityIndex, data);
+	}
+
+	private void DoCharacterStartAbility(int abilityIndex, object[] startData)
+	{
+		var ability = characterLocomotion.Abilities[abilityIndex];
+		if (startData != null) {
+			ability.SetNetworkStartData(startData);
+		}
+		if( !characterLocomotion.TryStartAbility(ability, true, true) ) {
+			Debug.Log("Failed to start ability " + abilityIndex + ": " + ability);
+		} else {
+			Debug.Log("Started ability " + abilityIndex + ": " + ability);
+		}
+	}
+
+	private void DoCharacterStartItemAbility(int abilityIndex, object[] startData)
+	{
+		var ability = characterLocomotion.ItemAbilities[abilityIndex];
+		if (startData != null) {
+			ability.SetNetworkStartData(startData);
+		}
+		if( !characterLocomotion.TryStartAbility(ability, true, true) ) {
+			Debug.Log("Failed to start item ability " + abilityIndex + ": " + ability);
+		} else {
+			Debug.Log("Started item ability " + abilityIndex + ": " + ability);
+		}
 	}
 
 	public void RemoveAllItems()
@@ -201,8 +369,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		}
 		
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterDropAll, id.id );
-
-		DoRemoveAllItems();
 	}
 	private void OnRemoveAllItems(ulong ts, NetStringReader stream)
 	{
@@ -210,6 +376,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	}
 	private void DoRemoveAllItems()
 	{
+		Debug.Log("DoRemoveAllItems()");
 		inventory.RemoveAllItems(true);
 	}
 
@@ -226,6 +393,10 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 			Debug.Log("PickupItems: " + i);
 			items[i].Pickup();
 		}
+		foreach (Item item in inventory.GetAllItems())
+		{
+			Debug.Log("Found " + item.ItemDefinition.name);
+		}
 	}
 
 	public void EvtAbilityActive(Ability ability, bool active)
@@ -234,7 +405,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddUint( (uint)ability.Index );
 		stream.AddBool( active );
 
-		Debug.Log("Cnet: AbilityActive1: " + ability.Index + " " + active);
+		Debug.Log("Cnet: AbilityActive1: " + ability.Index + " " + active + " with " + stream.used + " packet size");
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterAbility, id.id, stream, true );
 	}
 	public void AbilityActive(uint abilityIndex, bool active)
@@ -243,9 +414,8 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddUint( abilityIndex );
 		stream.AddBool( active );
 
+		Debug.Log("CNET: Called AbilityActivate with " + stream.used + " packet size");
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterAbility, id.id, stream, true );
-
-		DoAbilityActive(abilityIndex, active);
 	}
 	private void OnAbilityActive(ulong ts, NetStringReader stream)
 	{
@@ -259,7 +429,11 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	private void DoAbilityActive(uint abilityIndex, bool active)
 	{
 		if (active) {
-			characterLocomotion.TryStartAbility(characterLocomotion.Abilities[abilityIndex]);
+			if( !characterLocomotion.TryStartAbility(characterLocomotion.Abilities[abilityIndex]) ) {
+				Debug.Log("TryStartAbility failed");
+			} else {
+				Debug.Log("TryStartAbility succeeded");
+			}
 		} else {
 			characterLocomotion.TryStopAbility(characterLocomotion.Abilities[abilityIndex], true);
 		}
@@ -284,8 +458,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		Debug.Log("Cnet: ItemAbilityActive2: " + abilityIndex + " " + active);
 
 		NetSocket.Instance.SendPacket( CNetFlag.CharacterItemAbility, id.id, stream, true );
-
-		DoItemAbilityActive(abilityIndex, active);
 	}
 	private void OnItemAbilityActive(ulong ts, NetStringReader stream)
 	{
@@ -325,8 +497,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddFloat( strength );
 
 		NetSocket.Instance.SendPacket( CNetFlag.Fire, id.id, stream );
-
-		DoFire(itemAction.Item.SlotID, itemAction.ID, strength);
 	}
 	private void OnFire(ulong ts, NetStringReader stream)
 	{
@@ -355,8 +525,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddInt( itemAction.ID );
 
 		NetSocket.Instance.SendPacket( CNetFlag.StartReload, id.id, stream );
-
-		DoStartReload(itemAction.Item.SlotID, itemAction.ID);
 	}
 	private void OnStartReload(ulong ts, NetStringReader stream)
 	{
@@ -382,8 +550,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddByte( fullClip ? (byte)1 : (byte)0 );
 
 		NetSocket.Instance.SendPacket( CNetFlag.Reload, id.id, stream );
-
-		DoReload(itemAction.Item.SlotID, itemAction.ID, fullClip);
 	}
 	private void OnReload(ulong ts, NetStringReader stream)
 	{
@@ -411,8 +577,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddByte( immediateReload ? (byte)1 : (byte)0 );
 
 		NetSocket.Instance.SendPacket( CNetFlag.ReloadComplete, id.id, stream );
-
-		DoReloadComplete(itemAction.Item.SlotID, itemAction.ID, success, immediateReload);
 	}
 	private void OnReloadComplete(ulong ts, NetStringReader stream)
 	{
@@ -432,9 +596,10 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		itemAction.ItemReloadComplete(success, immediateReload);
 	}
 	
-	public void MeleeHitCollider(ItemAction itemAction, int hitboxIndex, RaycastHit rayhit, GameObject hitgo, UltimateCharacterLocomotion charLoco)
+	public void MeleeHitCollider(ItemAction itemAction, int hitboxIndex, RaycastHit rayhit, GameObject hitGo, UltimateCharacterLocomotion hitLoco)
 	{
 		NetStringBuilder stream = new NetStringBuilder();
+
 		stream.AddInt( itemAction.Item.SlotID );
 		stream.AddInt( itemAction.ID );
 		stream.AddInt( hitboxIndex );
@@ -442,17 +607,19 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddVector3( rayhit.normal );
 
 		// retrieve these from various places
-		CNetId hitgocni = hitgo.GetComponent<CNetId>();
-		CNetId collidercni = rayhit.collider.GetComponent<CNetId>();
-		CNetId other = charLoco.GetComponent<CNetId>();
+		int slotID = 0;
+		uint hitgoID = NetSocket.Instance.GetIdent( hitGo, out slotID );
+		stream.AddUint( hitgoID );
+		stream.AddInt( slotID );
 
-		stream.AddUint( collidercni.id );
-		stream.AddUint( hitgocni.id );
-		stream.AddUint( other.id );
+		if( hitLoco != null ) {
+			CNetId other = hitLoco.GetComponent<CNetId>();
+			stream.AddUint( other.id );
+		} else {
+			stream.AddUint( 0 );
+		}
 
 		NetSocket.Instance.SendPacket( CNetFlag.MeleeHitCollider, id.id, stream );
-
-		DoMeleeHitCollider(itemAction.Item.SlotID, itemAction.ID, hitboxIndex, rayhit.point, rayhit.normal, rayhit.collider, hitgo, charLoco );
 	}
 	private void OnMeleeHitCollider(ulong ts, NetStringReader stream)
 	{
@@ -461,10 +628,15 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		int hitboxIndex = stream.ReadInt();
 		Vector3 point = stream.ReadVector3();
 		Vector3 normal = stream.ReadVector3();
-		Collider collider = NetSocket.Instance.GetCollider( stream.ReadUint() );
-		GameObject hitgo = NetSocket.Instance.GetObject( stream.ReadUint() );
-		CNetCharacter charTarget = NetSocket.Instance.GetUser( stream.ReadUint() );
-		UltimateCharacterLocomotion charLoco = charTarget.GetComponent<UltimateCharacterLocomotion>();
+		uint hitgoID = stream.ReadUint();
+		int hitgoslotID = stream.ReadInt();
+		uint otherID = stream.ReadUint();
+
+		CNetCharacter hitLoco = NetSocket.Instance.GetUser( otherID );
+		UltimateCharacterLocomotion charLoco = hitLoco?hitLoco.GetComponent<UltimateCharacterLocomotion>():null;
+
+		GameObject hitgo = NetSocket.Instance.GetIdObj( hitLoco?hitLoco.gameObject:null, hitgoID, hitgoslotID );
+		Collider collider = hitgo.GetComponent<Collider>();
 
 		DoMeleeHitCollider(slotID, actionID, hitboxIndex, point, normal, collider, hitgo, charLoco);
 	}
@@ -504,8 +676,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddInt( itemAction.Item.SlotID );
 		stream.AddInt( itemAction.ID );
 		NetSocket.Instance.SendPacket( CNetFlag.ThrowItem, id.id, stream );
-
-		DoThrowItem(itemAction.Item.SlotID, itemAction.ID);
 	}
 	private void OnThrowItem(ulong ts, NetStringReader stream)
 	{
@@ -538,8 +708,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddInt( itemAction.Item.SlotID );
 		stream.AddInt( itemAction.ID );
 		NetSocket.Instance.SendPacket( CNetFlag.EnableThrowable, id.id, stream );
-
-		DoEnableThrowable(itemAction.Item.SlotID, itemAction.ID);
 	}
 	private void OnEnableThrowable(ulong ts, NetStringReader stream)
 	{
@@ -572,7 +740,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddBool( start );
 		
 		NetSocket.Instance.SendPacket( CNetFlag.MagicAction, id.id, stream );
-		DoMagicAction(itemAction.Item.SlotID, itemAction.ID, beginActions, start);
 	}
 	private void OnMagicAction(ulong ts, NetStringReader stream)
 	{
@@ -607,7 +774,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddVector3( targetPosition );
 
 		NetSocket.Instance.SendPacket( CNetFlag.MagicCast, id.id, stream );
-		DoMagicCast(itemAction.Item.SlotID, itemAction.ID, index, castID, direction, targetPosition);
 	}
 	private void OnMagicCast(ulong ts, NetStringReader stream)
 	{
@@ -658,7 +824,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddVector3( normal );
 
 		NetSocket.Instance.SendPacket( CNetFlag.MagicImpact, id.id, stream );
-		DoMagicImpact(itemAction.Item.SlotID, itemAction.ID, castID, sourceID.id, targetID.id, -1, position, normal);
 	}
 	public void OnMagicImpact(ulong ts, NetStringReader stream)
 	{
@@ -723,7 +888,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddUint( castID );
 
 		NetSocket.Instance.SendPacket( CNetFlag.MagicStop, id.id, stream );
-		DoStopMagicCast(itemAction.Item.SlotID, itemAction.ID, index, castID);
 	}
 	private void OnMagicStop(ulong ts, NetStringReader stream)
 	{
@@ -759,7 +923,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddBool( active );
 
 		NetSocket.Instance.SendPacket( CNetFlag.FlashlightToggle, id.id, stream );
-		DoToggleFlashlight(itemAction.Item.SlotID, itemAction.ID, active);
 	}
 	private void OnFlashlightToggle(ulong ts, NetStringReader stream)
 	{
@@ -793,7 +956,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddVector3( point );
 
 		NetSocket.Instance.SendPacket( CNetFlag.PushRigidbody, id.id, stream );
-		DoPushRigidbody(targetId.id, force, point);
 	}
 	private void OnPushRigidbody(ulong ts, NetStringReader stream)
 	{
@@ -817,6 +979,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		}
 
 		rb.AddForceAtPosition(force, point, ForceMode.VelocityChange);
+		Debug.Log("Cnet add force");
 	}
 
 	public void SetRotation(Quaternion rotation, bool snapAnimator)
@@ -829,7 +992,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddBool( snapAnimator );
 
 		NetSocket.Instance.SendPacket( CNetFlag.SetRotation, id.id, stream );
-		DoSetRotation(rotation, snapAnimator);
 	}
 	private void OnSetRotation(ulong ts, NetStringReader stream)
 	{
@@ -841,6 +1003,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 
 	public void DoSetRotation(Quaternion rotation, bool snapAnimator)
 	{
+		Debug.Log("Cnetchar: SetRot");
 		characterLocomotion.SetRotation(rotation, snapAnimator);
 	}
 
@@ -855,7 +1018,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddBool( snapAnimator );
 
 		NetSocket.Instance.SendPacket( CNetFlag.SetPosition, id.id, stream );
-		DoSetPosition(position, snapAnimator);
 	}
 	public void SendPosition()
 	{
@@ -879,15 +1041,14 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 
 	public void DoSetPosition(Vector3 position, bool snapAnimator)
 	{
+		Debug.Log("Cnetchar: SetPos");
 		characterLocomotion.SetPosition(position, snapAnimator);
 	}
 
 
 	public void ResetRotationPosition()
 	{
-
 		NetSocket.Instance.SendPacket( CNetFlag.ResetPositionRotation, id.id );
-		DoResetPositionRotation();
 	}
 	private void OnResetPositionRotation(ulong ts, NetStringReader stream)
 	{
@@ -895,12 +1056,12 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	}
 	public void DoResetPositionRotation()
 	{
+		Debug.Log("Cnetchar: ResetPosAndRot");
 		characterLocomotion.ResetRotationPosition();
 	}
 
 	public void SetPositionAndRotation(Vector3 position, Quaternion rotation, bool snapAnimator, bool stopAllAbilities)
 	{
-
 		NetStringBuilder sb = new NetStringBuilder();
 		sb.AddVector3( position );
 		sb.AddVector3( rotation.eulerAngles );
@@ -908,7 +1069,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		sb.AddBool( stopAllAbilities );
 
 		NetSocket.Instance.SendPacket( CNetFlag.SetPositionAndRotation, id.id, sb );
-		DoSetPositionAndRotation(position, rotation, snapAnimator, stopAllAbilities);
 	}
 	private void OnSetPositionAndRotation(ulong ts, NetStringReader stream)
 	{
@@ -924,6 +1084,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 	}
 	public void DoSetPositionAndRotation(Vector3 position, Quaternion rotation, bool snapAnimator, bool stopAllAbilities)
 	{
+		Debug.Log("Cnetchar: SetPosAndRot");
 		characterLocomotion.SetPositionAndRotation(position, rotation, snapAnimator, stopAllAbilities);
 	}
 
@@ -935,7 +1096,6 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetUpdate
 		stream.AddBool( uiEvent );
 
 		NetSocket.Instance.SendPacket( CNetFlag.SetActive, id.id, stream );
-		DoSetActive(active, uiEvent);
 	}
 	private void OnSetActive(ulong ts, NetStringReader stream)
 	{
