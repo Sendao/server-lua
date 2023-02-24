@@ -7,6 +7,7 @@ using CNet;
 using UnityEngine;
 
 [RequireComponent(typeof(CNetId))]
+[AddComponentMenu("Character Transform Network Connection")]
 public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 {
 	private CNetCharacter character;
@@ -20,9 +21,8 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 	private Vector3 netScale;
 	private ulong lastUpdate = 0;
 
-	private static Vector3 east = new Vector3(0, 0, -1);
-
 	// setup: startval, maxaccel, maxspeed, mindist
+	private static Vector3 east = new Vector3(0, 0, -1);
 	private LagData<Vector3> lagPos = new LagData<Vector3>(Vector3.zero, 14f, 2.6f, 0.02f);
 	private LagData<Vector3> lagRot = new LagData<Vector3>(east, 6f, 3f, 0.25f);
 	private LagData<Vector3> lagScale = new LagData<Vector3>(Vector3.one, 0.2f, 0.1f, 0.05f);
@@ -47,8 +47,6 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 
 		EventHandler.RegisterEvent(gameObject, "OnRespawn", OnRespawn);
 		EventHandler.RegisterEvent<bool>(gameObject, "OnCharacterImmediateTransformChange", OnImmediateTransformChange);
-
-		Debug.Log("CNetTransform woke up on " + id);
 	}
 
 	public void Register()

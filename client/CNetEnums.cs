@@ -16,6 +16,8 @@ namespace CNet
 		Quit,
 		PacketTo,
 		DynPacketTo,
+		ActivateLua,
+		EchoRTT,
     };
 
     public enum CCommand {
@@ -32,7 +34,12 @@ namespace CNet
         DynPacket,
         Packet,
         NewUser,
-        UserQuit
+        UserQuit,
+		ClockSetHour,
+		ClockSetTotalDaySec,
+		ClockSetDaySpeed,
+		ClockSync,
+		RTTEcho,
     };
 
 	public enum CNetFlag : byte {
@@ -81,7 +88,7 @@ namespace CNet
 		RigidbodyUpdate,
 
 		// OBJECTS - TRANSFORM
-		ObjTransformUpdate,
+		ObjTransform,
 
 		// MECANIM
 		MecContinuousUpdate,
@@ -106,7 +113,10 @@ namespace CNet
 		CharacterPickup1,
 		CharacterPickupUsable,
 		CharacterStartAbility,
-		CharacterStartItemAbility
+		CharacterStartItemAbility,
+
+		// MORE OBJECT
+		ActivateButton,
 	};
 
 	public enum CNetEvent : byte

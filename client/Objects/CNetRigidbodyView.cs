@@ -2,10 +2,11 @@ using UnityEngine;
 using CNet;
 using System;
 
-[RequireComponent(typeof(CNetId))]
-[AddComponentMenu("Transform Network Connection")]
-public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
+[RequireComponent(typeof(Rigidbody))]
+[AddComponentMenu("Rigidbody Network Connection")]
+public class CNetRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
 {
+	private Rigidbody body;
 	private CNetId cni;
 
 	private Vector3 netPosition;
@@ -23,22 +24,19 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 
 	public void Awake()
 	{
+		this.body = GetComponent<Rigidbody>();
 		this.cni = GetComponent<CNetId>();
 
-		Debug.Log("CNetObjTransform woke up on " + cni);
+		Debug.Log("CNetObjRigidBody woke up on " + cni);
 	}
 
 	public void Start()
 	{
-		if( cni.local ) {
-			NetSocket.Instance.RegisterNetObject( this );
-		} else {
-			lagPos.goal = lagPos.value = netPosition = transform.position;
-			lagRot.goal = lagRot.value = netEulers = transform.rotation * Vector3.forward;
-			lagScale.goal = lagScale.value = netScale = transform.localScale;
+		lagPos.goal = lagPos.value = netPosition = body.position;
+		lagRot.goal = lagRot.value = netEulers = body.rotation * Vector3.forward;
+		lagScale.goal = lagScale.value = netScale = transform.localScale;
 
-			cni.RegisterChild(this);
-		}
+		cni.RegisterChild(this);
 	}
 
 	public void MoveTo( Vector3 pos )
@@ -48,7 +46,7 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 
 		lastUpdate = lagPos.updt = lagPos.tick = now;
 		lagPos.value = lagPos.goal = pos;
-		transform.position = pos;
+		body.position = pos;
 	}
 	public void RotateTo( Vector3 facing )
 	{
@@ -59,7 +57,7 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 		lagRot.value = lagRot.goal = facing;
 		Quaternion q = new Quaternion();
 		q.SetLookRotation( facing );
-		transform.rotation = q;
+		body.rotation = q;
 	}
 
 	private void Update()
@@ -80,14 +78,14 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 		Lagger.Update( now, ref lagRot );
 
 		hasData = false;
-		if( (lagPos.value - transform.position).magnitude > 0.01f ) {
-			transform.position = lagPos.value;
+		if( (lagPos.value - body.position).magnitude > 0.01f ) {
+			body.position = lagPos.value;
 			hasData = true;
 		}
 		Quaternion q = new Quaternion();
 		q.SetLookRotation( lagRot.value.normalized );
-		if( q != transform.rotation ) {
-			transform.rotation = q;
+		if( q != body.rotation ) {
+			body.rotation = q;
 			hasData = true;
 		}
 		
@@ -101,8 +99,13 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 	public void Register()
 	{
 		if( !cni.local ) {
+			this.body.isKinematic = true;
 			NetSocket.Instance.RegisterPacket( CNetFlag.ObjTransform, cni.id, this.DoUpdate );
 		} else {
+			this.body.isKinematic = false;
+			netScale = new Vector3(0,0,0);
+			netPosition = new Vector3(0,0,0);
+			netEulers = new Vector3(0,0,0);
 			NetSocket.Instance.RegisterNetObject( this );
 		}
 	}
@@ -112,8 +115,8 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 	{
 		if (!this.cni.local)
 		{
-			this.transform.position = Vector3.MoveTowards(this.transform.position, this.netPosition, this.distance * (1.0f / NetSocket.Instance.updateRate));
-			this.transform.rotation = Quaternion.RotateTowards(this.transform.rotation, this.netRotation, this.angle * (1.0f / NetSocket.Instance.updateRate));
+			this.body.position = Vector3.MoveTowards(this.body.position, this.netPosition, this.distance * (1.0f / NetSocket.Instance.updateRate));
+			this.body.rotation = Quaternion.RotateTowards(this.body.rotation, this.netRotation, this.angle * (1.0f / NetSocket.Instance.updateRate));
 		}
 	}
 */
@@ -126,10 +129,10 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 		if( transform.localScale != netScale ) {
 			dirtyFlag |= (byte)TransformDirtyFlags.Scale;
 		}
-		if (this.transform.position != netPosition) {
+		if (this.body.position != netPosition) {
 			dirtyFlag |= (byte)TransformDirtyFlags.Position;
 		}
-		if (this.transform.rotation * Vector3.forward != netEulers) {
+		if (this.body.rotation * Vector3.forward != netEulers) {
 			dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
 		}
 
@@ -138,13 +141,12 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 		}
 		sb.AddByte(dirtyFlag);
 
-
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-			netPosition = transform.position;
+			netPosition = body.position;
 			sb.AddShortVector3(netPosition);
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-			netEulers = transform.rotation * Vector3.forward;
+			netEulers = body.rotation * Vector3.forward;
 			sb.AddShortVector3(netEulers);
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {

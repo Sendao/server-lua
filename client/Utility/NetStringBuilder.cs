@@ -91,7 +91,7 @@ namespace CNet {
         }
 
         public void AddLongLong(long value) {
-            while( used+8 > alloced )
+            while( used+8 >= alloced )
                 AllocMore();
             
             ptr[used+0] = (byte)((value>>56) & 0xff);
@@ -105,8 +105,10 @@ namespace CNet {
             used += 8;
         }
         public void AddULongLong(ulong value) {
-            while( used+8 > alloced )
+            while( used+8 >= alloced )
                 AllocMore();
+
+            //Debug.Log("AddULongLong: "+value+": " + sizeof(ulong));
             
             ptr[used+0] = (byte)((value>>56) & 0xff);
             ptr[used+1] = (byte)((value>>48) & 0xff);
@@ -120,7 +122,7 @@ namespace CNet {
         }
 
         public void AddLong(long value) {
-            while( used+4 > alloced )
+            while( used+4 >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((value>>24) & 0xff);
             ptr[used+1] = (byte)((value>>16) & 0xff);
@@ -129,7 +131,7 @@ namespace CNet {
             used += 4;
         }
         public void AddUlong(ulong value) {
-            while( used+4 > alloced )
+            while( used+4 >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((value>>24) & 0xff);
             ptr[used+1] = (byte)((value>>16) & 0xff);
@@ -138,33 +140,33 @@ namespace CNet {
             used += 4;
         }
         public void AddInt(int value) {
-            while( used+2 > alloced )
+            while( used+2 >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((value>>8) & 0xff);
             ptr[used+1] = (byte)(value&0xFF);
             used += 2;
         }
         public void AddUint(uint value) {
-            while( used+2 > alloced )
+            while( used+2 >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((value>>8) & 0xff);
             ptr[used+1] = (byte)(value&0xFF);
             used += 2;
         }
         public void AddBool(bool value) {
-            while( used+1 > alloced )
+            while( used+1 >= alloced )
                 AllocMore();
             ptr[used] = (byte)(value?1:0);
             used += 1;
         }
         public void AddByte(byte value) {
-            while( used+1 > alloced )
+            while( used+1 >= alloced )
                 AllocMore();
             ptr[used] = value;
             used += 1;
         }
         public void AddFloat(float value) {
-            while( used+4 > alloced ) {
+            while( used+4 >= alloced ) {
                 AllocMore();
             }
             byte[] x = System.BitConverter.GetBytes(value);
@@ -172,7 +174,7 @@ namespace CNet {
             used += 4;
         }
         public void AddDouble(double value) {
-            while( used+8 > alloced ) {
+            while( used+8 >= alloced ) {
                 AllocMore();
             }
             byte[] x = System.BitConverter.GetBytes(value);
@@ -183,7 +185,7 @@ namespace CNet {
             AddShortFloat(value,max);
         }
         public void AddShortFloat(float value, float max=1000f) {
-            while( used+2 > alloced ) {
+            while( used+2 >= alloced ) {
                 AllocMore();
             }
             if( value > max || value < -max ) {
@@ -197,7 +199,7 @@ namespace CNet {
 
         public void AddString(string str) {
             int len = str.Length;
-            while( used+2+len > alloced )
+            while( used+2+len >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((len>>8) & 0xff);
             ptr[used+1] = (byte)(len&0xFF);
@@ -207,7 +209,7 @@ namespace CNet {
 
         public void AddBytes(byte[] data) {
             int len = data.Length;
-            while( used+len > alloced )
+            while( used+len >= alloced )
                 AllocMore();
             System.Buffer.BlockCopy(data, 0, ptr, used, len);
             used += len;
@@ -215,7 +217,7 @@ namespace CNet {
 
         public void AddShortBytes(byte[] data) {
             uint len = (uint)data.Length;
-            while( used+len+2 > alloced )
+            while( used+len+2 >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((len>>8) & 0xff);
             ptr[used+1] = (byte)(len&0xFF);

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 
 namespace CNet
 {
+	[AddComponentMenu("CNet Identifier")]
 	public class CNetId : MonoBehaviour
 	{
 		public bool registered = false;
@@ -27,21 +28,16 @@ namespace CNet
 				if( rb != null ) {
 					type = 0;
 				} else {
-					Collider col = GetComponent<Collider>();
-					if( col != null ) {
-						type = 1;
-					} else {
-						Debug.Log("Unknown type in CNetId");
-						return;
-					}
+					Debug.Log("Unknown type in CNetId");
+					return;
 				}
 			}
 			// - parent		
 
-			// Register with the main controller - this will set the 'id' field
+			// Register with the main controller - this will set the 'id' field and call 'Register'
 			if( type != 2 ) {
 				NetSocket.Instance.RegisterId(this, this.name, type);
-			}
+			} // note player types are handled differently by NewUser()
 		}
 
 		private List<ICNetReg> children = new List<ICNetReg>();
@@ -60,6 +56,13 @@ namespace CNet
 		public void Register()
 		{
 			lock( _registerlock ) {
+				if( type != 2 ) {
+					if( NetSocket.Instance.authoritative ) {
+						this.local = true;
+					} else {
+						this.local = false;
+					}
+				}
 				Debug.Log("Registering " + this.name + " with type " + type);
 
 				foreach( var child in children ) {

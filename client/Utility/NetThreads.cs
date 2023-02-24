@@ -124,8 +124,10 @@ namespace CNet
                         sentSize = 5 + compSize;
                     }
 
-                    lock( parent._outbpsLock ) {
-                        parent.out_bps_measure += (int) sentSize;
+                    if( parent.record_bps ) {
+                        lock( parent._outbpsLock ) {
+                            parent.out_bps_measure += (int) sentSize;
+                        }
                     }
                 }
             }
@@ -237,8 +239,10 @@ namespace CNet
                     readlen = 0;
                 }
 
-                lock( parent._inbpsLock ) {
-                    parent.in_bps_measure += (int)recv_bytes;
+                if( parent.record_bps ) {
+                    lock( parent._inbpsLock ) {
+                        parent.in_bps_measure += (int)recv_bytes;
+                    }
                 }
             }
         }

@@ -8,10 +8,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.IO;
-using CNet;
-//using TwoNibble.Impunes;
-//using TwoNibble.Impunes.Controllers;
-//using TwoNibble.Impunes.Character;
 using Opsive.UltimateCharacterController.Objects;
 using Opsive.UltimateCharacterController.Inventory;
 
@@ -29,9 +25,29 @@ namespace CNet {
         void Event( CNetEvent ev, uint from, NetStringReader data );
     }
 
+    [ExecuteInEditMode]
     public class NetSocket : MonoBehaviour
     {
         public static NetSocket Instance=null;
+
+        public NetSocket() {
+            if( Instance != null && Instance.connected ) {
+                Instance.close();
+            }
+            Instance = this;
+        }
+
+#if (UNITY_EDITOR)
+        [UnityEditor.Callbacks.DidReloadScripts]
+        private static void OnScriptsReloaded() {
+            if( Instance == null ) {
+                Debug.Log("Instance was null");
+                return;
+            }
+            ObjectIdentifier[] comps = GameObject.FindObjectsOfType<ObjectIdentifier>();
+            Debug.Log("Found " + comps.Length + " components with ObjectIdentifier");
+        }
+#endif
 
         [Tooltip("Rate of updates per second. This is for testing purposes.")]
         public float updateRate = 15f;
@@ -45,9 +61,18 @@ namespace CNet {
         public uint local_uid;
 
         public delegate void PacketCallback( ulong ts, NetStringReader data );
+        public delegate void SetHourCb( int hour );
+        public delegate void SetSpeedCb( float speed );
+
+        private SetHourCb clockHourCb;
+        private SetSpeedCb clockSpeedCb;
+        public void ClockSetup( SetHourCb hourCb, SetSpeedCb speedCb )
+        {
+            clockHourCb = hourCb;
+            clockSpeedCb = speedCb;
+        }
 
         public readonly object _sendQLock = new object();
-        public readonly object _sendBlock = new object();
         public readonly Queue<byte[]> sendQ = new Queue<byte[]>();
         public readonly AutoResetEvent _sendQSig = new AutoResetEvent(false);
 
@@ -104,28 +129,44 @@ namespace CNet {
         private ulong last_record_time = 0;
         public long net_clock_offset = 0;
         public ulong last_netupdate = 0;
+        public ulong last_rtt_packet = 0;
 
-        public bool record_bps = false;
+        public bool record_bps = true;
+        public bool record_rtt = true;
         private bool foundMainUser = false;
 
         public List<int> out_bytes = new List<int>();
         public List<int> in_bytes = new List<int>();
+        public List<int> rtt_times = new List<int>();
         public ulong last_out_time = 0;
         public ulong last_in_time = 0;
+        public ulong last_rtt_time = 0;
         public int in_bps_measure = 0;
         public int out_bps_measure = 0;
         public readonly object _inbpsLock = new object();
         public readonly object _outbpsLock = new object();
+        public readonly object _rttLock = new object();
         public uint maxTargets = 0;
 
         public void Awake()
         {
+            if( Instance != null && Instance != this ) {
+                if( Instance.connected ) {
+                    Instance.close();
+                }
+            }
             Instance = this;
             CreateRemoteAvatar = null;
+            Debug.Log("NetSocket awake");
         }
         
         public void Start()
         {
+            if( !Application.IsPlaying(gameObject) ) {
+                Debug.Log("In editor");
+                return;
+            }
+
             lock( _regLock ) {
                 IPHostEntry ipHost = Dns.GetHostEntry("spiritshare.org");
                 IPAddress ipAddr=null;
@@ -229,6 +270,8 @@ namespace CNet {
             NetStringReader stream;
             Rigidbody rb;
             int cmd, sz;
+            TimeSpan ts;
+            ulong now;
 
             foreach( byte[] data in res ) {
                 stream = new NetStringReader(data);
@@ -257,8 +300,8 @@ namespace CNet {
                         break;
                     case CCommand.TimeSync:
                         last_game_time = (ulong)stream.ReadLongLong();
-                        TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
-                        ulong now = (ulong)ts.TotalMilliseconds;
+                        ts = DateTime.Now - DateTime.UnixEpoch;
+                        now = (ulong)ts.TotalMilliseconds;
                         net_clock_offset = (long)(now - last_game_time);
                         Debug.Log("Net clock offset: " + net_clock_offset);
                         break;
@@ -289,7 +332,7 @@ namespace CNet {
                         registered = true;
                         // request variable idents
                         foreach( string key in loadingObjects.Keys ) {
-                            Debug.Log("Registering object " + key);
+                            Debug.Log("Late-registering object " + key);
                             NetStringBuilder sb = new NetStringBuilder();
                             sb.AddString(key);
                             sb.AddByte(0);
@@ -323,17 +366,45 @@ namespace CNet {
                     case CCommand.DynPacket:
                         RecvDynPacket(stream);
                         break;
+                    case CCommand.ClockSetHour:
+                        var hour = stream.ReadUint();
+                        clockHourCb((int)hour);
+                        Debug.Log("Set Hour to " + hour);
+                        break;
+		            case CCommand.ClockSetDaySpeed:
+                        var speed = stream.ReadFloat();
+                        clockSpeedCb(speed);
+                        Debug.Log("Set Day Speed to " + speed);
+                        break;
+                    case CCommand.RTTEcho:
+                        var rtt = stream.ReadULongLong();
+                        ts = DateTime.Now - DateTime.UnixEpoch;
+                        now = (ulong)ts.TotalMilliseconds;
+                        int my_rtt = (int)(now - rtt);
+                        lock( _rttLock ) {
+                            if( rtt_times.Count > 14 ) { // keep an average of 5 seconds
+                                rtt_times.RemoveAt(0);
+                            }
+                            rtt_times.Add(my_rtt);
+                        }
+                        break;
+
                 }
             }
         }
 
         public void close() {
-            ws.Close();
+            if( connected ) {
+                ws.Close();
+            }
         }
 
         public void OnDestroy() {
-            close();
+            if( connected ) {
+                close();
+            }
         }
+
 
 
         public Rigidbody GetRigidbody( uint uid ) {
@@ -409,13 +480,11 @@ namespace CNet {
         {
             foreach( WaitHandler wh in waitingObjects ) {
                 CNetId cni = (CNetId)wh.obj.GetComponent<CNetId>();
-                string name = "o_" + wh.name;
-
-                Debug.Log("Registering object " + name + ", type " + wh.type);
-                loadingObjects[name] = wh.obj;
+                Debug.Log("Registering object " + wh.name + ", type " + wh.type);
+                loadingObjects[wh.name] = wh.obj;
 
                 NetStringBuilder sb = new NetStringBuilder();
-                sb.AddString(name);
+                sb.AddString(wh.name);
                 sb.AddByte((byte)wh.type); // byte 0 specifies object type
                 SendMessage(SCommand.IdentifyVar, sb);
             }
@@ -436,17 +505,18 @@ namespace CNet {
                 wh.name = oname;
                 wh.type = type;
                 waitingObjects.Add(wh);
+                if( type != 2 ) {
+                    loadingObjects[oname] = obj;
+                }
                 return;
             }
 
             if( registered ) {
                 if( type != 2 ) {
-                    string name = "o_" + oname;
-
-                    Debug.Log("Registering object " + name + ", type " + type);
-                    loadingObjects[name] = obj;
+                    Debug.Log("Registering object " + oname + ", type " + type);
+                    loadingObjects[oname] = obj;
                     NetStringBuilder sb = new NetStringBuilder();
-                    sb.AddString(name);
+                    sb.AddString(oname);
                     sb.AddByte((byte)type); // byte 0 specifies object type
                     SendMessage(SCommand.IdentifyVar, sb);
                 } else {
@@ -610,7 +680,8 @@ namespace CNet {
                     mb = loadingObjects[v.name];
                     cni = mb.GetComponent<CNetId>();
                     if( cni != null ) {
-                        cni.id = (uint)v.objid;
+                        cni.id = v.objid;
+                        Debug.Log("Set " + v.name + " id to " + cni.id);
                     } else {
                         Debug.Log("Object " + v.name + " does not have a CNetId component");
                         break;
@@ -643,7 +714,7 @@ namespace CNet {
                 return;
             }
             if( !cni.registered ) {
-                Debug.Log("Object " + mb.name + " does not have an id");
+                Debug.Log("Object " + cni + " does not have an id");
                 return; // can't send if it's not id'd yet
             }
 
@@ -680,7 +751,7 @@ namespace CNet {
             int ts_short;
             ulong ts;
             float x,y,z;
-            float r0,r1,r2,r3;
+            float r0,r1,r2;
 
             objid = stream.ReadUint();
             ts_short = stream.ReadInt();
@@ -692,12 +763,14 @@ namespace CNet {
             r0 = stream.ReadFloat();
             r1 = stream.ReadFloat();
             r2 = stream.ReadFloat();
-            r3 = stream.ReadFloat();
 
-            Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2 + " " + r3);
-            Rigidbody rb = clientBodies[objid];
-            rb.MovePosition(new Vector3(x,y,z));
-            rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
+            Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2);
+            //Rigidbody rb = clientBodies[objid];
+            //rb.MovePosition(new Vector3(x,y,z));
+            //rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
+            CNetRigidbodyView trx = clientObjects[objid].GetComponent<CNetRigidbodyView>();
+            trx.MoveTo( new Vector3(x,y,z) );
+            trx.RotateTo( new Vector3(r0,r1,r2) );
         }
 
         public void BuildHealthMonitors( GameObject obj )
@@ -1066,34 +1139,38 @@ namespace CNet {
 
         public void Update()
         {
+            if( !connected ) {
+                return;
+            }
             TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
             last_local_time = (ulong)ts.TotalMilliseconds;
 
-            if( last_local_time-last_in_time >= 1000 ) {
+            if( record_bps && last_local_time-last_in_time >= 1000 ) {
                 last_in_time = last_local_time;
                 lock( _inbpsLock ) {
                     if( in_bps_measure == 0 ) {
                         in_bytes.Clear();
-                    } else if( in_bytes.Count > 4 ) {
-                        in_bytes.RemoveAt(0);
-                    }
-                    if( in_bps_measure != 0 )
+                    } else {
+                        if( in_bytes.Count > 4 ) {
+                            in_bytes.RemoveAt(0);
+                        }
                         in_bytes.Add( in_bps_measure );
-                    in_bps_measure = 0;
+                        in_bps_measure = 0;
+                    }
                 }
-
             }
-            if( last_local_time-last_out_time >= 1000 ) {
+            if( record_bps && last_local_time-last_out_time >= 1000 ) {
                 last_out_time = last_local_time;
                 lock( _outbpsLock ) {
                     if( out_bps_measure == 0 ) {
                         out_bytes.Clear();
-                    } else if( out_bytes.Count > 4 ) {
-                        out_bytes.RemoveAt(0);
-                    }
-                    if( out_bps_measure != 0 )
+                    } else {
+                        if( out_bytes.Count > 4 ) { // keep an average of 5 seconds
+                            out_bytes.RemoveAt(0);
+                        }
                         out_bytes.Add( out_bps_measure );
-                    out_bps_measure = 0;
+                        out_bps_measure = 0;
+                    }
                 }
             }
 
@@ -1108,9 +1185,17 @@ namespace CNet {
                 }
             }
 
+            if( record_rtt && last_local_time-last_rtt_packet >= 333 ) {
+                last_rtt_packet = last_local_time;
+                NetStringBuilder sb = new NetStringBuilder();
+                sb.AddULongLong(last_local_time);
+                SendMessage(SCommand.EchoRTT, sb);
+            }
+
             if( last_local_time-last_record_time >= 10000 ) {
                 last_record_time = last_local_time;
                 NetStringBuilder sb = new NetStringBuilder();
+                Debug.Log("Sync: " + last_local_time + ", " + sizeof(ulong));
                 sb.AddULongLong(last_local_time);
                 SendMessage(SCommand.ClockSync, sb);
             }
@@ -1142,8 +1227,7 @@ namespace CNet {
             //Debug.Log("Encode len: " + len + " " + cmd + " " + msg[1] + " " + msg[2]);
 
             if( code == 0 ) {
-                _sendQSig.Reset();
-                lock( _sendBlock ) {
+                lock( _sendQLock ) {
                     send(msg, data != null ? data.Length : 0);
 
                     if( data != null )
@@ -1169,8 +1253,7 @@ namespace CNet {
             msg[2] = (byte)(len & 0xFF);
 
             if( code == 0 ) {
-                _sendQSig.Reset();
-                lock( _sendBlock ) {
+                lock( _sendQLock ) {
                     send(msg, data != null ? data.Length : 0);
 
                     if( data != null )
@@ -1230,18 +1313,15 @@ namespace CNet {
                 return;
             }
 
-            _sendQSig.Reset();
-            lock( _sendBlock ) {
-                lock (_sendQLock) {
-                    while( delayQ.Count > 0 ) {
-                        byte[] data = delayQ.Dequeue();
-                        second_bytes += data.Length;
-                            sendQ.Enqueue(data);
-                        //Debug.Log("flushQueue: " + data.Length + " bytes");
-                        if( data.Length != 3 && second_bytes > elapsed*max_out_bps ) { // do not end if we just sent a header.
-                            Debug.Log("end on flushQueue");
-                            break;
-                        }
+            lock (_sendQLock) {
+                while( delayQ.Count > 0 ) {
+                    byte[] data = delayQ.Dequeue();
+                    second_bytes += data.Length;
+                        sendQ.Enqueue(data);
+                    //Debug.Log("flushQueue: " + data.Length + " bytes");
+                    if( data.Length != 3 && second_bytes > elapsed*max_out_bps ) { // do not end if we just sent a header.
+                        Debug.Log("end on flushQueue");
+                        break;
                     }
                 }
             }
