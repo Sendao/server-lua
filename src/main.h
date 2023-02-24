@@ -11,6 +11,7 @@
 #include <winsock2.h>
 #include <chrono>
 #else
+#define LINUX
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -28,6 +29,7 @@
 #include <queue>
 #include "system.h"
 
+#include "clock.h"
 using namespace std;
 
 
@@ -49,7 +51,7 @@ struct _VarData
 	int type;
 };
 
-enum {
+enum SCmd {
 	SCmdSetKeyValue,
 	SCmdRunLuaFile,
 	SCmdRunLuaCommand,
@@ -65,9 +67,13 @@ enum {
 	SCmdQuit,
 	SCmdPacketTo,
 	SCmdDynPacketTo,
+	SCmdActivateLua,
+	SCmdEchoRTT,
+
+	SCmdLast
 };
 
-enum {
+enum CCmd {
 	CCmdVarInfo,
 	CCmdFileInfo,
 	CCmdEndOfFileList,
@@ -81,10 +87,17 @@ enum {
 	CCmdDynPacket,
 	CCmdPacket,
 	CCmdUser,
-	CCmdUserQuit
+	CCmdUserQuit,
+	CCmdClockSetHour,
+	CCmdClockSetTotalDaySec,
+	CCmdClockSetDaySpeed,
+	CCmdClockSync,
+	CCmdRTTEcho,
+
+	CCmdLast
 };
 
-enum {
+enum CNet {
 	CNetInvalidMessage,//0
 	// CHARACTER
 	CNetCharacterAbility,
@@ -130,7 +143,7 @@ enum {
 	CNetRigidbodyUpdate,
 
 	// OBJECTS - TRANSFORM
-	CNetObjTransformUpdate,
+	CNetObjTransform,
 
 	// MECANIM
 	CNetMecContinuousUpdate,
@@ -148,9 +161,24 @@ enum {
 
 	// INTERACTABLES
 	CNetInteract,
-	CNetRespawn
+	CNetRespawn,
+
+
+	CNetLast
 };
 
+enum ServerEvent
+{
+	Login,
+	Logout,
+	Move,
+	Spawn,
+	Destroy,
+	Activate,
+	ChangeHost,
+
+	ServerEventLast
+};
 enum
 {
 	ParamX = 1,
@@ -188,6 +216,11 @@ enum
 // lua.cpp
 extern sol::state lua;
 void init_lua(void);
+vector<sol::function> &LuaEvent( uint16_t cmd );
+vector<sol::function> &LuaUserEvent( User *obj, uint16_t cmd );
+vector<sol::function> &LuaObjEvent( Object *obj, uint16_t cmd );
+void LuaActivate( Object *obj, uint16_t cmd );
+
 
 // user.cpp
 typedef void (User::*cmdcall)(char *,uint16_t);
@@ -208,8 +241,14 @@ void init_pools(void);
 void *halloc(size_t);
 void hfree(void *, size_t);
 
+
+// lua.cpp
+void LuaActivate( Object *obj, uint16_t cmd );
+
+
 // main.cpp
 typedef struct _CompressionPacket CompressionPacket;
+int smalltimeofday(struct timeval* tp, void* tzp );
 
 // sockets.cpp
 void InitSocket(int port);
@@ -222,7 +261,6 @@ int InputConnection(User *);
 void Output(User *, const char *, unsigned long);
 void Input(User *);
 extern int fSock;
-extern int top_uid;
 extern bool firstUser;
 
 // system.cpp
@@ -261,6 +299,9 @@ class Game
 	~Game();
 
 	public:
+	static void InitialiseAPITable(void);
+
+	public:
 	unordered_map<string,VarData*> varmap;
 	uint16_t top_var_id = 1;
 	unordered_map<uint16_t,VarData*> varmap_by_id;
@@ -277,6 +318,7 @@ class Game
 
 	public:
 	uint64_t last_update, last_timestamp;
+	Clock clock;
 
 	public:
 	void mainloop(void);
@@ -295,12 +337,16 @@ class Object
 	~Object();
 
 	public:
+	static void InitialiseAPITable(void);
+
+	public:
 	uint16_t uid;
 	char *name;
 
 	uint64_t last_update;
 	float x, y, z;
-	float r0, r1, r2, r3;
+	float r0, r1, r2;
+	float scalex, scaley, scalez;
 	uint64_t prev_update;
 	float prev_x, prev_y, pre_z;
 	float prev_r0, prev_r1, prev_r2, prev_r3;
@@ -348,6 +394,9 @@ class User
 	~User();
 
 	public:
+	static void InitialiseAPITable(void);
+
+	public:
 	unsigned int fSock;
 	int state;
     int iHost[4];
@@ -373,7 +422,7 @@ class User
 	long reading_sz;
 	FILE *fReading;
 	queue<char*> reading_file_q; // todo: this should be a queue (FIFO)
-	uint64_t clocksync;
+	int64_t clocksync;
 	uint64_t last_update;
 
 	uint16_t uid;
@@ -417,6 +466,8 @@ class User
 	void Packet(char *data, uint16_t sz);
 	void DynPacketTo(char *data, uint16_t sz);
 	void PacketTo(char *data, uint16_t sz);
+	void ActivateLua(char *data, uint16_t sz);
+	void Echo(char *data, uint16_t sz);
 };
 
 

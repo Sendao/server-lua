@@ -302,35 +302,47 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'i':
 				iptr = va_arg(args, int*);
-				*iptr = (int16_t)(*buffer << 8 | *(buffer+1) & 0xFF);
+				*iptr = (int16_t)(*buffer << 8 | (int16_t)*(buffer+1) & 0xFF);
 				buffer += 2;
 				continue;
 			case 'u':
 				uiptr = (uint16_t*)va_arg(args, uint16_t*);
-				*uiptr = (uint16_t)(*buffer << 8) | *(buffer+1) & 0xFF;
+				*uiptr = (uint16_t)(*buffer << 8) | (uint16_t)*(buffer+1) & 0xFF;
 				buffer += 2;
 				continue;
 			case 'l':
 				lptr = va_arg(args, long*);
-				*lptr = (int32_t)*buffer << 24 | (int32_t)*(buffer+1) << 16 | (int32_t)*(buffer+2) << 8 | *(buffer+3) & 0xFF;
+				*lptr = (int32_t)*buffer << 24 | (int32_t)*(buffer+1) << 16 | (int32_t)*(buffer+2) << 8 | (int32_t)*(buffer+3) & 0xFF;
 				buffer += 4;
 				continue;
 			case 'm':
 				ulptr = va_arg(args, uint32_t*);
-				*ulptr = (uint32_t)*buffer << 24 | (uint32_t)*(buffer+1) << 16 | (uint32_t)*(buffer+2) << 8 | *(buffer+3) & 0xFF;
+				*ulptr = (uint32_t)*buffer << 24 | (uint32_t)*(buffer+1) << 16 | (uint32_t)*(buffer+2) << 8 | (uint32_t)*(buffer+3) & 0xFF;
 				buffer += 4;
 				continue;
 			case 'L':
 				llptr = va_arg(args, long long*);
 				// note we have to convert first 4 to long long. others don't have to be.
-				*llptr = (long long)*buffer << 56 | (long long)*(buffer+1) << 48 | (long long)*(buffer+2) << 40 | (long long)*(buffer+3) << 32 |
-							(long long)*(buffer+4) << 24 | (long)*(buffer+5) << 16 | (long)*(buffer+6) << 8 | *(buffer+7) & 0xFF;
+				*ullptr = (int64_t)(((int64_t)*(buffer)&0xff) << 56) |
+						  (int64_t)(((int64_t)*(buffer+1)&0xff) << 48) |
+						  (int64_t)(((int64_t)*(buffer+2)&0xff) << 40) |
+						  (int64_t)(((int64_t)*(buffer+3)&0xff) << 32) |
+						  (int64_t)(((int64_t)*(buffer+4)&0xff) << 24) |
+						  (int64_t)(((int64_t)*(buffer+5)&0xff) << 16) |
+						  (int64_t)(((int64_t)*(buffer+6)&0xff) << 8) |
+						  (int64_t)(((int64_t)*(buffer+7)&0xff) );
 				buffer += 8;
 				continue;
 			case 'M':
 				ullptr = va_arg(args, uint64_t*);
-				*ullptr = (uint64_t)*buffer << 56 | (uint64_t)*(buffer+1) << 48 | (uint64_t)*(buffer+2) << 40 | (uint64_t)*(buffer+3) << 32 |
-							(uint64_t)*(buffer+4) << 24 | (uint32_t)*(buffer+5) << 16 | (uint32_t)*(buffer+6) << 8 | *(buffer+7) & 0xFF;
+				*ullptr = (uint64_t)(((uint64_t)*(buffer)&0xff) << 56) |
+						  (uint64_t)(((uint64_t)*(buffer+1)&0xff) << 48) |
+						  (uint64_t)(((uint64_t)*(buffer+2)&0xff) << 40) |
+						  (uint64_t)(((uint64_t)*(buffer+3)&0xff) << 32) |
+						  (uint64_t)(((uint64_t)*(buffer+4)&0xff) << 24) |
+						  (uint64_t)(((uint64_t)*(buffer+5)&0xff) << 16) |
+						  (uint64_t)(((uint64_t)*(buffer+6)&0xff) << 8) |
+						  (uint64_t)(((uint64_t)*(buffer+7)&0xff) );
 				buffer += 8;
 				continue;
 			case 'F': // short

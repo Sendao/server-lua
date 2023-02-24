@@ -42,9 +42,11 @@ void init_commands( void )
 	sizes[SCmdPacketTo] = 0;
 	commands[SCmdDynPacketTo] = &User::DynPacketTo;
 	sizes[SCmdDynPacketTo] = 0;
+	commands[SCmdActivateLua] = &User::ActivateLua;
+	sizes[SCmdActivateLua] = 0;
+	commands[SCmdEchoRTT] = &User::Echo;
+	sizes[SCmdEchoRTT] = 0;
 }
-
-int top_uid = 1;
 
 User::User(void)
 {
@@ -67,8 +69,8 @@ User::User(void)
 	r0 = r1 = r2 = r3 = 0;
 	scalex = scaley = scalez = 1;
 	reading_ptr = NULL;
-	uid = top_uid;
-	top_uid++;
+	uid = game->top_var_id;
+	game->top_var_id++;
 
 	snapAnimator = false;
 	stopAllAbilities = false;
@@ -101,6 +103,35 @@ User::~User(void)
 	}
 	messages.clear();
 }
+
+
+
+void User::InitialiseAPITable(void)
+{
+	sol::usertype<User> user_type = lua.new_usertype<User>("User",
+		sol::constructors<User()>());
+	
+	user_type["outbufmax"] = &User::outbufmax;
+	user_type["sHost"] = &User::sHost;
+	user_type["uid"] = &User::uid;
+	user_type["x"] = &User::px;
+	user_type["y"] = &User::py;
+	user_type["z"] = &User::pz;
+	user_type["vx"] = &User::vx;
+	user_type["vy"] = &User::vy;
+	user_type["vz"] = &User::vz;
+	user_type["r0"] = &User::pr0;
+	user_type["r1"] = &User::pr1;
+	user_type["r2"] = &User::pr2;
+	user_type["scalex"] = &User::scalex;
+	user_type["scaley"] = &User::scaley;
+	user_type["scalez"] = &User::scalez;
+
+	user_type["SendQuit"] = &User::SendQuit;
+	user_type["SendMsg"] = &User::SendMsg;
+	user_type["SendTo"] = &User::SendTo;
+}
+
 
 void User::Close( void )
 {
@@ -324,12 +355,13 @@ void User::ClockSync( char *data, uint16_t sz )
 {
 	uint64_t time, userclock;
 
-	sunpackf(data, "L", &userclock);
+	sunpackf(data, "M", &userclock);
 	time = game->GetTime();
 
 	this->last_update = time;
-	this->clocksync = time - userclock; // measured in hours
-	lprintf("Set clocksync for user %u to %llu", uid, this->clocksync);
+	this->clocksync = (int64_t)time - (int64_t)userclock; // measured in hours of milliseconds, so around   86400000
+																				  // 1677205993456
+	lprintf("Set clocksync for user %u, %llu - %llu, to %lld", uid, time, userclock, this->clocksync);
 }
 
 
@@ -392,17 +424,33 @@ void User::SetVar( char *data, uint16_t sz )
 	game->dirtyset.insert( objid );
 }
 
+void User::ActivateLua( char *data, uint16_t sz )
+{
+	uint16_t objid;
+	Object *obj;
+	unordered_map<uint16_t,Object*>::iterator it;
+
+	sunpackf(data, "u", &objid);
+	it = game->objects.find( objid );
+	if( it == game->objects.end() ) {
+		lprintf("ActivateLua:: Not Found %u!", objid);
+		return;
+	}
+
+	LuaActivate( it->second, ServerEvent::Activate );
+}
+
 void User::SetObjectPositionRotation( char *data, uint16_t sz )
 {
 	uint16_t objid;
 	float x,y,z;
-	float r0,r1,r2,r3;
-	int timestamp_short;
+	float r0,r1,r2;
+	uint16_t timestamp_short;
 	Object *obj;
 	VarData *v;
 	unordered_map<uint16_t,Object*>::iterator it;
 
-	sunpackf(data, "iifffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2, &r3);
+	sunpackf(data, "uuffffff", &objid, &timestamp_short, &x, &y, &z, &r0, &r1, &r2);
 
 	it = game->objects.find( objid );
 	if( it == game->objects.end() ) {
@@ -417,7 +465,6 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 	obj->r0 = r0;
 	obj->r1 = r1;
 	obj->r2 = r2;
-	obj->r3 = r3;
 	obj->last_update = this->last_update + (uint64_t)timestamp_short;
 
 	char *buf;
@@ -426,7 +473,7 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 
 	timestamp_short = (int)(obj->last_update - game->last_timestamp);
 
-	size = spackf(&buf, &alloced, "lifffffff", objid, timestamp_short, x, y, z, r0, r1, r2, r3);
+	size = spackf(&buf, &alloced, "uuffffff", objid, timestamp_short, x, y, z, r0, r1, r2);
 
 	game->SendMsg( CCmdSetObjectPositionRotation, size, buf, this );
 	strmem->Free( buf, alloced );
@@ -461,6 +508,12 @@ void User::Register( char *data, uint16_t sz )
 	}
 
 	this->SendTo(NULL); // sends to all
+
+	vector<sol::function> &funcs = LuaEvent( ServerEvent::Login );
+	for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
+		sol::function &f = *it;
+		f( this );
+	}
 }
 
 void User::SendTo( User *otheruser )
@@ -566,6 +619,9 @@ void User::DynPacket( char *data, uint16_t sz )
 	float rx,ry,rz,rw;
 	int i;
 	int dynlen;
+	unordered_map<uint16_t, Object*>::iterator objit;
+	Object *target;
+	vector<sol::function> funcs;
 
 	ptr1 = ptr = sunpackf(data, "uuui", &cmd, &objtgt, &timestamp_short, &dynlen);
 	//lprintf("Got dyn packet: %u %u %u %d", cmd, objtgt, timestamp_short, dynlen);
@@ -620,6 +676,36 @@ void User::DynPacket( char *data, uint16_t sz )
 			if( (dirtybyte&TransformScale) != 0 ) {
 				ptr = sunpackf(ptr, "FFF", 1000.0, &scalex, 1000.0, &scaley, 1000.0, &scalez);
 			}
+			funcs = LuaUserEvent( this, ServerEvent::Move );
+			for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
+				sol::function &f = *it;
+				f( this );
+			}
+			break;
+		case CNetObjTransform:
+			objit = game->objects.find(objtgt);
+			if( objit == game->objects.end() ) {
+				lprintf("Object %u not found in CNetObjTransform", objtgt);
+				break;
+			}
+			target = objit->second;
+			ptr = sunpackf(ptr, "b", &dirtybyte);
+			if( (dirtybyte&TransformPosition) != 0 ) {
+				ptr = sunpackf(ptr, "FFF", 1000.0, &target->x, 1000.0, &target->y, 1000.0, &target->z);
+			}
+			if( (dirtybyte&TransformRotation) != 0 ) {
+				ptr = sunpackf(ptr, "FFF", 1000.0, &target->r0, 1000.0, &target->r1, 1000.0, &target->r2);
+			}
+			if( (dirtybyte&TransformScale) != 0 ) {
+				ptr = sunpackf(ptr, "FFF", 1000.0, &target->scalex, 1000.0, &target->scaley, 1000.0, &target->scalez);
+			}
+			
+			funcs = LuaObjEvent( target, ServerEvent::Move );
+			for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
+				sol::function &f = *it;
+				f( target );
+			}
+			
 			break;
 	}
 
@@ -770,3 +856,12 @@ void User::PacketTo( char *data, uint16_t sz )
 	strmem->Free( buf2, sz );
 	strmem->Free( buf, alloced );
 }
+
+void User::Echo( char *data, uint16_t sz )
+{
+	char *buf2 = strmem->Alloc( sz );
+	memcpy( buf2, data, sz );
+	SendMsg( CCmdRTTEcho, sz, buf2 );
+	strmem->Free( buf2, sz );
+}
+

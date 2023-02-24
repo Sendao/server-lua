@@ -14,13 +14,19 @@ public:
 
 private:
 	int Test;
-	time_t time;
+	time_t timetime;
 	tm tmx;
 	float speed;
+	long usecs;
+	long last_secs, last_usecs;
 
 public:
-	void InitialiseAPITable(void);
-	
+	static void InitialiseAPITable(void);
+
+public:
+	void UpdateTo(long secs, long usecs);
+
+public: // API:	
 	void SetFull(int newHour, int newMin, int newDay, int newMonth, int newYear);
 	void SetClock(int newHour, int newMin);
 	void SetHour(int newHour);
@@ -38,6 +44,7 @@ public:
 	void PassDays(int days);
 	void SetTotalDaySec(int secs);
 	void SetDaySpeed(float speed);
+	float GetDaySpeed(void);
 	tuple<int, int, int> GetGameClockMinutesUntil();
 };
 

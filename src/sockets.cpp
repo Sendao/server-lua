@@ -36,6 +36,7 @@ void InitSocket(int port)
 
 #ifdef LINUX
 	fcntl(fSock, F_SETFL, O_NONBLOCK);
+	lprintf("Socket in nonblocking mode.");
 #endif
 	setsockopt( fSock, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes) );
 
@@ -99,12 +100,12 @@ User *InitConnection(void)
 	struct sockaddr_in saConn;
 	User *user;
 
-	iTmp = sizeof(struct sockaddr_in);
 #ifdef WIN32
+	iTmp = sizeof(struct sockaddr_in);
 	if( (fUserTest = accept(fSock, (struct sockaddr *)&saConn, &iTmp)) < 0 ) {
 #else
+	sockLen = sizeof(struct sockaddr_in);
 	if( (fUserTest = accept(fSock, (struct sockaddr *)&saConn, (socklen_t*)&sockLen)) < 0 ) {
-//		iTmp = sockLen;
 #endif
 		lprintf("accept(): connection failed '%s'(%d)", strerror(errno), errno);
 		return NULL;
@@ -118,7 +119,16 @@ User *InitConnection(void)
 	user->fSock = fUser;
 
 	user->authority = firstUser ? true : false;
-	firstUser=false;
+	if( firstUser ) {
+		firstUser=false;
+		
+		lua["hostid"] = user->uid;
+		vector<sol::function> &funcs = LuaEvent( ServerEvent::ChangeHost );
+		for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
+			sol::function &f = *it;
+			f( user );
+		}
+	}
 
 	char *ntoa = inet_ntoa(saConn.sin_addr);
 	user->sHost = strmem->Alloc( strlen(ntoa)+1 );
@@ -341,13 +351,13 @@ int InputConnection(User *user)
 		if( ctl == 255 ) {
 			p++;
 			if( p + 4 >= user->inbuf ) {
-				lprintf("Not enough data for compressed packet (-4-).");
+				//lprintf("Not enough data for compressed packet (-4-).");
 				p--;
 				break;
 			}
 			compsize = sz = *p << 24 | *(p+1) << 16 | *(p+2) << 8 | *(p+3);
 			if( p+4+sz >= user->inbuf ) {
-				lprintf("Not enough data for compressed packet (%ld).", compsize);
+				//lprintf("Not enough data for compressed packet (%ld).", compsize);
 				p--;
 				break;
 			}
