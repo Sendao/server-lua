@@ -63,6 +63,16 @@ void Game::mainloop()
 			} else {
 				per.tv_sec = 10-(this_cycle.tv_sec-prev_cycle.tv_sec);// wait up to 10 seconds if no users are doing anything
 			}
+			ituser = usermap.begin();
+			while( ituser != usermap.end() )
+			{
+				user = ituser->second;
+				if( user->outbufsz > 0 )
+				{
+					per.tv_sec = 0;
+					break;
+				}
+			}
 		}
 		usetv = &per;
 		FD_ZERO(&fdI);
