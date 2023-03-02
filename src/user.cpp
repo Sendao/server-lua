@@ -358,13 +358,26 @@ void User::GetFileS( char *filename )
 void User::ClockSync( char *data, uint16_t sz )
 {
 	uint64_t time, userclock;
+	int64_t synctime;
 
 	sunpackf(data, "M", &userclock);
 	time = game->GetTime();
 
-	this->last_update = time;
-	this->clocksync = (int64_t)time - (int64_t)userclock; // measured in hours of milliseconds, so around   86400000
-																				  // 1677205993456
+	this->last_update = userclock;
+	synctime = (int64_t)time - (int64_t)userclock; // measured in hours of milliseconds, so around   86400000
+
+	this->clocksync_readings.push_back( synctime );
+	if( this->clocksync_readings.size() > 10 ) {
+		this->clocksync_readings.erase( this->clocksync_readings.begin() );
+	}
+
+	// get the average from the clocksync_readings vector
+	int64_t sum = 0;
+	for( int i = 0; i < this->clocksync_readings.size(); i++ ) {
+		sum += this->clocksync_readings.at(i);
+	}
+	this->clocksync = sum / this->clocksync_readings.size();
+
 	lprintf("Set clocksync for user %u, %llu - %llu, to %lld", uid, time, userclock, this->clocksync);
 }
 
@@ -471,7 +484,7 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 	obj->r0 = r0;
 	obj->r1 = r1;
 	obj->r2 = r2;
-	obj->last_update = this->last_update + (uint64_t)timestamp_short;
+	obj->last_update = (uint64_t)( this->last_update + timestamp_short + this->clocksync );
 
 	char *buf;
 	u_long alloced = 0;
@@ -532,7 +545,7 @@ void User::SendTo( User *otheruser )
 	AnimParam ap, &apptr=ap;
 
 	lprintf("Send user %u to %u (%f %f %f)", this->uid, otheruser?otheruser->uid:99, x, y, z);
-	timestamp_short = (int)(this->last_update - game->last_timestamp); // maybe we should use the current time instead. This is the time since the last update.
+	timestamp_short = (int)(this->last_update - (game->last_timestamp - this->clocksync));
 
 // newuser packet
 	size = spackf(&buf, &alloced, "uffffff", uid, x, y, z, r0, r1, r2);
@@ -608,7 +621,7 @@ void User::DynPacket( char *data, uint16_t sz )
 	ptr1 = ptr = sunpackf(data, "uuui", &cmd, &objtgt, &timestamp_short, &dynlen);
 	//lprintf("Got dyn packet: %u %u %u %d", cmd, objtgt, timestamp_short, dynlen);
 
-	this_update = this->last_update + (uint64_t)timestamp_short;
+	this_update = this->C2SL( timestamp_short );
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
 	char dirtybyte;
@@ -725,7 +738,7 @@ void User::Packet( char *data, uint16_t sz )
 	ptr = sunpackf(data, "uuu", &cmd, &objtgt, &timestamp_short);
 	//lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
 
-	this_update = this->last_update + (uint64_t)timestamp_short;
+	this_update = this->C2SL( timestamp_short );
 
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
@@ -750,7 +763,6 @@ void User::Packet( char *data, uint16_t sz )
 				otheruser->r1 = r1;
 				otheruser->r2 = r2;
 				lprintf("Set user %d position and rotation to %f %f %f %f %f %f", objtgt, x, y, z, r0, r1, r2);
-				otheruser->last_update = this_update;
 			}
 			break;
 		case CNetSetPosition:
@@ -760,7 +772,6 @@ void User::Packet( char *data, uint16_t sz )
 				otheruser->x = x;
 				otheruser->y = y;
 				otheruser->z = z;
-				otheruser->last_update = this_update;
 			}
 			break;
 		case CNetSetRotation:
@@ -792,7 +803,7 @@ void User::DynPacketTo( char *data, uint16_t sz )
 	ptr1 = ptr = sunpackf(data, "uuuui", &cmd, &cmdto, &objtgt, &timestamp_short, &dynlen);
 	//lprintf("Got dyn packet: %u %u %u %d", cmd, objtgt, timestamp_short, dynlen);
 
-	this_update = this->last_update + (uint64_t)timestamp_short;
+	this_update = this->C2SL( timestamp_short );
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
 	size = spackf(&buf, &alloced, "uuui", cmd, objtgt, timestamp_short, dynlen);
@@ -809,6 +820,29 @@ void User::DynPacketTo( char *data, uint16_t sz )
 
 	strmem->Free( buf2, sz-2 );
 	strmem->Free( buf, alloced );
+}
+
+uint64_t User::C2SL( uint16_t ts_short )
+{
+	uint64_t this_update = this->last_update + (uint64_t)ts_short + this->clocksync;
+	int64_t diff1 = game->last_update - this_update;
+	int32_t diff = (int32_t)abs(diff1);
+	this->c2sl_readings.push_back( diff );
+	if( this->c2sl_readings.size() > 10 ) {
+		this->c2sl_readings.erase( this->c2sl_readings.begin() );
+	}
+	int32_t sum = 0;
+	int count = 0;
+	for( vector<int32_t>::iterator it = this->c2sl_readings.begin(); it != this->c2sl_readings.end(); it++ ) {
+		sum += *it;
+		if( *it != 0 ) count++;
+	}
+	if( count == 0 )
+		this->c2sl = 0;
+	else
+		this->c2sl = sum / (int32_t)count;
+
+	return this_update;
 }
 
 void User::PacketTo( char *data, uint16_t sz )
@@ -828,7 +862,7 @@ void User::PacketTo( char *data, uint16_t sz )
 	ptr = sunpackf(data, "uuuu", &cmd, &cmdto, &objtgt, &timestamp_short);
 	//lprintf("Got packet: %u %u %u", cmd, objtgt, timestamp_short);
 
-	this_update = this->last_update + (uint64_t)timestamp_short;
+	this_update = this->C2SL( timestamp_short );
 
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
@@ -850,7 +884,16 @@ void User::PacketTo( char *data, uint16_t sz )
 
 void User::Echo( char *data, uint16_t sz )
 {
-	SendMsg( CCmdRTTEcho, sz, data );
+	char *buf;
+	u_long alloced=0;
+	long size;
+	uint64_t ts;
+
+	sunpackf(data, "M", &ts); // put some gravy on it:
+	size = spackf(&buf, &alloced, "Ml", ts, this->c2sl);
+
+	SendMsg( CCmdRTTEcho, size, buf );
+	strmem->Free( buf, alloced );
 }
 
 void User::ObjectTop( char *data, uint16_t sz )

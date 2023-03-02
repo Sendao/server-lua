@@ -8,29 +8,12 @@ Next up:
 
 Questions:
  - when are objects rezzed
- - are objectidentifiers and cnetids unique?
  - how are colliders identified, where are they, etc
 
 
 
-Installation:
- - add CNetId to player character and all spawnable objects
-
-
 Objects:
- dictionary sort by name
- register objects by ids
-  - ids should not be included in objectidentifiers list
-- iterate through objectidentifiers
- - active in hierarchy only
-  - find highest id
-  - debug log the ids (inspector? awake?)
-- track objects
- - while not immediately necessary, we need to track all object movement on the server and send it with the varinfo for that object
-
-
-
-
+ - track objectidentifier objects, locations, move to correct location etc.
 
 
 

@@ -72,6 +72,7 @@ void Game::mainloop()
 					per.tv_sec = 0;
 					break;
 				}
+				ituser++;
 			}
 		}
 		usetv = &per;
@@ -105,6 +106,8 @@ void Game::mainloop()
 
 		smalltimeofday(&this_cycle, NULL);
 		clock.UpdateTo(this_cycle.tv_sec, this_cycle.tv_usec);
+		game->last_update = (uint64_t)this_cycle.tv_sec*(uint64_t)1000 + (uint64_t)this_cycle.tv_usec;
+		//lprintf("Set game time to %llu", game->last_update);
 
 		// Disconnect errored machines and process inputs:
 		ituser = usermap.begin();

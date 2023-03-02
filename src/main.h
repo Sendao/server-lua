@@ -422,8 +422,14 @@ class User
 	char *reading_ptr;
 	long reading_sz;
 	FILE *fReading;
-	queue<char*> reading_file_q; // todo: this should be a queue (FIFO)
+	queue<char*> reading_file_q;
+
+	vector<int32_t> c2sl_readings;
+	int32_t c2sl;
+
+	vector<int64_t> clocksync_readings;
 	int64_t clocksync;
+
 	uint64_t last_update;
 
 	uint16_t uid;
@@ -448,6 +454,8 @@ class User
 	void SendQuit(void);
 	void SendMsg( char cmd, unsigned int size, char *data );
 	void SendTo( User * ); // sends all data
+
+	uint64_t C2SL( uint16_t );
 
 	public: // commands (client controlled)
 	void Quit(char *data, uint16_t sz);
