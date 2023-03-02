@@ -46,6 +46,10 @@ void init_commands( void )
 	sizes[SCmdActivateLua] = 0;
 	commands[SCmdEchoRTT] = &User::Echo;
 	sizes[SCmdEchoRTT] = 0;
+	commands[SCmdObjectTop] = &User::ObjectTop;
+	sizes[SCmdObjectTop] = 0;
+	commands[SCmdObjectClaim] = &User::ObjectClaim;
+	sizes[SCmdObjectClaim] = 0;
 }
 
 User::User(void)
@@ -136,7 +140,7 @@ void User::InitialiseAPITable(void)
 void User::Close( void )
 {
 	if( authority ) {
-		game->PickNewAuthority();
+		game->PickNewAuthority(this);
 	}
 	if( fSock != -1 )
 		close( fSock );
@@ -454,11 +458,13 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 
 	it = game->objects.find( objid );
 	if( it == game->objects.end() ) {
-		lprintf("SetObjectPositionRotation:: Not Found %d!", objid);
-		return;
+		obj = (Object*)halloc(sizeof(Object));
+		obj->uid = objid;
+		game->objects[objid] = obj;
+	} else {
+		obj = it->second;
 	}
 
-	obj = it->second;
 	obj->x = x;
 	obj->y = y;
 	obj->z = z;
@@ -525,7 +531,7 @@ void User::SendTo( User *otheruser )
 	uint16_t timestamp_short;
 	AnimParam ap, &apptr=ap;
 
-	lprintf("Send user %u to %u", this->uid, otheruser?otheruser->uid:99);
+	lprintf("Send user %u to %u (%f %f %f)", this->uid, otheruser?otheruser->uid:99, x, y, z);
 	timestamp_short = (int)(this->last_update - game->last_timestamp); // maybe we should use the current time instead. This is the time since the last update.
 
 // newuser packet
@@ -539,6 +545,7 @@ void User::SendTo( User *otheruser )
 	buf = NULL; alloced = 0;
 
 // position + rotation
+/*
 	size = spackf(&buf, &alloced, "uuuffffffcc", CNetSetPositionAndRotation, uid, timestamp_short,
 			x, y, z, r0, r1, r2, true, true);
 	if( !otheruser )
@@ -547,18 +554,18 @@ void User::SendTo( User *otheruser )
 		otheruser->SendMsg( CCmdPacket, size, buf );
 	strmem->Free( buf, alloced );
 	buf=NULL; alloced = 0;
-
+*/
 //! inventory
 
 
 // transform
 	char dirtyfull = 255;
 	char dirtypart = TransformPosition|TransformRotation|TransformScale;
-	size = spackf(&buf, &alloced, "uuuicFFFFFFFFFFFF", CNetTransform, uid, timestamp_short, 25, dirtypart,
-		1000.0, px, 1000.0, py, 1000.0, pz,
-		1000.0, vx, 1000.0, vy, 1000.0, vz,
-		1000.0, pr0, 1000.0, pr1, 1000.0, pr2,
-		1000.0, scalex, 1000.0, scaley, 1000.0, scalez);
+	size = spackf(&buf, &alloced, "uuuicffffffffffff", CNetTransform, uid, timestamp_short, 49, dirtypart,
+		px, py, pz,
+		vx, vy, vz,
+		pr0, pr1, pr2,
+		scalex, scaley, scalez);
 	if( !otheruser )
 		game->SendMsg( CCmdDynPacket, size, buf, this );
 	else
@@ -571,7 +578,7 @@ void User::SendTo( User *otheruser )
 		1000.0, look->distance, 1000.0, look->pitch,
 		1000.0, look->x, 1000.0, look->y, 1000.0, look->z,
 		1000.0, look->dirx, 1000.0, look->diry, 1000.0, look->dirz);
-	//lprintf("Sending lookdir %f %f %f to user %u", look->dirx, look->diry, look->dirz, otheruser? otheruser->uid : 255);
+	lprintf("Sending lookdir %f %f %f to user %u", look->dirx, look->diry, look->dirz, otheruser? otheruser->uid : 99);
 	if( !otheruser )
 		game->SendMsg( CCmdDynPacket, size, buf, this );
 	else
@@ -579,31 +586,6 @@ void User::SendTo( User *otheruser )
 	strmem->Free( buf, alloced );
 	buf=NULL; alloced = 0;
 
-/* animation
-	size = spackf(&buf, &alloced, "iiiiFFFFFicciiiF", CNetInitAnimation, uid, timestamp_short, 22,
-			1000.0, anim->x, 1000.0, anim->z, 1000.0, anim->pitch, 1000.0, anim->yaw, 1000.0, anim->speed,
-			anim->height, anim->moving, anim->aiming,
-			anim->moveSetID, anim->abilityIndex, anim->abilityInt,
-			1000.0, anim->abilityFloat);
-	if( !otheruser )
-		game->SendMsg( CCmdDynPacket, size, buf, this );
-	else
-		otheruser->SendMsg( CCmdDynPacket, size, buf );
-	strmem->Free( buf, alloced );
-	buf=NULL; alloced = 0;
-*/
-
-/* animation parameters
-	for( int i=0; i<anim->params.size(); i++ ) {
-		apptr = anim->params[i];
-		size = spackf(&buf, &alloced, "iiiiiii", CNetInitItemAnimation, uid, timestamp_short, i, apptr.itemid, apptr.stateindex, apptr.substateindex);
-		if( !otheruser )
-			game->SendMsg( CCmdPacket, size, buf, this );
-		else
-			otheruser->SendMsg( CCmdPacket, size, buf );
-		strmem->Free( buf, alloced );
-		buf=NULL; alloced = 0;
-	} */
 }
 
 void User::DynPacket( char *data, uint16_t sz )
@@ -649,6 +631,9 @@ void User::DynPacket( char *data, uint16_t sz )
 
 			if( (dirtybyte&LookDirection) != 0 ) {
 				ptr = sunpackf(ptr, "FFF", 1000.0, &look->dirx, 1000.0, &look->diry, 1000.0, &look->dirz);
+				if( look->dirx == 0 && look->diry == 0 && look->dirz == 0 ) {
+					lprintf("Lookdir was all zero");
+				}
 			}
 			break;
 		case CNetTransform:
@@ -656,25 +641,27 @@ void User::DynPacket( char *data, uint16_t sz )
 			if( (dirtybyte&TransformPlatform) != 0 ) {
 				hasplatform = true;
 				ptr = sunpackf(ptr, "i", &platid);
+		    	/*
 				if( (dirtybyte&TransformPosition) != 0 ) {
-					ptr = sunpackf(ptr, "FFF", 1000.0, &px, 1000.0, &py, 1000.0, &pz);
+					ptr = sunpackf(ptr, "fff", &px, &py, &pz);
 					vx = vy = vz = 0;
 				}
 				if( (dirtybyte&TransformRotation) != 0 ) {
-					ptr = sunpackf(ptr, "FFF", 1000.0, &pr0, 1000.0, &pr1, 1000.0, &pr2);
+					ptr = sunpackf(ptr, "fff", &pr0, &pr1, &pr2);
 				}
+				*/
 			} else {
 				hasplatform = false;
 				platid = 0;
 				if( (dirtybyte&TransformPosition) != 0 ) {
-					ptr = sunpackf(ptr, "FFFFFF", 1000.0, &px, 1000.0, &py, 1000.0, &pz, 1000.0, &vx, 1000.0, &vy, 1000.0, &vz);
+					ptr = sunpackf(ptr, "ffffff", &px, &py, &pz, &vx, &vy, &vz);
 				}
 				if( (dirtybyte&TransformRotation) != 0 ) {
-					ptr = sunpackf(ptr, "FFF", 1000.0, &pr0, 1000.0, &pr1, 1000.0, &pr2);
+					ptr = sunpackf(ptr, "fff", &pr0, &pr1, &pr2);
 				}
 			}
 			if( (dirtybyte&TransformScale) != 0 ) {
-				ptr = sunpackf(ptr, "FFF", 1000.0, &scalex, 1000.0, &scaley, 1000.0, &scalez);
+				ptr = sunpackf(ptr, "fff", &scalex, &scaley, &scalez);
 			}
 			funcs = LuaUserEvent( this, ServerEvent::Move );
 			for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
@@ -685,19 +672,23 @@ void User::DynPacket( char *data, uint16_t sz )
 		case CNetObjTransform:
 			objit = game->objects.find(objtgt);
 			if( objit == game->objects.end() ) {
-				lprintf("Object %u not found in CNetObjTransform", objtgt);
-				break;
+				target = (Object*)halloc(sizeof(Object));
+				new(target) Object();
+
+				target->uid = objtgt;
+				game->objects[objtgt] = target;
+			} else {
+				target = objit->second;
 			}
-			target = objit->second;
 			ptr = sunpackf(ptr, "b", &dirtybyte);
 			if( (dirtybyte&TransformPosition) != 0 ) {
-				ptr = sunpackf(ptr, "FFF", 1000.0, &target->x, 1000.0, &target->y, 1000.0, &target->z);
+				ptr = sunpackf(ptr, "fff", &target->x, &target->y, &target->z);
 			}
 			if( (dirtybyte&TransformRotation) != 0 ) {
-				ptr = sunpackf(ptr, "FFF", 1000.0, &target->r0, 1000.0, &target->r1, 1000.0, &target->r2);
+				ptr = sunpackf(ptr, "fff", &target->r0, &target->r1, &target->r2);
 			}
 			if( (dirtybyte&TransformScale) != 0 ) {
-				ptr = sunpackf(ptr, "FFF", 1000.0, &target->scalex, 1000.0, &target->scaley, 1000.0, &target->scalez);
+				ptr = sunpackf(ptr, "fff", &target->scalex, &target->scaley, &target->scalez);
 			}
 			
 			funcs = LuaObjEvent( target, ServerEvent::Move );
@@ -805,18 +796,18 @@ void User::DynPacketTo( char *data, uint16_t sz )
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
 	size = spackf(&buf, &alloced, "uuui", cmd, objtgt, timestamp_short, dynlen);
-	char *buf2 = strmem->Alloc( sz );
+	char *buf2 = strmem->Alloc( sz-2 );
 	memcpy( buf2, buf, size );
-	memcpy( buf2+size, ptr1, sz-size );
+	memcpy( buf2+size, ptr1, (sz-2)-size );
 
 	unordered_map<uint16_t, User*>::iterator it = game->usermap.find(cmdto);
 	if( it != game->usermap.end() ) {
-		it->second->SendMsg( CCmdPacket, sz, buf2 );
+		it->second->SendMsg( CCmdDynPacket, sz-2, buf2 );
 	} else {
 		lprintf("User %u not found", cmdto);
 	}
 
-	strmem->Free( buf2, sz );
+	strmem->Free( buf2, sz-2 );
 	strmem->Free( buf, alloced );
 }
 
@@ -842,26 +833,51 @@ void User::PacketTo( char *data, uint16_t sz )
 	timestamp_short = (int)(this_update - game->last_timestamp);
 
 	size = spackf(&buf, &alloced, "uuu", cmd, objtgt, timestamp_short);
-	char *buf2 = strmem->Alloc( sz );
+	char *buf2 = strmem->Alloc( sz-2 );
 	memcpy( buf2, buf, size );
-	memcpy( buf2+size, ptr, sz-size );
+	memcpy( buf2+size, ptr, (sz-2)-size );
 
 	it = game->usermap.find(cmdto);
 	if( it != game->usermap.end() ) {
-		it->second->SendMsg( CCmdPacket, sz, buf2 );
+		it->second->SendMsg( CCmdPacket, sz-2, buf2 );
 	} else {
 		lprintf("User %d not found", cmdto);
 	}
 
-	strmem->Free( buf2, sz );
+	strmem->Free( buf2, sz-2 );
 	strmem->Free( buf, alloced );
 }
 
 void User::Echo( char *data, uint16_t sz )
 {
-	char *buf2 = strmem->Alloc( sz );
-	memcpy( buf2, data, sz );
-	SendMsg( CCmdRTTEcho, sz, buf2 );
-	strmem->Free( buf2, sz );
+	SendMsg( CCmdRTTEcho, sz, data );
 }
 
+void User::ObjectTop( char *data, uint16_t sz )
+{
+	uint16_t objid;
+
+	sunpackf(data, "u", &objid);
+	lprintf("ObjectTop: %u", objid);
+
+	if( game->top_var_id <= objid )
+		game->top_var_id = objid+1;
+
+	SendMsg( CCmdTopObject, sz, data );
+}
+
+void User::ObjectClaim( char *data, uint16_t sz )
+{
+	uint16_t objid;
+
+	char *buf;
+	u_long alloced=0;
+	long size;
+
+	sunpackf(data, "u", &objid);
+	lprintf("ObjectClaim: %u by %u", objid, uid);
+
+	size = spackf(&buf, &alloced, "uu", objid, uid);
+	game->SendMsg( CCmdObjectClaim, size, buf );
+	strmem->Free( buf, alloced );
+}

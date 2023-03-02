@@ -73,7 +73,7 @@ std::map< CCmd, const char * > CCmdN = {
 	{ CCmdFileData, "CCmdFileData" },
 	{ CCmdNextFile, "CCmdNextFile" },
 	{ CCmdTimeSync, "CCmdTimeSync" },
-	{ CCmdLinkToObject, "CCmdLinkToObject" },
+	{ CCmdTopObject, "CCmdTopObject" },
 	{ CCmdSetObjectPositionRotation, "CCmdSetObjectPositionRotation" },
 	{ CCmdRegisterUser, "CCmdRegisterUser" },
 	{ CCmdChangeUserRegistration, "CCmdChangeUserRegistration" },
@@ -85,7 +85,8 @@ std::map< CCmd, const char * > CCmdN = {
 	{ CCmdClockSetTotalDaySec, "CCmdClockSetTotalDaySec" },
 	{ CCmdClockSetDaySpeed, "CCmdClockSetDaySpeed" },
 	{ CCmdClockSync, "CCmdClockSync" },
-	{ CCmdRTTEcho, "CCmdRTTEcho" }
+	{ CCmdRTTEcho, "CCmdRTTEcho" },
+	{ CCmdObjectClaim, "CCmdObjectClaim" },
 };
 
 std::map< SCmd, const char * > SCmdN = {
@@ -105,7 +106,9 @@ std::map< SCmd, const char * > SCmdN = {
 	{ SCmdPacketTo, "SCmdPacketTo" },
 	{ SCmdDynPacketTo, "SCmdDynPacketTo" },
 	{ SCmdActivateLua, "SCmdActivateLua" },
-	{ SCmdEchoRTT, "SCmdEchoRTT" }
+	{ SCmdEchoRTT, "SCmdEchoRTT" },
+	{ SCmdObjectTop, "SCmdObjectTop" },
+	{ SCmdObjectClaim, "SCMDObjectClaim" },
 };
 
 std::map< ServerEvent, const char * > ServerEventN = {
@@ -148,6 +151,7 @@ vector<sol::function> &LuaEvent( uint16_t cmd )
 vector<sol::function> &LuaObjEvent( Object *obj, uint16_t cmd )
 {
 	static vector<sol::function> empty;
+	if( !obj->name ) return empty;
 	unordered_map<string,unordered_map<uint16_t,vector<sol::function>>>::iterator it = lua_obj_callbacks.find( obj->name );
 	if( it != lua_obj_callbacks.end() )
 	{
@@ -176,6 +180,8 @@ vector<sol::function> &LuaUserEvent( User *obj, uint16_t cmd )
 
 void LuaActivate( Object *obj, uint16_t cmd )
 {
+	if( !obj->name ) return;
+
 	unordered_map<string,unordered_map<uint16_t,vector<sol::function>>>::iterator it = lua_obj_callbacks.find( obj->name );
 	if( it != lua_obj_callbacks.end() )
 	{

@@ -121,6 +121,7 @@ User *InitConnection(void)
 	user->authority = firstUser ? true : false;
 	if( firstUser ) {
 		firstUser=false;
+		lprintf("Set host");
 		
 		lua["hostid"] = user->uid;
 		vector<sol::function> &funcs = LuaEvent( ServerEvent::ChangeHost );
@@ -128,6 +129,8 @@ User *InitConnection(void)
 			sol::function &f = *it;
 			f( user );
 		}
+	} else {
+		lprintf("Set user");
 	}
 
 	char *ntoa = inet_ntoa(saConn.sin_addr);
@@ -304,10 +307,25 @@ int OutputConnection(User *user)
 	return iSent<0?-1:0;
 }
 
+void dumpBytes(char *bytes, int len)
+{
+	int i;
+	char buf[5];
+	char *report = strmem->Alloc( len*4 + 1 );
+
+	*report = '\0';
+	for(i=0; i<len; i++) {
+		sprintf(buf, "%d ", (int)(unsigned char)bytes[i]);
+		strcat(report, buf);
+	}
+	lprintf("Bytes: %s", report);
+}
+
 int InputConnection(User *user)
 {
 	int iSize;
-	char *p, *tmpbuf;
+	unsigned char *p;
+	char *tmpbuf;
 	z_stream strm = {0};
 	unsigned char in[1024];
 	unsigned char out[1024];
@@ -335,7 +353,7 @@ int InputConnection(User *user)
 	int ilen;
 	unsigned char smallsz;
 	char *msgbuf;
-	char *endpt;
+	unsigned char *endpt;
 	unsigned char ctl, cmdByte;
 
 	char *subbuf;
@@ -345,18 +363,18 @@ int InputConnection(User *user)
 	int leftover_sz=0;
 	bool failed=false;
 
-	p = user->inbuf_memory;
-	while( p+2 < user->inbuf ) {
-		ctl = *(unsigned char*)p;
+	p = (unsigned char*)user->inbuf_memory;
+	while( p+2 < (unsigned char*)user->inbuf ) {
+		ctl = *p;
 		if( ctl == 255 ) {
 			p++;
-			if( p + 4 >= user->inbuf ) {
+			if( p + 4 >= (unsigned char*)user->inbuf ) {
 				//lprintf("Not enough data for compressed packet (-4-).");
 				p--;
 				break;
 			}
-			compsize = sz = *p << 24 | *(p+1) << 16 | *(p+2) << 8 | *(p+3);
-			if( p+4+sz >= user->inbuf ) {
+			compsize = sz = (long)*p << 24 | (long)*(p+1) << 16 | (long)*(p+2) << 8 | (long)*(p+3)&0xFF;
+			if( p+4+sz >= (unsigned char*)user->inbuf ) {
 				//lprintf("Not enough data for compressed packet (%ld).", compsize);
 				p--;
 				break;
@@ -368,10 +386,10 @@ int InputConnection(User *user)
 			strm.zfree = Z_NULL;
 			strm.opaque = Z_NULL;
 			strm.avail_in = 0;
-			strm.next_in = (unsigned char*)p;
+			strm.next_in = p;
 			status = inflateInit2(&strm, 32|15);
 			strm.avail_in = sz;
-			strm.next_in = (unsigned char*)p;
+			strm.next_in = p;
 			failed = false;
 			leftover = NULL;
 			leftover_sz = 0;
@@ -464,28 +482,29 @@ int InputConnection(User *user)
 
 			inflateEnd(&strm);
 			continue;
-		} else if( p+1+ctl >= user->inbuf ) {
+		} else if( p+1+ctl >= (unsigned char*)user->inbuf ) {
 			// not enough data in the buffer to read the packet
 			break;
 		} else {
 			p++;
 		}
 		//lprintf("Got %d packet size (inbufsz=%d)", (int)ctl, user->inbufsz);
-		if( p+ctl >= user->inbuf ) {
-			lprintf("Overflow: %d bytes", (user->inbuf)-(p+ctl));
+		if( p+ctl >= (unsigned char*)user->inbuf ) {
+			lprintf("Overflow: %d bytes", (unsigned char*)(user->inbuf)-(p+ctl));
 		}
 		endpt = p+ctl;
 		while( p < endpt ) {
 			cmdByte = *p;
-			ilen = (int)((*(p+1)<<8) | (*(p+2)&0xFF));
+			ilen = (unsigned int)((unsigned int)(*(p+1)<<8) | (unsigned int)(*(p+2)&0xFF));
 			//lprintf("Got cmd %d size %d", cmdByte, ilen);
 			if( ilen == 0 ) {
 				msgbuf = strmem->Alloc(3);
 				memcpy( msgbuf, p, 3 );
 				user->messages.push_back(msgbuf);
 				p += 3;
-			} else if( ilen+3+p >= user->inbuf || ilen<0 ) {
-				lprintf("Broken packet. Size: %d left: %d", ilen+3, (int)(user->inbuf-p));
+			} else if( ilen+3+p >= (unsigned char*)user->inbuf || ilen<0 ) {
+				dumpBytes(user->inbuf_memory, user->inbufsz);
+				lprintf("Broken packet @ %d. Size: %d left: %d", (p-(unsigned char*)user->inbuf_memory), ilen+3, (int)((unsigned char*)user->inbuf-p));
 				return -1;
 			} else {
 				msgbuf = strmem->Alloc(ilen+3);
@@ -498,8 +517,8 @@ int InputConnection(User *user)
 	if( failed )
 		return -1;
 
-	if( p != user->inbuf_memory ) { // we have read some data so we need to trim the input buffer
-		sz = p - user->inbuf_memory;
+	if( p != (unsigned char*)user->inbuf_memory ) { // we have read some data so we need to trim the input buffer
+		sz = p - (unsigned char*)user->inbuf_memory;
 		user->inbufsz -= sz;
 		if( user->inbufsz < 0 ) {
 			lprintf("ERROR: inbufsz<0");

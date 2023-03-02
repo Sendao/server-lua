@@ -69,7 +69,8 @@ enum SCmd {
 	SCmdDynPacketTo,
 	SCmdActivateLua,
 	SCmdEchoRTT,
-
+	SCmdObjectTop,
+	SCmdObjectClaim,
 	SCmdLast
 };
 
@@ -80,7 +81,7 @@ enum CCmd {
 	CCmdFileData,
 	CCmdNextFile,
 	CCmdTimeSync,
-	CCmdLinkToObject,
+	CCmdTopObject,
 	CCmdSetObjectPositionRotation,
 	CCmdRegisterUser,
 	CCmdChangeUserRegistration,
@@ -93,7 +94,7 @@ enum CCmd {
 	CCmdClockSetDaySpeed,
 	CCmdClockSync,
 	CCmdRTTEcho,
-
+	CCmdObjectClaim,
 	CCmdLast
 };
 
@@ -326,7 +327,7 @@ class Game
 	void IdentifyVar( char *name, int type, User *sender );
 	Object *FindObject( uint16_t uid );
 	void SendMsg( char cmd, unsigned int size, char *data, User *exclude=NULL );
-	void PickNewAuthority( void );
+	void PickNewAuthority( User *exclude );
 };
 extern Game *game;
 
@@ -468,6 +469,8 @@ class User
 	void PacketTo(char *data, uint16_t sz);
 	void ActivateLua(char *data, uint16_t sz);
 	void Echo(char *data, uint16_t sz);
+	void ObjectTop(char *data, uint16_t sz);
+	void ObjectClaim(char *data, uint16_t sz);
 };
 
 

@@ -40,7 +40,7 @@ function OnFaster(obj)
 end
 
 Log("Registering events " .. Event["Login"])
-game.clock:SetDaySpeed(1024)
+game.clock:SetDaySpeed(256)
 RegisterEvent( Event["Login"], OnLogin )
 RegisterObjEvent( Event["Activate"], "Midnight", OnMidnight )
 RegisterObjEvent( Event["Activate"], "Noon", OnNoon )

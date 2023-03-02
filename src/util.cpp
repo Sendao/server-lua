@@ -477,7 +477,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 			case 'f':
 				FloatChar x;
 				x.f = (float)va_arg(args, double);
-				while( bufsz+sizeof(float) >= *alloced ) {
+				while( bufsz+4 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
 					*alloced *= 2;
 					buffer = buf + bufsz;
@@ -486,8 +486,8 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				*(buffer+1) = x.c[1];
 				*(buffer+2) = x.c[2];
 				*(buffer+3) = x.c[3];
-				buffer += sizeof(float);
-				bufsz += sizeof(float);
+				buffer += 4;
+				bufsz += 4;
 				continue;
 			case 'F':
 				maxbase = (float)va_arg(args, double);

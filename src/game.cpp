@@ -3,7 +3,7 @@
 
 Game::Game()
 {
-
+	top_var_id = 100;
 }
 Game::~Game()
 {
@@ -356,20 +356,21 @@ void Game::SendMsg( char cmd, unsigned int size, char *data, User *exclude )
 	strmem->Free(buf, alloced);
 	
 }
-void Game::PickNewAuthority( void )
+void Game::PickNewAuthority( User *exclude )
 {
 	unordered_map<uint16_t, User*>::iterator ituser;
 
 	ituser = usermap.begin();
+	if( ituser != usermap.end() && ituser->second == exclude )
+		ituser++;
 	if( ituser == usermap.end() ) {
 		lprintf("No users, waiting for host.");
 		firstUser = true;
-		// no users found
-		
+		// no users found		
 		return;
 	}
-	lprintf("Changing host.");
 	User *user = ituser->second;
+	lprintf("Changing host to %u.", user->uid);
 	char *buf;
 	u_long alloced = 0;
 	long size;
