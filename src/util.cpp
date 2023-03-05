@@ -463,7 +463,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 	{
 		switch( *fmt++ )
 		{
-			case 'c':
+			case 'c': case 'b':
 				c = (char)va_arg(args, int);
 				while( bufsz+1 >= *alloced ) {
 					*target =buf = strmem->Realloc(buf, *alloced, *alloced*2);

@@ -33,6 +33,7 @@
 using namespace std;
 
 
+typedef class Npc Npc;
 typedef class User User;
 typedef class Object Object;
 typedef class Game Game;
@@ -71,7 +72,8 @@ enum SCmd {
 	SCmdEchoRTT,
 	SCmdObjectTop,
 	SCmdObjectClaim,
-	SCmdLast
+	SCmdSpawn,
+	SCmdLast,
 };
 
 enum CCmd {
@@ -95,6 +97,7 @@ enum CCmd {
 	CCmdClockSync,
 	CCmdRTTEcho,
 	CCmdObjectClaim,
+	CCmdSpawn,
 	CCmdLast
 };
 
@@ -316,6 +319,7 @@ class Game
 
 	unordered_map<uint16_t, User*> usermap;
 	unordered_map<uint16_t, Object*> objects;
+	unordered_map<uint16_t, Npc*> npcs;
 
 	public:
 	uint64_t last_update, last_timestamp;
@@ -343,6 +347,7 @@ class Object
 	public:
 	uint16_t uid;
 	char *name;
+	bool spawned;
 
 	uint64_t last_update;
 	float x, y, z;
@@ -351,6 +356,25 @@ class Object
 	uint64_t prev_update;
 	float prev_x, prev_y, pre_z;
 	float prev_r0, prev_r1, prev_r2, prev_r3;
+};
+
+class Npc
+{
+	public:
+	Npc();
+	~Npc();
+
+	public:
+	//static void InitialiseAPITable(void);
+
+	public:
+	uint16_t uid;
+	char *name;
+	
+	uint64_t last_update;
+	float x, y, z;
+	float r0, r1, r2;
+	float scalex, scaley, scalez;
 };
 
 
@@ -479,6 +503,7 @@ class User
 	void Echo(char *data, uint16_t sz);
 	void ObjectTop(char *data, uint16_t sz);
 	void ObjectClaim(char *data, uint16_t sz);
+	void Spawn(char *data, uint16_t sz);
 };
 
 

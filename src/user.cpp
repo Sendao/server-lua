@@ -50,6 +50,8 @@ void init_commands( void )
 	sizes[SCmdObjectTop] = 0;
 	commands[SCmdObjectClaim] = &User::ObjectClaim;
 	sizes[SCmdObjectClaim] = 0;
+	commands[SCmdSpawn] = &User::Spawn;
+	sizes[SCmdSpawn] = 0;
 }
 
 User::User(void)
@@ -170,6 +172,7 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 	if( sizes[cmd] == 0 ) {
 		bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
 	} else {
+		lprintf("watch out using this");
 		bufsz = spackf(&buf, &alloced, "cx", cmd, size, data ); // do not include size
 	}
 	Output( this, buf, bufsz );
@@ -367,7 +370,7 @@ void User::ClockSync( char *data, uint16_t sz )
 	synctime = (int64_t)time - (int64_t)userclock; // measured in hours of milliseconds, so around   86400000
 
 	this->clocksync_readings.push_back( synctime );
-	if( this->clocksync_readings.size() > 10 ) {
+	if( this->clocksync_readings.size() > 60 ) {
 		this->clocksync_readings.erase( this->clocksync_readings.begin() );
 	}
 
@@ -378,7 +381,7 @@ void User::ClockSync( char *data, uint16_t sz )
 	}
 	this->clocksync = sum / this->clocksync_readings.size();
 
-	lprintf("Set clocksync for user %u, %llu - %llu, to %lld", uid, time, userclock, this->clocksync);
+	//lprintf("Set clocksync for user %u, %llu - %llu, to %lld", uid, time, userclock, this->clocksync);
 }
 
 
@@ -506,16 +509,21 @@ void User::Register( char *data, uint16_t sz )
 {
 	char *buf;
 	long size;
+	unsigned char type;
 	u_long alloced = 0;
 	User *otheruser;
+	Object *otherobj;
+	Npc *othernpc;
 	unordered_map<uint16_t,User*>::iterator ituser;
+	unordered_map<uint16_t,Object*>::iterator itobj;
+	unordered_map<uint16_t,Npc*>::iterator itnpc;
 
 	sunpackf(data, "ffffff", &this->x, &this->y, &this->z, &this->r0, &this->r1, &this->r2);
 	
 
 	size = spackf(&buf, &alloced, "ci", this->authority?1:0, this->uid);
 	SendMsg( CCmdRegisterUser, size, buf );
-	strmem->Free( buf, alloced );
+	strmem->Free( buf, alloced ); alloced = 0;
 	lprintf("Register: Found user %u at %f %f %f", this->uid, this->x, this->y, this->z);
 
 	ituser = game->usermap.begin();
@@ -526,7 +534,31 @@ void User::Register( char *data, uint16_t sz )
 		ituser++;
 	}
 
-	this->SendTo(NULL); // sends to all
+	itobj = game->objects.begin();
+	type = 0;
+	while( itobj != game->objects.end() ) {
+		otherobj = itobj->second;
+		if( otherobj->spawned ) {
+			size = spackf(&buf, &alloced, "bufffffffff", type, otherobj->uid, otherobj->x, otherobj->y, otherobj->z, otherobj->r0, otherobj->r1, otherobj->r2, otherobj->scalex, otherobj->scaley, otherobj->scalez);
+			SendMsg( CCmdSpawn, size, buf );
+			strmem->Free( buf, alloced );
+			alloced = 0;
+		}
+		itobj++;
+	}
+
+	itnpc = game->npcs.begin();
+	type = 1;
+	while( itnpc != game->npcs.end() ) {
+		othernpc = itnpc->second;
+		size = spackf(&buf, &alloced, "bufffffffff", type, othernpc->uid, othernpc->x, othernpc->y, othernpc->z, othernpc->r0, othernpc->r1, othernpc->r2, othernpc->scalex, othernpc->scaley, othernpc->scalez);
+		SendMsg( CCmdSpawn, size, buf );
+		strmem->Free( buf, alloced );
+		alloced = 0;
+		itnpc++;
+	}
+
+	this->SendTo(NULL); // sends me to all
 
 	vector<sol::function> &funcs = LuaEvent( ServerEvent::Login );
 	for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
@@ -814,8 +846,6 @@ void User::DynPacketTo( char *data, uint16_t sz )
 	unordered_map<uint16_t, User*>::iterator it = game->usermap.find(cmdto);
 	if( it != game->usermap.end() ) {
 		it->second->SendMsg( CCmdDynPacket, sz-2, buf2 );
-	} else {
-		lprintf("User %u not found", cmdto);
 	}
 
 	strmem->Free( buf2, sz-2 );
@@ -874,8 +904,6 @@ void User::PacketTo( char *data, uint16_t sz )
 	it = game->usermap.find(cmdto);
 	if( it != game->usermap.end() ) {
 		it->second->SendMsg( CCmdPacket, sz-2, buf2 );
-	} else {
-		lprintf("User %d not found", cmdto);
 	}
 
 	strmem->Free( buf2, sz-2 );
@@ -923,4 +951,59 @@ void User::ObjectClaim( char *data, uint16_t sz )
 	size = spackf(&buf, &alloced, "uu", objid, uid);
 	game->SendMsg( CCmdObjectClaim, size, buf );
 	strmem->Free( buf, alloced );
+}
+
+void User::Spawn( char *data, uint16_t sz )
+{
+	char *ptr;
+
+	char *buf;
+	u_long alloced=0;
+	long size;
+
+	unsigned char type;
+	uint16_t spawnid;
+
+	ptr = sunpackf(data, "bu", &type, &spawnid);
+
+	lprintf("Spawn: %u %u", (uint16_t)type, spawnid);
+
+	if( type == 0 ) { // object
+		Object *o = (Object*)halloc(sizeof(Object));
+		new(o) Object();
+
+		o->uid = game->top_var_id++;
+		o->spawned = true;
+		sunpackf(ptr, "fffffffff", &o->x, &o->y, &o->z, &o->r0, &o->r1, &o->r2, &o->scalex, &o->scaley, &o->scalez);
+
+		size = spackf(&buf, &alloced, "bufffffffff", type, o->uid, o->x, o->y, o->z, o->r0, o->r1, o->r2, o->scalex, o->scaley, o->scalez);
+		game->SendMsg( CCmdSpawn, size, buf, this );
+		strmem->Free( buf, alloced );
+		alloced = 0; buf = NULL;
+
+		size = spackf(&buf, &alloced, "buu", 99, spawnid, o->uid);
+		SendMsg( CCmdSpawn, size, buf );
+		strmem->Free( buf, alloced );
+
+		game->objects[ o->uid ] = o;
+	} else if( type == 1 ) { // npc
+		Npc *n = (Npc*)halloc(sizeof(Npc));
+		new(n) Npc();
+
+		n->uid = game->top_var_id++;
+		sunpackf(ptr, "fffffffff", &n->x, &n->y, &n->z, &n->r0, &n->r1, &n->r2, &n->scalex, &n->scaley, &n->scalez);
+
+		size = spackf(&buf, &alloced, "bufffffffff", type, n->uid, n->x, n->y, n->z, n->r0, n->r1, n->r2, n->scalex, n->scaley, n->scalez);
+		game->SendMsg( CCmdSpawn, size, buf, this );
+		strmem->Free( buf, alloced );
+		alloced = 0; buf = NULL;
+
+		type=99;
+		size = spackf(&buf, &alloced, "buu", type, spawnid, n->uid);
+		SendMsg( CCmdSpawn, size, buf );
+		lprintf("sent npc spawn confirm (size %ld)", size);
+		strmem->Free( buf, alloced );
+
+		game->npcs[ n->uid ] = n;
+	}
 }

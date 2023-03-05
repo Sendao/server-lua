@@ -87,6 +87,7 @@ std::map< CCmd, const char * > CCmdN = {
 	{ CCmdClockSync, "CCmdClockSync" },
 	{ CCmdRTTEcho, "CCmdRTTEcho" },
 	{ CCmdObjectClaim, "CCmdObjectClaim" },
+	{ CCmdSpawn, "CCmdSpawn" },
 };
 
 std::map< SCmd, const char * > SCmdN = {
@@ -108,7 +109,8 @@ std::map< SCmd, const char * > SCmdN = {
 	{ SCmdActivateLua, "SCmdActivateLua" },
 	{ SCmdEchoRTT, "SCmdEchoRTT" },
 	{ SCmdObjectTop, "SCmdObjectTop" },
-	{ SCmdObjectClaim, "SCMDObjectClaim" },
+	{ SCmdObjectClaim, "SCmdObjectClaim" },
+	{ SCmdSpawn, "ScmdSpawn" },
 };
 
 std::map< ServerEvent, const char * > ServerEventN = {
