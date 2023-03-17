@@ -73,6 +73,18 @@ char *StringMemory::Realloc( char *ptr, size_t orig_sz, size_t new_sz )
 
 	return np;
 }
+
+unsigned char *StringMemory::Realloc( unsigned char *ptr, size_t orig_sz, size_t new_sz )
+{
+	unsigned char *np = (unsigned char*)Alloc( new_sz );
+
+	if( orig_sz != 0 ) {
+		memcpy( np, ptr, orig_sz );
+		Free( (char*)ptr, orig_sz );
+	}
+
+	return np;
+}
 char *StringMemory::ReallocStr( char *ptr, size_t orig_sz, size_t new_sz )
 {
 	char *np = Alloc( new_sz );
@@ -134,10 +146,12 @@ char *StringMemory::Alloc( size_t sz )
 	
 	// no free block found, allocate new
 	ptr = (char*)malloc( sz );
+	/*
 	StringMemoryItem sptr(ptr, sz);
 	StringMemoryItem2 ssz(ptr, sz);
 	items_ptr.insert( sptr );
 	items_sz.insert( ssz );
+	*/
 	return ptr;
 }
 

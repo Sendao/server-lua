@@ -73,6 +73,7 @@ enum SCmd {
 	SCmdObjectTop,
 	SCmdObjectClaim,
 	SCmdSpawn,
+	SCmdNPCRecipe,
 	SCmdLast,
 };
 
@@ -98,6 +99,7 @@ enum CCmd {
 	CCmdRTTEcho,
 	CCmdObjectClaim,
 	CCmdSpawn,
+	CCmdNPCRecipe,
 	CCmdLast
 };
 
@@ -370,11 +372,16 @@ class Npc
 	public:
 	uint16_t uid;
 	char *name;
+	char *recipe;
 	
 	uint64_t last_update;
 	float x, y, z;
+	float vx, vy, vz;
 	float r0, r1, r2;
 	float scalex, scaley, scalez;
+
+	bool hasplatform;
+	uint16_t platid;
 };
 
 
@@ -504,6 +511,7 @@ class User
 	void ObjectTop(char *data, uint16_t sz);
 	void ObjectClaim(char *data, uint16_t sz);
 	void Spawn(char *data, uint16_t sz);
+	void NPCRecipe(char *data, uint16_t sz);
 };
 
 
@@ -569,6 +577,7 @@ class StringMemory
 	public:
 	char *Alloc( size_t sz );
 	char *Realloc( char *ptr, size_t orig_sz, size_t new_sz );
+	unsigned char *Realloc( unsigned char *ptr, size_t orig_sz, size_t new_sz );
 	char *ReallocStr( char *ptr, size_t orig_sz, size_t new_sz );
 	void Free( char *ptr, size_t sz );
 };

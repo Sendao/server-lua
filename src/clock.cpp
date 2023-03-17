@@ -8,10 +8,20 @@ Clock::Clock()
 	time( &this->timetime );
 	struct tm *tmptr = localtime( &this->timetime );
 	memcpy( &tmx, tmptr, sizeof(tm) );
+	lprintf("Clock initialized");
+	last_secs = timetime;
+	last_usecs = 0;
 }
 Clock::Clock( int secs )
 {
-
+	usecs = 0;
+	speed = 1;
+	time( &this->timetime );
+	struct tm *tmptr = localtime( &this->timetime );
+	memcpy( &tmx, tmptr, sizeof(tm) );
+	lprintf("Clock initialized");
+	last_secs = timetime;
+	last_usecs = 0;
 }
 
 Clock::~Clock()

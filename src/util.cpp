@@ -264,8 +264,9 @@ void mystrim( char **pbuf )
 	}
 }
 
-char *sunpackf( char *buffer, const char *fmt, ... )
+char *sunpackf( char *buffer1, const char *fmt, ... )
 {
+	unsigned char *buffer = (unsigned char*)buffer1;
 	va_list args;
 	unsigned long *len, mylen;
 	unsigned int *ilen;
@@ -363,20 +364,43 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				buffer += 4;
 				continue;
 			case 's':
-				mylen = *buffer << 8 | *(buffer+1);
+				mylen = (uint16_t)(*buffer << 8) | (uint16_t)*(buffer+1);
 				buffer += 2;/*
 				lprintf("str at %s, mylen: %d", buffer, mylen);
 				for( int j = 0; j < mylen; j++ ) {
 					lprintf("pt %c %d", *(buffer+j), (int)*(buffer+j));
 				}
 				lprintf("mylen now: %d", mylen);*/
+				lprintf("mylen: %lu", mylen);
 				s = (char**)va_arg(args, char**);
 				*s = strmem->Alloc(mylen+1);
 				if( mylen != 0 ) {
-					strncpy(*s, buffer, mylen);
+					memcpy(*s, (char*)buffer, mylen);
+					(*s)[mylen] = '\0';
+					if( strlen(*s) != mylen ) {
+						lprintf("memcpy failed (%d)", strlen(*s));
+					}
 					buffer += mylen;
 				}
 				(*s)[mylen] = '\0';
+				continue;
+			case 'S':
+				mylen = (uint32_t)*buffer << 24 | (uint32_t)*(buffer+1) << 16 | (uint32_t)*(buffer+2) << 8 | (uint32_t)*(buffer+3);
+				//lprintf("mylen bytes: %d %d %d %d", *buffer, *(buffer+1), *(buffer+2), *(buffer+3));
+				buffer += 4;
+				//lprintf("mylen: %lu", mylen);
+				s = (char**)va_arg(args, char**);
+				*s = strmem->Alloc(mylen+1);
+				if( mylen != 0 ) {
+					memcpy(*s, (char*)buffer, mylen);
+					(*s)[mylen] = '\0';
+					if( strlen(*s) != mylen ) {
+						lprintf("memcpy failed (%d)", strlen(*s));
+					}
+					buffer += mylen;
+				} else {
+					(*s)[mylen] = '\0';
+				}
 				continue;
 			case 'V':
 				len = va_arg(args, unsigned long*);
@@ -393,7 +417,7 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 				continue;
 			case 'v': // use an int for length
 				ilen = va_arg(args, unsigned int*);
-				*ilen = (uint16_t)( *buffer<<8 | *(buffer+1) & 0xFF );
+				*ilen = (uint16_t)( (uint16_t)*buffer<<8 | *(buffer+1) & 0xFF );
 				buffer += 2;
 				p = (char**)va_arg(args, char**);
 				if( *ilen != 0 ) {
@@ -430,13 +454,14 @@ char *sunpackf( char *buffer, const char *fmt, ... )
 		}
 	}
 	va_end(args);
-	return buffer;
+	return (char*)buffer;
 }
-long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
+long spackf( char **target1, unsigned long *alloced, const char *fmt, ... )
 {
+	unsigned char **target = (unsigned char **)target1;
 	*alloced = 32;
-	char *buf = strmem->Alloc(*alloced);
-	char *buffer = buf;
+	unsigned char *buf = (unsigned char *)strmem->Alloc(*alloced);
+	unsigned char *buffer = buf;
 	*target = buf;
 	long bufsz=0;
 	union FloatChar {
@@ -467,6 +492,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				c = (char)va_arg(args, int);
 				while( bufsz+1 >= *alloced ) {
 					*target =buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -479,6 +505,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				x.f = (float)va_arg(args, double);
 				while( bufsz+4 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -505,6 +532,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				i = (int)va_arg(args, int);
 				while( bufsz+2 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -517,6 +545,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				u = (uint16_t)va_arg(args, unsigned int);
 				while( bufsz+2 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -527,8 +556,9 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				continue;
 			case 'l':
 				l = va_arg(args, long);
-				while( bufsz+sizeof(long) >= *alloced ) {
+				while( bufsz+4 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -543,6 +573,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				ul = (uint32_t)va_arg(args, unsigned long);
 				while( bufsz+4 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -557,6 +588,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				ll = va_arg(args, long long);
 				while( bufsz+8 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -575,6 +607,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				ull = (uint64_t)va_arg(args, unsigned long long);
 				while( bufsz+8 >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -597,6 +630,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 					ilen = (unsigned int)strlen(s);
 				while( bufsz+2+ilen >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -605,9 +639,33 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				buffer += 2;
 				bufsz += 2;
 				if( ilen != 0 ) {
-					strncpy(buffer, s, ilen);
+					memcpy((char*)buffer, s, ilen);
 					buffer += ilen;
 					bufsz += ilen;
+				}
+				continue;
+			case 'S':
+				s = va_arg(args, char*);
+				if( !s || !*s )
+					len = 0;
+				else
+					len = (unsigned long)strlen(s);
+				while( bufsz+4+len >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
+					*alloced *= 2;
+					buffer = buf + bufsz;
+				}
+				*buffer = (len >> 24) & 0xFF;
+				*(buffer+1) = (len >> 16) & 0xFF;
+				*(buffer+2) = (len >> 8) & 0xFF;
+				*(buffer+3) = (len) & 0xFF;
+				buffer += 4;
+				bufsz += 4;
+				if( len != 0 ) {
+					memcpy( buffer, s, len );//strncpy((char*)buffer, s, len); - avoid putting the 0 at the end
+					buffer += len;
+					bufsz += len;
 				}
 				continue;
 			case 'V':
@@ -615,6 +673,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				p = va_arg(args, char*);
 				while( bufsz+4+len >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -635,6 +694,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				p = va_arg(args, char*);
 				while( bufsz+2+ilen >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -655,6 +715,7 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				p = va_arg(args, char*);
 				while( bufsz+sizeof(unsigned char)+smol >= *alloced ) {
 					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
 					*alloced *= 2;
 					buffer = buf + bufsz;
 				}
@@ -669,6 +730,12 @@ long spackf( char **target, unsigned long *alloced, const char *fmt, ... )
 				continue;
 			case 'x': // external length. do not add length to stream.
 				ilen = va_arg(args, unsigned int);
+				if( bufsz+ilen >= *alloced ) {
+					*target = buf = strmem->Realloc(buf, *alloced, *alloced*2);
+					*target1 = (char*)*target;
+					*alloced *= 2;
+					buffer = buf + bufsz;
+				}
 				memcpy(buffer, p, ilen);
 				buffer += ilen;
 				bufsz += ilen;

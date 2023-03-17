@@ -75,7 +75,7 @@ public class CNetCharacter : MonoBehaviour, INetworkCharacter, ICNetReg
 
 			NetSocket.Instance.RegisterPacket( CNetFlag.FlashlightToggle, id.id, OnFlashlightToggle, 1 );
 
-			NetSocket.Instance.RegisterPacket( CNetFlag.PushRigidbody, id.id, OnPushRigidbody, 36 );
+			NetSocket.Instance.RegisterPacket( CNetFlag.PushRigidbody, id.id, OnPushRigidbody, 26 );
 			NetSocket.Instance.RegisterPacket( CNetFlag.SetRotation, id.id, OnSetRotation, 13 );
 			NetSocket.Instance.RegisterPacket( CNetFlag.SetPosition, id.id, OnSetPosition, 13 );
 			NetSocket.Instance.RegisterPacket( CNetFlag.ResetPositionRotation, id.id, OnResetPositionRotation, 0 );

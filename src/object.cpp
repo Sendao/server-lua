@@ -6,6 +6,7 @@ Object::Object()
 	r0=r1=r2=0;
 	last_update=0;
 	name = NULL;
+	spawned = false;
 }
 
 Object::~Object()

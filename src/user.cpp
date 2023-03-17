@@ -52,6 +52,8 @@ void init_commands( void )
 	sizes[SCmdObjectClaim] = 0;
 	commands[SCmdSpawn] = &User::Spawn;
 	sizes[SCmdSpawn] = 0;
+	commands[SCmdNPCRecipe] = &User::NPCRecipe;
+	sizes[SCmdNPCRecipe] = 0;
 }
 
 User::User(void)
@@ -90,15 +92,23 @@ User::User(void)
 	look->dirx = 0;
 	look->diry = 0;
 	look->dirz = -1;
+
+	hasplatform = false;
+	c2sl = 0;
 }
 
 User::~User(void)
 {
-	if( outbuf_memory )
+	if( outbuf_memory ) {
 		strmem->Free( outbuf_memory, outbufalloc );
-	if( sHost )
+		outbuf_memory = NULL;
+	}
+	if( sHost ) {
 		strmem->Free( sHost, strlen(sHost)+1 );
+		sHost = NULL;
+	}
 	strmem->Free( inbuf, inbufmax );
+	inbuf = NULL;
 	vector<char*>::iterator it;
 	long sz;
 	char *ptr;
@@ -106,6 +116,7 @@ User::~User(void)
 		ptr = *it;
 		sz = *(long*)ptr + sizeof(long);
 		strmem->Free( ptr, sz );
+		ptr = NULL;
 	}
 	messages.clear();
 }
@@ -161,6 +172,8 @@ void User::SendQuit()
 	bufsz = spackf(&buf, &alloced, "i", uid);
 	game->SendMsg( CCmdUserQuit, bufsz, buf, this );
 	strmem->Free( buf, alloced );
+	buf=NULL;
+	alloced=0;
 }
 
 void User::SendMsg( char cmd, unsigned int size, char *data )
@@ -171,12 +184,15 @@ void User::SendMsg( char cmd, unsigned int size, char *data )
 
 	if( sizes[cmd] == 0 ) {
 		bufsz = spackf(&buf, &alloced, "cv", cmd, size, data );
+		//lprintf("bufsz: %ld", bufsz);
 	} else {
 		lprintf("watch out using this");
 		bufsz = spackf(&buf, &alloced, "cx", cmd, size, data ); // do not include size
 	}
 	Output( this, buf, bufsz );
 	strmem->Free( buf, alloced );
+	buf=NULL;
+	alloced=0;
 }
 
 void User::ProcessMessages(void)
@@ -210,6 +226,7 @@ void User::ProcessMessages(void)
 				}
 			}
 			*/
+			//lprintf("Got Message: %u", (uint16_t)code);
 			std::bind( commands[code], this, _1, _2 )( ptr, sz );
 		} else {
 			lprintf("Unknown command code %d", (int)code);
@@ -275,14 +292,14 @@ void User::GetFileList( char *data, uint16_t sz )
 		return;
 	}
 	u_long alloced, size;
-	char *buf;
+	char *buf=NULL;
 
 	while( it != game->files.end() ) {
 		FileInfo *fi = (it->second);
 
 		size = spackf( &buf, &alloced, "sLL", fi->name, fi->size, fi->mtime );
 		this->SendMsg( CCmdFileInfo, size, buf );
-		strmem->Free( buf, alloced );
+		strmem->Free( buf, alloced ); buf = NULL; alloced = 0;
 
 		it++;
 	}
@@ -299,12 +316,12 @@ void User::GetFile( char *data, uint16_t sz )
 
 	if( strstr(filename, "..") != NULL ) {
 		lprintf("Found ..");
-		strmem->Free( filename, sz+1 );
+		strmem->Free( filename, sz+1 ); filename=NULL;
 		this->SendMsg( CCmdNextFile, 0, NULL );
 		return;
 	}
 	GetFileS(filename);
-	strmem->Free( filename, sz+1 );
+	strmem->Free( filename, sz+1 ); filename=NULL;
 }
 
 void User::GetFileS( char *filename )
@@ -329,7 +346,7 @@ void User::GetFileS( char *filename )
 		this->reading_ptr = fi->contents;
 		this->reading_sz = fi->size;
  	} else {
-		char *buf;
+		char *buf=NULL;
 
 		this->fReading = fopen( filename, "rb" );
 		if( !fReading ) {
@@ -343,7 +360,7 @@ void User::GetFileS( char *filename )
 		int status = fread( buf, 1, 1024, fReading );
 		if( status == 0 ) {
 			// File is empty, send EOF
-			strmem->Free( buf, 1024 );
+			strmem->Free( buf, 1024 ); buf = NULL;
 			fclose( fReading );
 			fReading = NULL;
 			this->SendMsg( CCmdNextFile, 0, NULL );
@@ -351,7 +368,7 @@ void User::GetFileS( char *filename )
 		}
 
 		this->SendMsg( CCmdFileData, status, buf );
-		strmem->Free( buf, 1024 );
+		strmem->Free( buf, 1024 ); buf = NULL;
 	}
 	game->reading_files = true;
 }
@@ -395,6 +412,7 @@ void User::IdentifyVar( char *data, uint16_t sz )
 	lprintf("IdentifyVar(%s data size: %ld)", name, sz);
 	game->IdentifyVar( name, (int)type, this );
 	strmem->Free(name, strlen(name)+1);
+	name = NULL;
 }
 
 // For setting primitives.
@@ -489,7 +507,7 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 	obj->r2 = r2;
 	obj->last_update = (uint64_t)( this->last_update + timestamp_short + this->clocksync );
 
-	char *buf;
+	char *buf=NULL;
 	u_long alloced = 0;
 	long size;
 
@@ -498,7 +516,7 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 	size = spackf(&buf, &alloced, "uuffffff", objid, timestamp_short, x, y, z, r0, r1, r2);
 
 	game->SendMsg( CCmdSetObjectPositionRotation, size, buf, this );
-	strmem->Free( buf, alloced );
+	strmem->Free( buf, alloced ); buf = NULL; alloced = 0;
 	//lprintf("Updated %llu: %f %f %f rotation set to %f %f %f %f", objid, x, y, z, r0, r1, r2, r3);
 }
 
@@ -507,7 +525,7 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 // All user data should be loaded before this is called.
 void User::Register( char *data, uint16_t sz )
 {
-	char *buf;
+	char *buf=NULL;
 	long size;
 	unsigned char type;
 	u_long alloced = 0;
@@ -520,10 +538,10 @@ void User::Register( char *data, uint16_t sz )
 
 	sunpackf(data, "ffffff", &this->x, &this->y, &this->z, &this->r0, &this->r1, &this->r2);
 	
-
-	size = spackf(&buf, &alloced, "ci", this->authority?1:0, this->uid);
+	size = spackf(&buf, &alloced, "bu", this->authority?1:0, this->uid);
+	lprintf("bu msg size: %ld", size);
 	SendMsg( CCmdRegisterUser, size, buf );
-	strmem->Free( buf, alloced ); alloced = 0;
+	strmem->Free( buf, alloced ); alloced = 0; buf = NULL;
 	lprintf("Register: Found user %u at %f %f %f", this->uid, this->x, this->y, this->z);
 
 	ituser = game->usermap.begin();
@@ -541,7 +559,7 @@ void User::Register( char *data, uint16_t sz )
 		if( otherobj->spawned ) {
 			size = spackf(&buf, &alloced, "bufffffffff", type, otherobj->uid, otherobj->x, otherobj->y, otherobj->z, otherobj->r0, otherobj->r1, otherobj->r2, otherobj->scalex, otherobj->scaley, otherobj->scalez);
 			SendMsg( CCmdSpawn, size, buf );
-			strmem->Free( buf, alloced );
+			strmem->Free( buf, alloced ); buf = NULL;
 			alloced = 0;
 		}
 		itobj++;
@@ -553,8 +571,17 @@ void User::Register( char *data, uint16_t sz )
 		othernpc = itnpc->second;
 		size = spackf(&buf, &alloced, "bufffffffff", type, othernpc->uid, othernpc->x, othernpc->y, othernpc->z, othernpc->r0, othernpc->r1, othernpc->r2, othernpc->scalex, othernpc->scaley, othernpc->scalez);
 		SendMsg( CCmdSpawn, size, buf );
-		strmem->Free( buf, alloced );
+		strmem->Free( buf, alloced ); buf = NULL;
 		alloced = 0;
+
+		if( othernpc->recipe ) {
+			lprintf("Sending npc %u recipe", othernpc->uid);
+			size = spackf(&buf, &alloced, "uS", othernpc->uid, othernpc->recipe);
+			SendMsg( CCmdNPCRecipe, size, buf );
+			strmem->Free( buf, alloced );
+			alloced = 0; buf = NULL;
+		}
+
 		itnpc++;
 	}
 
@@ -580,7 +607,7 @@ void User::SendTo( User *otheruser )
 	timestamp_short = (int)(this->last_update - (game->last_timestamp - this->clocksync));
 
 // newuser packet
-	size = spackf(&buf, &alloced, "uffffff", uid, x, y, z, r0, r1, r2);
+	size = spackf(&buf, &alloced, "uffffffu", uid, x, y, z, r0, r1, r2, hasplatform?platid:0);
 	if( !otheruser ) {
 		game->SendMsg( CCmdUser, size, buf, this );
 	} else {
@@ -606,11 +633,20 @@ void User::SendTo( User *otheruser )
 // transform
 	char dirtyfull = 255;
 	char dirtypart = TransformPosition|TransformRotation|TransformScale;
-	size = spackf(&buf, &alloced, "uuuicffffffffffff", CNetTransform, uid, timestamp_short, 49, dirtypart,
-		px, py, pz,
-		vx, vy, vz,
-		pr0, pr1, pr2,
-		scalex, scaley, scalez);
+	if( hasplatform ) {
+		dirtypart |= TransformPlatform;
+		size = spackf(&buf, &alloced, "uuuicufffffffff", CNetTransform, uid, timestamp_short, 49, dirtypart,
+			platid,
+			px, py, pz,
+			pr0, pr1, pr2,
+			scalex, scaley, scalez);
+	} else {
+		size = spackf(&buf, &alloced, "uuuicffffffffffff", CNetTransform, uid, timestamp_short, 49, dirtypart,
+			px, py, pz,
+			vx, vy, vz,
+			pr0, pr1, pr2,
+			scalex, scaley, scalez);
+	}
 	if( !otheruser )
 		game->SendMsg( CCmdDynPacket, size, buf, this );
 	else
@@ -635,7 +671,7 @@ void User::SendTo( User *otheruser )
 
 void User::DynPacket( char *data, uint16_t sz )
 {
-	char *buf, *ptr, *ptr1;
+	char *buf=NULL, *ptr, *ptr1;
 	long size;
 	u_long alloced=0;
 	int timestamp_short;
@@ -647,6 +683,8 @@ void User::DynPacket( char *data, uint16_t sz )
 	int i;
 	int dynlen;
 	unordered_map<uint16_t, Object*>::iterator objit;
+	unordered_map<uint16_t, Npc*>::iterator npcit;
+	Npc *npc;
 	Object *target;
 	vector<sol::function> funcs;
 
@@ -655,6 +693,18 @@ void User::DynPacket( char *data, uint16_t sz )
 
 	this_update = this->C2SL( timestamp_short );
 	timestamp_short = (int)(this_update - game->last_timestamp);
+
+	size = spackf(&buf, &alloced, "uuui", cmd, objtgt, timestamp_short, dynlen);
+	char *buf2 = strmem->Alloc( sz );
+	memcpy( buf2, buf, size );
+	memcpy( buf2+size, ptr1, sz-size );
+
+	game->SendMsg( CCmdDynPacket, sz, buf2, this );
+	strmem->Free( buf2, sz ); sz = 0;
+	strmem->Free( buf, alloced ); alloced = 0;
+	buf2 = NULL;
+	buf = NULL;
+
 
 	char dirtybyte;
 
@@ -682,31 +732,67 @@ void User::DynPacket( char *data, uint16_t sz )
 			}
 			break;
 		case CNetTransform:
+			npcit = game->npcs.find(objtgt);
+			float x,y,z;
+
+			if( npcit == game->npcs.end() ) {
+				if( objtgt != uid )
+					break;
+				npc = NULL;
+			} else {
+				npc = npcit->second;
+			}
 			ptr = sunpackf(ptr, "c", &dirtybyte);
 			if( (dirtybyte&TransformPlatform) != 0 ) {
-				hasplatform = true;
-				ptr = sunpackf(ptr, "i", &platid);
-		    	/*
+				if( objtgt == uid ) {
+					hasplatform = true;
+					ptr = sunpackf(ptr, "i", &platid);
+				} else {
+					npc->hasplatform = true;
+					ptr = sunpackf(ptr, "i", &npc->platid);
+				}
 				if( (dirtybyte&TransformPosition) != 0 ) {
-					ptr = sunpackf(ptr, "fff", &px, &py, &pz);
-					vx = vy = vz = 0;
+					ptr = sunpackf(ptr, "fff", &x, &y, &z);
+					if( objtgt == uid ) {
+						px = x; py = y; pz = z;
+						vx = vy = vz = 0;
+					} else {
+						npc->x = x; npc->y = y; npc->z = z;
+						npc->vx = npc->vy = npc->vz = 0;
+					}
 				}
 				if( (dirtybyte&TransformRotation) != 0 ) {
-					ptr = sunpackf(ptr, "fff", &pr0, &pr1, &pr2);
+					ptr = sunpackf(ptr, "fff", &x, &y, &z);
+					if( objtgt == uid ) {
+						pr0 = x; pr1 = y; pr2 = z;
+					} else {
+						npc->r0 = x; npc->r1 = y; npc->r2 = z;
+					}
 				}
-				*/
 			} else {
 				hasplatform = false;
 				platid = 0;
 				if( (dirtybyte&TransformPosition) != 0 ) {
-					ptr = sunpackf(ptr, "ffffff", &px, &py, &pz, &vx, &vy, &vz);
+					if( objtgt == uid ) {
+						ptr = sunpackf(ptr, "ffffff", &px, &py, &pz, &vx, &vy, &vz);
+					} else {
+						ptr = sunpackf(ptr, "ffffff", &npc->x, &npc->y, &npc->z, &npc->vx, &npc->vy, &npc->vz);
+					}
 				}
 				if( (dirtybyte&TransformRotation) != 0 ) {
-					ptr = sunpackf(ptr, "fff", &pr0, &pr1, &pr2);
+					if( objtgt == uid ) {
+						ptr = sunpackf(ptr, "fff", &pr0, &pr1, &pr2);
+					} else {
+						ptr = sunpackf(ptr, "fff", &npc->r0, &npc->r1, &npc->r2);
+					}
 				}
 			}
 			if( (dirtybyte&TransformScale) != 0 ) {
-				ptr = sunpackf(ptr, "fff", &scalex, &scaley, &scalez);
+				if( objtgt == uid ) {
+					ptr = sunpackf(ptr, "fff", &scalex, &scaley, &scalez);
+				} else {
+					ptr = sunpackf(ptr, "fff", &npc->scalex, &npc->scaley, &npc->scalez);
+				}
 			}
 			funcs = LuaUserEvent( this, ServerEvent::Move );
 			for( vector<sol::function>::iterator it = funcs.begin(); it != funcs.end(); it++ ) {
@@ -744,15 +830,6 @@ void User::DynPacket( char *data, uint16_t sz )
 			
 			break;
 	}
-
-	size = spackf(&buf, &alloced, "uuui", cmd, objtgt, timestamp_short, dynlen);
-	char *buf2 = strmem->Alloc( sz );
-	memcpy( buf2, buf, size );
-	memcpy( buf2+size, ptr1, sz-size );
-
-	game->SendMsg( CCmdDynPacket, sz, buf2, this );
-	strmem->Free( buf2, sz );
-	strmem->Free( buf, alloced );
 }
 
 void User::Packet( char *data, uint16_t sz )
@@ -780,8 +857,13 @@ void User::Packet( char *data, uint16_t sz )
 	memcpy( buf2+size, ptr, sz-size );
 
 	game->SendMsg( CCmdPacket, sz, buf2, this );
-	strmem->Free( buf2, sz );
-	strmem->Free( buf, alloced );
+	strmem->Free( buf2, sz ); sz = 0;
+	strmem->Free( buf, alloced ); alloced = 0;
+	buf2 = NULL;
+	buf = NULL;
+
+	if( game->usermap.find(objtgt) == game->usermap.end() ) // for an npc
+		return;
 
 	switch( cmd ) {
 		case CNetSetPositionAndRotation:
@@ -848,8 +930,8 @@ void User::DynPacketTo( char *data, uint16_t sz )
 		it->second->SendMsg( CCmdDynPacket, sz-2, buf2 );
 	}
 
-	strmem->Free( buf2, sz-2 );
-	strmem->Free( buf, alloced );
+	strmem->Free( buf2, sz-2 ); sz = 0; buf2 = NULL;
+	strmem->Free( buf, alloced ); alloced = 0; buf = NULL;
 }
 
 uint64_t User::C2SL( uint16_t ts_short )
@@ -908,20 +990,25 @@ void User::PacketTo( char *data, uint16_t sz )
 
 	strmem->Free( buf2, sz-2 );
 	strmem->Free( buf, alloced );
+	buf2 = NULL;
+	buf = NULL;
 }
 
 void User::Echo( char *data, uint16_t sz )
 {
-	char *buf;
+	char *buf=NULL;
 	u_long alloced=0;
 	long size;
 	uint64_t ts;
 
 	sunpackf(data, "M", &ts); // put some gravy on it:
 	size = spackf(&buf, &alloced, "Ml", ts, this->c2sl);
+	//lprintf("Echo: %d", size);
 
 	SendMsg( CCmdRTTEcho, size, buf );
 	strmem->Free( buf, alloced );
+	buf = NULL;
+	alloced = 0;
 }
 
 void User::ObjectTop( char *data, uint16_t sz )
@@ -941,7 +1028,7 @@ void User::ObjectClaim( char *data, uint16_t sz )
 {
 	uint16_t objid;
 
-	char *buf;
+	char *buf=NULL;
 	u_long alloced=0;
 	long size;
 
@@ -951,13 +1038,15 @@ void User::ObjectClaim( char *data, uint16_t sz )
 	size = spackf(&buf, &alloced, "uu", objid, uid);
 	game->SendMsg( CCmdObjectClaim, size, buf );
 	strmem->Free( buf, alloced );
+	buf = NULL;
+	alloced = 0;
 }
 
 void User::Spawn( char *data, uint16_t sz )
 {
 	char *ptr;
 
-	char *buf;
+	char *buf=NULL;
 	u_long alloced=0;
 	long size;
 
@@ -981,9 +1070,11 @@ void User::Spawn( char *data, uint16_t sz )
 		strmem->Free( buf, alloced );
 		alloced = 0; buf = NULL;
 
-		size = spackf(&buf, &alloced, "buu", 99, spawnid, o->uid);
+		type = 99;
+		size = spackf(&buf, &alloced, "buu", type, spawnid, o->uid);
 		SendMsg( CCmdSpawn, size, buf );
 		strmem->Free( buf, alloced );
+		buf = NULL; alloced = 0;
 
 		game->objects[ o->uid ] = o;
 	} else if( type == 1 ) { // npc
@@ -993,17 +1084,40 @@ void User::Spawn( char *data, uint16_t sz )
 		n->uid = game->top_var_id++;
 		sunpackf(ptr, "fffffffff", &n->x, &n->y, &n->z, &n->r0, &n->r1, &n->r2, &n->scalex, &n->scaley, &n->scalez);
 
-		size = spackf(&buf, &alloced, "bufffffffff", type, n->uid, n->x, n->y, n->z, n->r0, n->r1, n->r2, n->scalex, n->scaley, n->scalez);
+		size = spackf(&buf, &alloced, "bufffffffffu", type, n->uid, n->x, n->y, n->z, n->r0, n->r1, n->r2, n->scalex, n->scaley, n->scalez, n->hasplatform?n->platid:0);
 		game->SendMsg( CCmdSpawn, size, buf, this );
 		strmem->Free( buf, alloced );
 		alloced = 0; buf = NULL;
 
-		type=99;
+		type = 99;
 		size = spackf(&buf, &alloced, "buu", type, spawnid, n->uid);
 		SendMsg( CCmdSpawn, size, buf );
-		lprintf("sent npc spawn confirm (size %ld)", size);
 		strmem->Free( buf, alloced );
+		buf = NULL; alloced = 0;
 
 		game->npcs[ n->uid ] = n;
 	}
 }
+
+void User::NPCRecipe( char *data, uint16_t sz )
+{
+	char *recipe;
+	uint16_t tgtid;
+	Npc *n;
+
+	sunpackf(data, "uS", &tgtid, &recipe);
+	lprintf("Set recipe length %d for %u", strlen(recipe), tgtid);
+
+	unordered_map<uint16_t, Npc*>::iterator it = game->npcs.find(tgtid);
+	if( it != game->npcs.end() ) {
+		n = it->second;
+		if( n->recipe ) {
+			strmem->Free( n->recipe, strlen(n->recipe)+1 );
+			n->recipe = NULL;
+		}
+		n->recipe = recipe;
+	}
+
+	game->SendMsg( CCmdNPCRecipe, sz, data, this );
+}
+

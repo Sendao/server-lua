@@ -35,6 +35,7 @@ void Game::mainloop()
 
 	smalltimeofday(&prev_cycle, NULL);
 	prev_cycle.tv_sec -= 10;
+	this_cycle.tv_sec = 0;
 
 	while(1)
 	{
@@ -151,7 +152,11 @@ void Game::mainloop()
 			prim = game->datamap[key];
 			uTarget = game->datamap_whichuser[key];
 
+			tmpbuf=NULL;
+			packsz = 0;
 			tmpsize = spackf( &tmpbuf, &packsz, "lc", key, prim->type );
+			packsz2 = 0;
+			buf2 = NULL;
 			switch( prim->type ) {
 				case 100: // char
 					size2 = spackf(&buf2, &packsz2, "c", &prim->data.c);
@@ -168,10 +173,13 @@ void Game::mainloop()
 			}
 			buf3 = strmem->Alloc( tmpsize + size2 );
 			memcpy(buf3, tmpbuf, tmpsize);
-			memcpy(buf3+tmpsize, buf2, size2);
+			if( buf2 )
+				memcpy(buf3+tmpsize, buf2, size2);
 			strmem->Free( tmpbuf, packsz );
-			strmem->Free( buf2, packsz2 );
-			tmpsize += size2;
+			if( buf2 ) {
+				strmem->Free( buf2, packsz2 );
+				tmpsize += size2;
+			}
 			tmpbuf = buf3;
 			buf3 = NULL;
 			game->SendMsg(CCmdVarInfo, tmpsize, tmpbuf, uTarget);			
@@ -182,9 +190,10 @@ void Game::mainloop()
 		// Send clocksync
 		if( this_cycle.tv_sec >= prev_cycle.tv_sec+3 ) {
 			game->last_timestamp = (uint64_t)this_cycle.tv_sec*(uint64_t)1000 + (uint64_t)this_cycle.tv_usec;
+			buf = NULL; packsz=0;
 			tmpsize = spackf(&buf, &packsz, "M", game->last_timestamp);
 			game->SendMsg(CCmdTimeSync, tmpsize, buf, NULL);
-			strmem->Free(buf, packsz);
+			strmem->Free(buf, packsz); buf = NULL; packsz=0;
 			prev_cycle = this_cycle;
 		}
 		
@@ -281,7 +290,7 @@ void Game::IdentifyVar( char *name, int type, User *sender )
 	u_long alloced = 0;
 	VarData *v;
 	Object *o;
-	char *buf;
+	char *buf=NULL;
 	long size;
 	uint16_t ts_short;
 	
@@ -379,12 +388,13 @@ void Game::PickNewAuthority( User *exclude )
 	if( ituser == usermap.end() ) {
 		lprintf("No users, waiting for host.");
 		firstUser = true;
+		game->top_var_id = 100; // reset
 		// no users found		
 		return;
 	}
 	User *user = ituser->second;
 	lprintf("Changing host to %u.", user->uid);
-	char *buf;
+	char *buf=NULL;
 	u_long alloced = 0;
 	long size;
 	user->authority = true;

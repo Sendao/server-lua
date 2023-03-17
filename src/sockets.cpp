@@ -157,7 +157,7 @@ int OutputConnection(User *user)
 	unsigned char bufsz;
 	int readsize;
 	int iSent;
-	char smallbuf[4];
+	unsigned char smallbuf[4];
 	
 	// Throttle:
 	sendsize = sendsize > user->outbufmax ? user->outbufmax : sendsize;
@@ -165,10 +165,12 @@ int OutputConnection(User *user)
 //https://www.lemoda.net/c/zlib-open-write/index.html
 
 	if( user->compbuf ) {
+		//lprintf("Use compbuf");
 		tgtbuf = user->compbuf;
 		tgtsz = user->compbufalloc - user->compbufsz;
 		sendsize = tgtsz > user->outbufmax ? user->outbufmax : tgtsz;
-	} else if( sendsize > 128 ) {
+		iSent = 1;
+	} else if( sendsize > 250 ) {
 		strm.zalloc = Z_NULL;
 		strm.zfree = Z_NULL;
 		strm.opaque = Z_NULL;
@@ -183,7 +185,7 @@ int OutputConnection(User *user)
 			return -1;
 		}
 
-		//lprintf("Compress %d bytes (CRC: %u)", user->outbufsz, crc32(user->outbuf, user->outbufsz));
+		//lprintf("Compress %d bytes (CRC: )", user->outbufsz);//, crc32(user->outbuf, user->outbufsz));
 
 		do {
 			strm.avail_out = 1024;
@@ -234,7 +236,7 @@ int OutputConnection(User *user)
 		smallbuf[0] = (redsz>>24) & 0xFF;
 		smallbuf[1] = (redsz>>16) & 0xFF;
 		smallbuf[2] = (redsz>>8) & 0xFF;
-		smallbuf[3] = (unsigned char)(redsz&0xFF);
+		smallbuf[3] = (redsz&0xFF);
 		//lprintf("Compression size buffer: %u %u %u %d", smallbuf[0], smallbuf[1], smallbuf[2], (unsigned char)smallbuf[3]);
 		iSent = send(user->fSock, smallbuf, 4, SENDOPT);
 		if( iSent == 4 ) iSent=1;
@@ -252,6 +254,7 @@ int OutputConnection(User *user)
 	}
 
 	if( iSent == 1 ) {
+		//lprintf("Send %d bytes", sendsize);
 		iSent = send(user->fSock, tgtbuf, sendsize, SENDOPT);
 	} else if( iSent < 0 ) {
 		lprintf("Error sending idbyte: %s", strerror(errno));
@@ -334,10 +337,9 @@ int InputConnection(User *user)
 
 	if( !user ) return 0;
 
-	if( user->inbufsz >= user->inbufmax ) return 0;
+	//if( user->inbufsz >= user->inbufmax ) return 0;
 
-	iSize = recv(user->fSock, user->inbuf, user->inbufmax - user->inbufsz, 0);
-
+	iSize = recv(user->fSock, user->inbuf, user->inbufmax, 0);
 	//lprintf("Received %d bytes", iSize);
 
 	if( iSize <= 0 ) {
@@ -423,8 +425,7 @@ int InputConnection(User *user)
 					}
 
 					cmdByte = *subptr;
-					ilen = (int)( *(subptr+1)<<8 | (*(subptr+2)&0xFF) );
-					//lprintf("ilen=%d", ilen);
+					ilen = (int)( *(subptr+1)<<8 ) | (int)(*(subptr+2)&0xFF);
 					if( subend != NULL && subptr+3+ilen > subend ) {
 						int remainder = 3+ilen - (subend - subptr);
 
@@ -436,7 +437,6 @@ int InputConnection(User *user)
 								strmem->Free( leftover, leftover_sz );
 							leftover = msgbuf;
 							leftover_sz = (subend-subptr)+sz;
-							//lprintf("Leftover: %d", leftover_sz);
 							break;
 						} else {
 							msgbuf = strmem->Alloc( (subend-subptr) + remainder );
@@ -464,7 +464,7 @@ int InputConnection(User *user)
 						memcpy( msgbuf, subptr, ilen+3 );
 						subptr += ilen + 3;
 						user->messages.push_back( msgbuf );
-						//lprintf("Red compressed packet of %d (%d)", ilen);
+						//lprintf("Red compressed packet of %d", ilen+3);
 					}
 				} while( subptr != subend2 );
 
@@ -491,9 +491,10 @@ int InputConnection(User *user)
 		//lprintf("Got %d packet size (inbufsz=%d)", (int)ctl, user->inbufsz);
 		if( p+ctl >= (unsigned char*)user->inbuf ) {
 			lprintf("Overflow: %d bytes", (unsigned char*)(user->inbuf)-(p+ctl));
+			break;
 		}
 		endpt = p+ctl;
-		while( p < endpt ) {
+		while( p+2 < endpt ) {
 			cmdByte = *p;
 			ilen = (unsigned int)((unsigned int)(*(p+1)<<8) | (unsigned int)(*(p+2)&0xFF));
 			//lprintf("Got cmd %d size %d", cmdByte, ilen);
@@ -534,19 +535,27 @@ int InputConnection(User *user)
 		}
 		user->inbuf = user->inbuf_memory + user->inbufsz;
 	}
+	if( user->inbufsz != 0 ) {
+		tmpbuf = strmem->Alloc( user->inbufsz + user->inbufmax );
+		memcpy( tmpbuf, user->inbuf_memory, user->inbufsz );
+		user->inbuf_memory = tmpbuf;
+		user->inbuf = user->inbuf_memory + user->inbufsz;
+	}
 
 	return 0;
 }
 
 void Output(User *user, const char *str, unsigned long len)
 {
-	if( user->outbufsz + len > user->outbufalloc ) {
-		user->outbufalloc = user->outbufsz + len + 1024;
+	if( user->outbufsz + len >= user->outbufalloc ) {
+		long newalloc = user->outbufsz + len + 1024;
 		long outbufoffset = user->outbuf - user->outbuf_memory;
-		user->outbuf_memory = strmem->Realloc( user->outbuf, user->outbufsz, user->outbufalloc );
+		user->outbuf_memory = strmem->Realloc( user->outbuf_memory, user->outbufalloc, newalloc );
+		user->outbufalloc = newalloc;
 		user->outbuf = user->outbuf_memory + outbufoffset;
 	}
 	
+	//lprintf("Add to outbuf @%d: %d bytes", user->outbufsz, len);
 	memcpy( user->outbuf_memory+user->outbufsz, str, len );
 	user->outbufsz += len;
 }
