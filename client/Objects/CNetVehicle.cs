@@ -7,23 +7,51 @@ using CNet;
 using UnityEngine;
 using UnityEngine.AI;
 using System;
-/*
-- add a minimum speed when enough more waypoints are available
-- precalculate appropriate speed_diff for each gears
-
-*/
 
 public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 {
-	public float steerInput, steerNet;
-	public float handbrakeInput;
-	public float throttleInput;
-	public float brakeInput;
-	public int currentGear;
-	public bool engineRunning;
+	/* Config */
+	public bool AllKinematic = false;
+	public float distance_magnifier=0.75f;
+	public float max_power=0.66f;
+	public float steer_speed = 10f;
+
+	public float remote_speed = 1.05f;
+
+	public float physical_power = 0.025f;
+	public float physical_minpower = 0.02f;
+	public float physical_wheelpower = 20f;
+	public float physical_brakepower = 20f;
+	public float physical_predict = 12f;
+	public float physical_predict_continuous = 6f;
+	public float physical_speedmag = 1.1f;
+
+	public float physadjust_mindist = 0.5f;
+	public float physadjust_power = 10.0f;
+	public float physadjust_max = 100.0f;
+	public float physadjust_minangle = 60.0f;
+
+	public float kinematic_mindist = 10f;
+	public float kinematic_minangle = 40f;
+
+	public float kineturn_minangle = 40f;
+	public float kineturn_minforceangle = 1f;
+	public float kineturn_speed = 0.5f;
+
+	public float kineturn_power = 1f;
+	public float steer_auxpower = 10f;
+	public float steer_magnifier = 1.5f;
+
+	public float floordist;
+	private float steerInput, steerNet;
+	private float handbrakeInput;
+	private float throttleInput;
+	private float brakeInput;
+	private int currentGear;
+	private bool engineRunning;
 	private bool headlightsOn;
 	private bool brightsOn;
-	public bool gearChanging;
+	private bool gearChanging;
 	private byte indicators;
 	
 	private ulong engineStartTime=0;
@@ -32,8 +60,6 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 	private RCC_CarControllerV3 carController;
 	private Rigidbody [] rbs;
 	private bool hasData = false;
-
-	public bool AllKinematic = true;
 
 	private LagData<Vector3> lagPos;
 	private LagData<Vector3> lagRot;
@@ -350,20 +376,18 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 		hasData = true;
 	}
 
-	public float helper, helpz;
+	private float helper, helpz;
 	public float speed_diff=100f;
-	public bool shouldFinish=false;
-	public bool shouldSteer=false;
+	private bool shouldFinish=false;
+	private bool shouldSteer=false;
 	public float dist, dot;
-	public bool inReverse=false;
+	private bool inReverse=false;
 	public bool stickyKinematic=false;
 	public string mode="none";
-	public float actualspeed, base_speed, calcspeed, angle;
+	private float base_speed;
+	public float actualspeed, calcspeed, angle;
 	private Vector3 dir;
-	public float distance_magnifier=10.0f;
-	public float max_power=1.0f;
-	public bool hitBrake=false;
-	public float steer_speed = 3.0f;
+	private bool hitBrake=false;
 
 	public float Vector2Dist( Vector3 a, Vector3 b )
 	{
@@ -613,33 +637,6 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 
 		FeedRCC();
 	}
-
-	public float remote_speed = 1.1f;
-
-	public float physical_power = 3f;
-	public float physical_minpower = 0.1f;
-	public float physical_wheelpower = 3f;
-	public float physical_brakepower = 6f;
-	public float physical_predict = 10f;
-	public float physical_predict_continuous = 5f;
-	public float physical_speedmag = 4f;
-
-	public float physadjust_mindist = 0.5f;
-	public float physadjust_power = 10.0f;
-	public float physadjust_max = 60.0f;
-	public float physadjust_minangle = 30.0f;
-
-	public float kinematic_mindist = 0f; // 0.5f
-	public float kinematic_minangle = 3f; // 5f
-
-	public float kineturn_minangle = 0.01f; // 0.25f
-	public float kineturn_minforceangle = 3f;
-	public float kineturn_speed = 3f;
-
-	public float kineturn_power = 1f;
-	public float steer_auxpower = 20f;
-	public float steer_magnifier = 1.5f;
-	public float floordist;
 
 	public void LateUpdate() {
 		if( !cni.local && ( hasData || checkRCC() ) ) {
