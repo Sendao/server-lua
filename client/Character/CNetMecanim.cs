@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using CNet;
+using Animancer;
 
 public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
 {
@@ -48,11 +49,12 @@ public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
     private bool TriggerUsageWarningDone;
     
     private Animator animator;
+    private HybridAnimancerComponent animancer;
     private CNetId cni;
     private RuntimeAnimatorController controller;
     private string current_controller;
 
-    class ControlDetails
+    public class ControlDetails
     {
         public string name;
         public List<SynchronizedParameter> parameters = new List<SynchronizedParameter>();
@@ -78,6 +80,7 @@ public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
     {
         this.animator = GetComponent<Animator>();
         this.cni = GetComponent<CNetId>();
+        this.animancer = GetComponent<HybridAnimancerComponent>();
     }
 
     private void Start()
@@ -95,8 +98,25 @@ public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
         } else {
             Debug.LogError("Mecanim requires animator");
         }
+        cni.RegisterChild( this );
+    }
+
+    public void Delist()
+    {
+        if( cni.local ) {
+            NetSocket.Instance.UnregisterNetObject( this );
+        } else {
+            NetSocket.Instance.UnregisterPacket( CNetFlag.MecContinuousUpdate, cni.id );
+            NetSocket.Instance.UnregisterPacket( CNetFlag.MecDiscreteUpdate, cni.id );
+            NetSocket.Instance.UnregisterPacket( CNetFlag.MecSetup, cni.id );
+        }
+    }
+    public void Register()
+    {
         if( !cni.local ) {
-            cni.RegisterChild( this );
+            NetSocket.Instance.RegisterPacket( CNetFlag.MecContinuousUpdate, cni.id, DoContinuousUpdate );
+            NetSocket.Instance.RegisterPacket( CNetFlag.MecDiscreteUpdate, cni.id, DoDiscreteUpdate );
+            NetSocket.Instance.RegisterPacket( CNetFlag.MecSetup, cni.id, DoSetup );
         } else {
             NetSocket.Instance.RegisterNetObject( this );
         }
@@ -104,7 +124,12 @@ public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
 
     private RuntimeAnimatorController GetEffectiveController(Animator animator)
     {
-        RuntimeAnimatorController controller = animator.runtimeAnimatorController;
+        RuntimeAnimatorController controller;
+
+        controller = animator.runtimeAnimatorController;
+        if( animancer != null &&  animancer.enabled ) {
+            controller = animancer.Controller.Controller;
+        }
 
         AnimatorOverrideController overrideController = controller as AnimatorOverrideController;
         while (overrideController != null)
@@ -145,7 +170,18 @@ public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
 
         if (this.cni.local)
         {
-            if( controller != animator.runtimeAnimatorController ) {
+            if( controller == null ) return;
+
+            if( animancer && controller != animancer.Controller.Controller ) {
+                Debug.Log("Change controller - animancer");
+                RuntimeAnimatorController rc = this.GetEffectiveController(this.animator) as RuntimeAnimatorController;
+                if( controller != rc ) {
+                    controller = rc;
+                    this.SetController(rc.name);
+                    ReadSetup();
+                }
+            } else if( animator && controller != animator.runtimeAnimatorController ) {
+                Debug.Log("Change controller");
                 RuntimeAnimatorController rc = this.GetEffectiveController(this.animator) as RuntimeAnimatorController;
                 if( controller != rc ) {
                     controller = rc;
@@ -158,13 +194,6 @@ public class CNetMecanim : MonoBehaviour, ICNetReg, ICNetUpdate
             this.ContinuousUpdate();
             this.CacheDiscreteTriggers();
         }
-    }
-
-    public void Register()
-    {
-		NetSocket.Instance.RegisterPacket( CNetFlag.MecContinuousUpdate, cni.id, DoContinuousUpdate );
-		NetSocket.Instance.RegisterPacket( CNetFlag.MecDiscreteUpdate, cni.id, DoDiscreteUpdate );
-		NetSocket.Instance.RegisterPacket( CNetFlag.MecSetup, cni.id, DoSetup );
     }
 
     public void CacheDiscreteTriggers()

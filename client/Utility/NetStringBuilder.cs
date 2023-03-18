@@ -28,6 +28,7 @@ namespace CNet {
 
         public void AddObjects( object[] values ) {
             int i;
+            if( values == null ) return;
             for( i=0; i<values.Length; i++ ) {
                 if( values[i] is byte ) {
                     AddByte( 0 );
@@ -198,13 +199,29 @@ namespace CNet {
         }
 
         public void AddString(string str) {
-            int len = str.Length;
+            uint len = (uint)str.Length;
             while( used+2+len >= alloced )
                 AllocMore();
             ptr[used+0] = (byte)((len>>8) & 0xff);
             ptr[used+1] = (byte)(len&0xFF);
-            System.Buffer.BlockCopy(System.Text.Encoding.ASCII.GetBytes(str), 0, ptr, used+2, len);
-            used += len+2;
+            System.Text.Encoding.ASCII.GetBytes( str, 0, (int)len, ptr, used+2 );
+            //Byte[] bytes = System.Text.Encoding.ASCII.GetBytes(str);
+            //System.Buffer.BlockCopy(bytes, 0, ptr, used+2, len);
+            used += (int)len+2;
+        }
+        public void AddLongString(string str) {
+            uint len = (uint)str.Length;
+            while( used+4+len >= alloced )
+                AllocMore();
+            ptr[used+0] = (byte)((len>>24) & 0xff);
+            ptr[used+1] = (byte)((len>>16) & 0xff);
+            ptr[used+2] = (byte)((len>>8) & 0xff);
+            ptr[used+3] = (byte)(len&0xFF);
+            //Debug.Log("Adding string of " + len + " bytes: " + ptr[used] + ", " + ptr[used+1] + ", " + ptr[used+2] + ", " + ptr[used+3]);
+            System.Text.Encoding.ASCII.GetBytes( str, 0, (int)len, ptr, used+4 );
+            //Byte[] bytes = System.Text.Encoding.ASCII.GetBytes(str);
+            //System.Buffer.BlockCopy(bytes, 0, ptr, used+2, len);
+            used += (int)len+4;
         }
 
         public void AddBytes(byte[] data) {

@@ -12,8 +12,8 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
     private short dirtyBits;
     private short dirtySlot;
 
-    private float netX;
-    private float netZ;
+    public float netX;
+    public float netZ;
     private float netPitch;
     private float netYaw;
     private float netSpeed;
@@ -29,7 +29,10 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
         if (!id.local) {
             var animators = GetComponentsInChildren<Animator>(true);
             for (int i = 0; i < animators.Length; ++i) {
-                animators[i].updateMode = AnimatorUpdateMode.Normal;
+                if( animators[i].updateMode != AnimatorUpdateMode.Normal ) {
+                    Debug.Log("Animator update mode changed to normal: " + animators[i].name);
+                    animators[i].updateMode = AnimatorUpdateMode.Normal;
+                }
             }
         }
     }
@@ -39,6 +42,19 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
         base.Start();
 
         id.RegisterChild(this);
+    }
+
+    public void Delist()
+    {
+        if( id.local ) {
+            NetSocket.Instance.UnregisterNetObject(this);
+            NetSocket.Instance.UnregisterPacket( CNetFlag.RequestAnimation, id.id );
+            NetSocket.Instance.UnregisterPacket( CNetFlag.RequestItemAnimation, id.id );
+        } else {
+            NetSocket.Instance.UnregisterPacket( CNetFlag.Animation, id.id );
+            NetSocket.Instance.UnregisterPacket( CNetFlag.InitAnimation, id.id );
+            NetSocket.Instance.UnregisterPacket( CNetFlag.InitItemAnimation, id.id );
+        }
     }
 
     public void Register()
@@ -53,24 +69,24 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
             NetSocket.Instance.RegisterPacket( CNetFlag.InitItemAnimation, id.id, OnSetInitialItems ); // dynamic packet
 
             NetStringBuilder sb = new NetStringBuilder();
-            sb.AddUint(id.id);
+            sb.AddUint(NetSocket.Instance.local_uid);
             NetSocket.Instance.SendPacketTo( id.id, CNetFlag.RequestAnimation, id.id, sb );
 
             sb = new NetStringBuilder();
-            sb.AddUint(id.id);
+            sb.AddUint(NetSocket.Instance.local_uid);
             NetSocket.Instance.SendPacketTo( id.id, CNetFlag.RequestItemAnimation, id.id, sb );
         }
     }
 
     public void OnRequestAnimation(ulong ts, NetStringReader stream)
     {
-        uint id = stream.ReadUint();
+        uint to = stream.ReadUint();
         NetStringBuilder sb = new NetStringBuilder();
-        sb.AddShortFloat( HorizontalMovement );
-        sb.AddShortFloat( ForwardMovement );
-        sb.AddShortFloat( Pitch );
-        sb.AddShortFloat( Yaw );
-        sb.AddShortFloat( Speed );
+        sb.AddShortFloat( HorizontalMovement, 10.0f );
+        sb.AddShortFloat( ForwardMovement, 10.0f );
+        sb.AddShortFloat( Pitch, 500.0f );
+        sb.AddShortFloat( Yaw, 500.0f );
+        sb.AddShortFloat( Speed, 100.0f );
         sb.AddInt( Height );
         sb.AddBool( Moving );
         sb.AddBool( Aiming );
@@ -78,16 +94,16 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
         sb.AddInt( AbilityIndex );
         sb.AddInt( AbilityIntData );
         sb.AddShortFloat( AbilityFloatData );
-        NetSocket.Instance.SendPacket( CNetFlag.Animation, id, sb );
+        NetSocket.Instance.SendPacketTo( to, CNetFlag.Animation, id.id, sb );
     }
 
     public void OnSetInitial(ulong ts, NetStringReader stream)
     {
-        var horizontalMovement = stream.ReadShortFloat();
-        var forwardMovement = stream.ReadShortFloat();
-        var pitch = stream.ReadShortFloat();
-        var yaw = stream.ReadShortFloat();
-        var speed = stream.ReadShortFloat();
+        var horizontalMovement = stream.ReadShortFloat(10.0f);
+        var forwardMovement = stream.ReadShortFloat(10.0f);
+        var pitch = stream.ReadShortFloat(500.0f);
+        var yaw = stream.ReadShortFloat(500.0f);
+        var speed = stream.ReadShortFloat(100.0f);
         var height = stream.ReadInt();
         var moving = stream.ReadBool();
         var aiming = stream.ReadBool();
@@ -99,43 +115,50 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
     }
     private void DoSetInitial(float horizontalMovement, float forwardMovement, float pitch, float yaw, float speed, int height, bool moving, bool aiming, int movementSetID, int abilityIndex, int abilityIntData, float abilityFloatData)
     {
-        SetHorizontalMovementParameter(horizontalMovement, 1);
-        SetForwardMovementParameter(forwardMovement, 1);
-        SetPitchParameter(pitch, 1);
-        SetYawParameter(yaw, 1);
-        SetSpeedParameter(speed, 1);
-        SetHeightParameter(height);
-        SetMovingParameter(moving);
-        SetAimingParameter(aiming);
-        SetMovementSetIDParameter(movementSetID);
-        SetAbilityIndexParameter(abilityIndex);
-        SetAbilityIntDataParameter(abilityIntData);
-        SetAbilityFloatDataParameter(abilityFloatData, 1);
+        base.SetHorizontalMovementParameter(horizontalMovement, 1);
+        base.SetForwardMovementParameter(forwardMovement, 1);
+        base.SetPitchParameter(pitch, 1);
+        base.SetYawParameter(yaw, 1);
+        base.SetSpeedParameter(speed, 1);
+        base.SetHeightParameter(height);
+        base.SetMovingParameter(moving);
+        base.SetAimingParameter(aiming);
+        base.SetMovementSetIDParameter(movementSetID);
+        base.SetAbilityIndexParameter(abilityIndex);
+        base.SetAbilityIntDataParameter(abilityIntData);
+        base.SetAbilityFloatDataParameter(abilityFloatData, 1);
         SnapAnimator();
     }
 
     public void OnRequestItemAnimation(ulong ts, NetStringReader stream)
     {
-        uint id = stream.ReadUint();
+        uint to = stream.ReadUint();
         NetStringBuilder sb = new NetStringBuilder();
         for (int i = 0; i < ParameterSlotCount && i < 16; ++i) {
             sb.AddInt(ItemSlotID[i]);
             sb.AddInt(ItemSlotStateIndex[i]);
             sb.AddInt(ItemSlotSubstateIndex[i]);
+            //Debug.Log("SetInitialItems " + this.id.id + ": get Slot " + i + ", item " + ItemSlotID[i]);
         }
-        NetSocket.Instance.SendDynPacket( CNetFlag.InitItemAnimation, id, sb );
+        //Debug.Log("SII Total size " + sb.used + " bytes");
+        NetSocket.Instance.SendDynPacketTo( to, CNetFlag.InitItemAnimation, id.id, sb );
     }
 
     public void OnSetInitialItems(ulong ts, NetStringReader stream)
     {
+        int slotID = 0;
+        //Debug.Log("SetInitialItems " + this.id.id + ": " + stream.data.Length + " bytes, starting at offset " + stream.offset);
         while( stream.offset < stream.data.Length ) {
-            var slotID = stream.ReadInt();
             var itemID = stream.ReadInt();
             var itemStateIndex = stream.ReadInt();
             var itemSubstateIndex = stream.ReadInt();
-            SetItemIDParameter(slotID, itemID);
-            SetItemStateIndexParameter(slotID, itemStateIndex);
-            SetItemSubstateIndexParameter(slotID, itemSubstateIndex);
+            //Debug.Log("SetInitialItems " + this.id.id + ": Slot " + slotID + ", item " + itemID);
+            if( itemID != 0 ) {
+                base.SetItemIDParameter(slotID, itemID);
+                base.SetItemStateIndexParameter(slotID, itemStateIndex);
+                base.SetItemSubstateIndexParameter(slotID, itemSubstateIndex);
+            }
+            slotID++;
         }
         SnapAnimator();
     }
@@ -146,18 +169,19 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
         abilityIndex = AbilityIndex;
     }
 
-    public void Update()
+    public void LateUpdate()
     {
         if( id.local ) { // no.
             return;
         }
         // lock parameters?
-        SetHorizontalMovementParameter(netX, 1);
-        SetForwardMovementParameter(netZ, 1);
-        SetPitchParameter(netPitch, 1);
-        SetYawParameter(netYaw, 1);
-        SetSpeedParameter(netSpeed, 1);
-        SetAbilityFloatDataParameter(netAbilityFloat, 1);
+        base.SetHorizontalMovementParameter(netX, 1);
+        base.SetForwardMovementParameter(netZ, 1);
+        base.SetPitchParameter(netPitch, 1);
+        base.SetYawParameter(netYaw, 1);
+        base.SetSpeedParameter(netSpeed, 1);
+        base.SetAbilityFloatDataParameter(netAbilityFloat, 1);
+        //base.SnapAnimator();
     }
 
     public void NetUpdate()
@@ -243,26 +267,26 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
             netSpeed = stream.ReadShortFloat();
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.Height) != 0) {
-            SetHeightParameter(stream.ReadInt());
+            base.SetHeightParameter(stream.ReadInt());
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.Moving) != 0) {
-            SetMovingParameter(stream.ReadBool());
+            base.SetMovingParameter(stream.ReadBool());
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.Aiming) != 0) {
-            SetAimingParameter(stream.ReadBool());
+            base.SetAimingParameter(stream.ReadBool());
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.MoveSet) != 0) {
-            SetMovementSetIDParameter(stream.ReadInt());
+            base.SetMovementSetIDParameter(stream.ReadInt());
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.Ability) != 0) {
             var abilityIndexParam = stream.ReadInt();
             if (abilityIndex == 0 || abilityIndexParam == abilityIndex) {
-                SetAbilityIndexParameter(abilityIndexParam);
+                base.SetAbilityIndexParameter(abilityIndexParam);
                 abilityIndex = 0;
             }
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.AbilityInt) != 0) {
-            SetAbilityIntDataParameter(stream.ReadInt());
+            base.SetAbilityIntDataParameter(stream.ReadInt());
         }
         if ((dirtyFlag & (short)AnimDirtyFlags.AbilityFloat) != 0) {
             netAbilityFloat = stream.ReadShortFloat();
@@ -274,9 +298,9 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
                 if ((itemDirtySlot & parmFlag) == 0) {
                     continue;
                 }
-                SetItemIDParameter(i, stream.ReadInt());
-                SetItemStateIndexParameter(i, stream.ReadInt());
-                SetItemSubstateIndexParameter(i, stream.ReadInt());
+                base.SetItemIDParameter(i, stream.ReadInt());
+                base.SetItemStateIndexParameter(i, stream.ReadInt());
+                base.SetItemSubstateIndexParameter(i, stream.ReadInt());
             }
         }
     }
@@ -284,8 +308,10 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
     public override bool SetHorizontalMovementParameter(float value, float timeScale, float dampingTime)
     {
         if (!mAnimator.isActiveAndEnabled) {
+            Debug.Log("SetHorizontalMovementParameter: mAnimator is not active");
             return false;
         }
+        //Debug.Log("SHMP: " + value + " " + timeScale + " " + dampingTime);
         if (base.SetHorizontalMovementParameter(value, timeScale, dampingTime)) {
             dirtyBits |= (short)AnimDirtyFlags.X;
             return true;
@@ -296,8 +322,10 @@ public class CNetAnimatorMonitor : AnimatorMonitor, ICNetReg, ICNetUpdate
     public override bool SetForwardMovementParameter(float value, float timeScale, float dampingTime)
     {
         if (!mAnimator.isActiveAndEnabled) {
+            Debug.Log("SetVerticalMovementParameter: mAnimator is not active");
             return false;
         }
+        //Debug.Log("SVMP: " + value + " " + timeScale + " " + dampingTime);
         if (base.SetForwardMovementParameter(value, timeScale, dampingTime)) {
             dirtyBits |= (short)AnimDirtyFlags.Z;
             return true;

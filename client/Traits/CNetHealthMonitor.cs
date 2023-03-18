@@ -29,9 +29,7 @@ namespace CNet
 
         public void Start()
         {
-            if( !cni.local ) {
-                cni.RegisterChild( this );
-            }
+            cni.RegisterChild( this );
         }
 
         public void Register()
@@ -40,6 +38,15 @@ namespace CNet
                 NetSocket.Instance.RegisterPacket( CNetFlag.Damage, cni.id, OnDamage, 48 );
                 NetSocket.Instance.RegisterPacket( CNetFlag.Death, cni.id, OnDie, 26 );
                 NetSocket.Instance.RegisterPacket( CNetFlag.Heal, cni.id, OnHeal, 4 );
+            }
+        }
+
+        public void Delist()
+        {
+            if( !cni.local ) {
+                NetSocket.Instance.UnregisterPacket( CNetFlag.Damage, cni.id );
+                NetSocket.Instance.UnregisterPacket( CNetFlag.Death, cni.id );
+                NetSocket.Instance.UnregisterPacket( CNetFlag.Heal, cni.id );
             }
         }
 

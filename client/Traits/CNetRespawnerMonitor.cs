@@ -19,14 +19,20 @@ namespace CNet
 
         public void Start()
         {
-            if( !cni.local ) {
-                cni.RegisterChild(this);
-            }
+            cni.RegisterChild(this);
         }
 
+        public void Delist()
+        {
+            if( !cni.local ) {
+                NetSocket.Instance.UnregisterPacket(CNetFlag.Respawn, cni.id);
+            }
+        }
         public void Register()
         {
-            NetSocket.Instance.RegisterPacket(CNetFlag.Respawn, cni.id, OnRespawn, 25);
+            if( !cni.local ) {
+                NetSocket.Instance.RegisterPacket(CNetFlag.Respawn, cni.id, OnRespawn, 25);
+            }
         }
         public void Respawn(Vector3 position, Quaternion rotation, bool transformChange)
         {

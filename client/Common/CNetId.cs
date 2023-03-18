@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using UMA;
 using UMA.CharacterSystem;
 using System.Collections.Generic;
+using Opsive.UltimateCharacterController.Objects;
 
 namespace CNet
 {
@@ -15,6 +16,28 @@ namespace CNet
 		public bool local = true;
 		public int type;
 		private object _registerlock = new object();
+
+        private void Awake()
+        {
+			registered = false;
+
+			ObjectIdentifier objid = GetComponent<ObjectIdentifier>();
+            if( objid != null ) {
+				this.id = objid.ID;
+                NetSocket.Instance.RegisterObjectIdentifier(objid);
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (registered) {
+				ObjectIdentifier objid = GetComponent<ObjectIdentifier>();
+				if( objid != null ) {
+                	NetSocket.Instance.UnregisterObjectIdentifier(objid);
+				}
+                registered = false;
+            }
+        }
 
 		public void Start()
 		{
@@ -32,7 +55,13 @@ namespace CNet
 					return;
 				}
 			}
-			// - parent		
+			// - parent
+
+			ObjectIdentifier oid = GetComponent<ObjectIdentifier>();
+			if( oid != null ) {
+				this.id = oid.ID;
+				this.type = 1;
+			}
 
 			// Register with the main controller - this will set the 'id' field and call 'Register'
 			if( type != 2 ) {
@@ -44,28 +73,30 @@ namespace CNet
 
 		public void RegisterChild( ICNetReg child )
 		{
-			if( registered ) {
-				child.Register();
-			} else {
-				lock( _registerlock  ) {
-					children.Add( child );
+			lock( _registerlock  ) {
+				children.Add( child );
+				if( registered ) {
+					child.Register();
 				}
+			}
+		}
+
+		public void Delist()
+		{
+			lock( _registerlock ) {
+				foreach( ICNetReg child in children ) {
+					child.Delist();
+				}
+				registered=false;
 			}
 		}
 
 		public void Register()
 		{
 			lock( _registerlock ) {
-				if( type != 2 ) {
-					if( NetSocket.Instance.authoritative ) {
-						this.local = true;
-					} else {
-						this.local = false;
-					}
-				}
-				Debug.Log("Registering " + this.name + " with type " + type);
+				Debug.Log("Registering " + this.name + " with type " + type + ", " + (local?"local":"remote") + " and id " + id + ", " + children.Count + " children");
 
-				foreach( var child in children ) {
+				foreach( ICNetReg child in children ) {
 					child.Register();
 				}
 				registered=true;

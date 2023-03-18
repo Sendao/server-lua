@@ -15,9 +15,9 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 
 	// setup: startval, maxaccel, maxspeed, mindist
 	private static Vector3 east = new Vector3(0, 0, -1);
-	private LagData<Vector3> lagPos = new LagData<Vector3>(Vector3.zero, 14f, 2.6f, 0.02f);
-	private LagData<Vector3> lagRot = new LagData<Vector3>(east, 6f, 3f, 0.25f);
-	private LagData<Vector3> lagScale = new LagData<Vector3>(Vector3.one, 0.2f, 0.1f, 0.05f);
+	private LagData<Vector3> lagPos = new LagData<Vector3>(Vector3.zero, 14f, 2.6f, 0.02f, 5f);
+	private LagData<Vector3> lagRot = new LagData<Vector3>(east, 6f, 3f, 0.25f, 1f);
+	private LagData<Vector3> lagScale = new LagData<Vector3>(Vector3.one, 0.2f, 0.1f, 0.05f, 0.3f);
 
 	private bool hasData = false;
 
@@ -30,14 +30,25 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 
 	public void Start()
 	{
-		if( cni.local ) {
-			NetSocket.Instance.RegisterNetObject( this );
+		cni.RegisterChild(this);
+	}
+	public void Delist()
+	{
+		if( !cni.local ) {
+			NetSocket.Instance.UnregisterPacket( CNetFlag.ObjTransform, cni.id );
+		} else {
+			NetSocket.Instance.UnregisterNetObject( this );
+		}
+	}
+	public void Register()
+	{
+		if( !cni.local ) {
+			NetSocket.Instance.RegisterPacket( CNetFlag.ObjTransform, cni.id, this.DoUpdate );
 		} else {
 			lagPos.goal = lagPos.value = netPosition = transform.position;
 			lagRot.goal = lagRot.value = netEulers = transform.rotation * Vector3.forward;
 			lagScale.goal = lagScale.value = netScale = transform.localScale;
-
-			cni.RegisterChild(this);
+			NetSocket.Instance.RegisterNetObject( this );
 		}
 	}
 
@@ -95,15 +106,6 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 		if( (transform.localScale - lagScale.value).magnitude > 0.01f ) {
 			transform.localScale = lagScale.value;
 			hasData = true;
-		}
-	}
-
-	public void Register()
-	{
-		if( !cni.local ) {
-			NetSocket.Instance.RegisterPacket( CNetFlag.ObjTransform, cni.id, this.DoUpdate );
-		} else {
-			NetSocket.Instance.RegisterNetObject( this );
 		}
 	}
 

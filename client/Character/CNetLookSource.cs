@@ -6,33 +6,40 @@ using CNet;
 [RequireComponent(typeof(CNetId))]
 class CNetLookSource : MonoBehaviour, ILookSource, ICNetReg, ICNetUpdate
 {
-    [Tooltip("A multiplier to apply to the networked values for remote players.")]
-    [SerializeField] protected float remoteInterpolationMultiplayer = 1.2f;
-
     private UltimateCharacterLocomotion characterLocomotion;
     private CNetId id;
     private ILookSource lookSource = null;
 
     public GameObject GameObject { get { return gameObject; } }
-    public Transform Transform { get { return transform; } }
+    public Transform Transform {
+        get {
+            /*
+            Vector3 a = Vector3.forward;
+            if( transform.rotation * a == Vector3.zero ) {
+                Debug.Log("Transform rotation is zero");
+                return transform;
+            }*/
+            return transform;
+        }
+    }
     public float LookDirectionDistance { get { return netLookDirectionDistance; } }
     public float Pitch { get { return netPitch; } }
 
     private float netLookDirectionDistance = 1f;
     private float netTargetLookDirectionDistance = 1f;
-    private LagData<float> lagDistance = new LagData<float>(1f, 0.25f, 0.125f, 0.01f);
+    private LagData<float> lagDistance = new LagData<float>(1f, 0.25f, 0.125f, 0.05f, 0.33f);
     
     private float netPitch;
     private float netTargetPitch;
-    private LagData<float> lagPitch = new LagData<float>(0f, 0.25f, 0.125f, 0.01f);
+    private LagData<float> lagPitch = new LagData<float>(0f, 0.25f, 0.125f, 0.05f, 0.33f);
     
     private Vector3 netLookPosition;
     private Vector3 netTargetLookPosition;
-    private LagData<Vector3> lagLook = new LagData<Vector3>(Vector3.zero, 1, 1, 0.01f);
+    private LagData<Vector3> lagLook = new LagData<Vector3>(Vector3.zero, 1, 1, 0.01f, 1f);
 
     private Vector3 netLookDirection;
     private Vector3 netTargetLookDirection;
-    private LagData<Vector3> lagDir = new LagData<Vector3>(Vector3.zero, 1, 1, 0.01f);
+    private LagData<Vector3> lagDir = new LagData<Vector3>(Vector3.zero, 1, 1, 0.01f, 1f);
 
     private bool initialSync = true;
 
@@ -46,51 +53,73 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetReg, ICNetUpdate
         lagLook.goal = lagLook.value = netLookPosition = netTargetLookPosition = new Vector3(0, 0, 0);
         lagDir.goal = lagDir.value = netLookDirection = netTargetLookDirection = new Vector3(0, 0, -1);
 
-
         EventHandler.RegisterEvent<ILookSource>(gameObject, "OnCharacterAttachLookSource", OnAttachLookSource);
     }
 
     private void Start()
     {
-        if (!id.local) {
-            
+        id.RegisterChild(this);
+    }
+
+    public void Delist()
+    {
+        if( id.local ) {
+            NetSocket.Instance.UnregisterNetObject( this );
+        } else {
+            NetSocket.Instance.UnregisterPacket( CNetFlag.PlayerLook, id.id );
+            //EventHandler.UnregisterEvent<ILookSource>(gameObject, "OnCharacterAttachLookSource", OnAttachLookSource);
+        }
+    }
+    public void Register()
+    {
+        if (id.local) {
+            NetSocket.Instance.RegisterNetObject( this );
+        } else {            
             EventHandler.UnregisterEvent<ILookSource>(gameObject, "OnCharacterAttachLookSource", OnAttachLookSource);
             EventHandler.ExecuteEvent<ILookSource>(gameObject, "OnCharacterAttachLookSource", this);
 
-            id.RegisterChild(this);
-
-            lagDistance.goal = lagDistance.value = netLookDirectionDistance;
-            lagPitch.goal = lagPitch.value = netPitch;
-            lagLook.goal = lagLook.value = netLookPosition;
-            lagDir.goal = lagDir.value = netLookDirection;
+            lagDistance.goal = lagDistance.value = netLookDirectionDistance = 1f;
+            lagPitch.goal = lagPitch.value = netPitch = 0f;
+            lagLook.goal = lagLook.value = netLookPosition = new Vector3(0,0,0);
+            lagDir.goal = lagDir.value = netLookDirection = new Vector3(0,0,-1);
 
             lagDistance.updt = lagPitch.updt = lagLook.updt = lagDir.updt = 0;
             lagDistance.tick = lagPitch.tick = lagLook.tick = lagDir.tick = 0;
 
-        } else { // monitor local player
-            NetSocket.Instance.RegisterNetObject( this );
+            NetSocket.Instance.RegisterPacket( CNetFlag.PlayerLook, id.id, OnUpdate );
         }
-    }
-
-    public void Register()
-    {
-        NetSocket.Instance.RegisterPacket( CNetFlag.PlayerLook, id.id, OnUpdate );
     }
 
     private void OnAttachLookSource(ILookSource source)
     {
         lookSource = source;
+        if( !id.local ) {
+            Debug.LogWarning("cnet Attached look source " + source);
+        } else {
+            Debug.Log("cnet Attached look source " + source);
+        }
     }
 
     public Vector3 LookPosition(bool characterLookPosition)
     {
+        if( netLookPosition.magnitude < 0.5f ) {
+            Debug.Log("Invalid LookDirection!");
+            return transform.forward;
+        }
         return netLookPosition;
     }
 
     public Vector3 LookDirection(bool characterLookDirection)
     {
         if (characterLookDirection) {
-            return transform.forward;
+            if( transform.forward.magnitude < 0.5f ) {
+                Debug.Log("Invalid LookDirection!");
+                return transform.forward;
+            }
+        }
+        if( netLookDirection.magnitude < 0.5f ) {
+            Debug.Log("Invalid LookDirection!");
+            return netLookDirection;
         }
         return netLookDirection;
     }
@@ -105,8 +134,14 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetReg, ICNetUpdate
         Vector3 direction;
         if (Physics.Raycast(netLookPosition, characterLookDirection ? transform.forward : netLookDirection, out hit, netLookDirectionDistance, layerMask, QueryTriggerInteraction.Ignore)) {
             direction = (hit.point - lookPosition).normalized;
+            if( direction.magnitude < 0.5f ) {
+                Debug.Log("Invalid LookDirection!");
+            }
         } else {
             direction = netLookDirection;
+            if( direction.magnitude < 0.5f ) {
+                Debug.Log("Invalid LookDirection!");
+            }
         }
 
         characterLocomotion.EnableColliderCollisionLayer(collisionLayerEnabled);
@@ -140,14 +175,14 @@ class CNetLookSource : MonoBehaviour, ILookSource, ICNetReg, ICNetUpdate
         Lagger.Update( now, ref lagLook );
         Lagger.Update( now, ref lagDir );
 
-        if( lagDir.value.magnitude < 0.01f ) {
-            Debug.Log("Invalid look direction");
-            return;
+        if( lagDir.value.magnitude < 0.5f ) {
+            //Debug.Log("Invalid look direction " + lagDir);
+            //return;
         }
         netLookDirectionDistance = lagDistance.value;
         netPitch = lagPitch.value;
         netLookPosition = lagLook.value;
-        netLookDirection = lagDir.value;
+        netLookDirection = lagDir.value.normalized;
     }
 
     public void NetUpdate()

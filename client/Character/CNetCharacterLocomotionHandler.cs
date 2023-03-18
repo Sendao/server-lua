@@ -11,6 +11,8 @@ namespace CNet
         [SerializeField]
 		protected bool use_camera = false;
 
+        private CNetId cni;
+
         private INetworkInfo networkInfo;        
 		[System.NonSerialized]
 		private PlayerInput playerInput;
@@ -18,13 +20,13 @@ namespace CNet
         protected override void Awake()
         {
             base.Awake();
-            networkInfo = GetComponent<INetworkInfo>();
+            cni = GetComponent<CNetId>();
             playerInput = GetComponent<PlayerInput>();
         }
 
         private void Start()
         {
-            if( networkInfo.IsLocalPlayer() ) {
+            if( cni.local ) {
                 if( use_camera ) {
                     Debug.Log("Try to use camera");
                     var cam = Opsive.Shared.Camera.CameraUtility.FindCamera(gameObject);
@@ -35,15 +37,27 @@ namespace CNet
                 }
             } else {
                 Debug.Log("Disable player input");
-                enabled = false;
-                m_CharacterLocomotion.enabled = false;
+
+                UltimateCharacterLocomotionHandler[] handlers = GetComponents<UltimateCharacterLocomotionHandler>();
+                int i;
+                for( i=0; i<handlers.Length; i++ ) {
+                    if( handlers[i] is CNetCharacterLocomotionHandler ) {
+                        continue;
+                    }
+                    Destroy( handlers[i] );
+                }
                 //playerInput.enabled = false;
+                //this.enabled = false;
+                Debug.Log("Self enabled!");
+                //m_CharacterLocomotion.enabled = false;
+                //playerInput.enabled = false;
+                //enabled = false;
             }
         }
 
         protected override void OnRespawn()
         {
-            if (!networkInfo.IsLocalPlayer()) {
+            if (!cni.local) {
                 return;
             }
             base.OnRespawn();

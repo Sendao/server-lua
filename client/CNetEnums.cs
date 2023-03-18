@@ -18,6 +18,10 @@ namespace CNet
 		DynPacketTo,
 		ActivateLua,
 		EchoRTT,
+		ObjectTop,
+		ObjectClaim,
+		Spawn,
+		NPCRecipe,
     };
 
     public enum CCommand {
@@ -27,7 +31,7 @@ namespace CNet
         FileData,
         NextFile,
         TimeSync,
-        LinkToObject,
+        TopObject,
         SetObjectPositionRotation,
         RegisterUser,
         ChangeUserRegistration,
@@ -40,6 +44,9 @@ namespace CNet
 		ClockSetDaySpeed,
 		ClockSync,
 		RTTEcho,
+		ObjectClaim,
+		Spawn,
+		NPCRecipe,
     };
 
 	public enum CNetFlag : byte {
@@ -117,6 +124,21 @@ namespace CNet
 
 		// MORE OBJECT
 		ActivateButton,
+
+		// DRIVING
+		EnterVehicleStart,
+		EnterVehicle,
+		ExitVehicle,
+		NearVehicle,
+
+		// OBJECTDETECTABILITY
+		NearObject,
+
+		// DRIVING PT2
+		VehicleControls,
+		MoveTowards,
+		VirtualControl,
+		VehicleControlsRequest
 	};
 
 	public enum CNetEvent : byte
@@ -138,6 +160,20 @@ namespace CNet
 		Ability = 512,
 		AbilityInt = 1024,
 		AbilityFloat = 2048
+	};
+
+	public enum VehicleDirtyFlags : short
+	{
+		Steering = 1,
+		Throttle = 2,
+		Brake = 4,
+		Handbrake = 8,
+		Gear = 16,
+		Engine = 32,
+		GearTransition = 64,
+		Headlights = 128,
+		Brights = 256,
+		Indicators = 512
 	};
 
 	public enum LookDirtyFlags : byte

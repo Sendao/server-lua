@@ -22,6 +22,15 @@ namespace CNet
 			cni.RegisterChild( this );
         }
 
+		public void Delist()
+		{
+			if( cni.local ) {
+				NetSocket.Instance.UnregisterPacket( CNetFlag.RequestAttributeSet, cni.id );
+			} else {
+				NetSocket.Instance.UnregisterPacket( CNetFlag.AttributeSet, cni.id );
+			}
+		}
+
 		public void Register()
 		{
 			if( cni.local ) {
@@ -30,14 +39,14 @@ namespace CNet
 				NetSocket.Instance.RegisterPacket( CNetFlag.AttributeSet, cni.id, DoAttributeSet ); // dynamic packet
 
 				NetStringBuilder sb = new NetStringBuilder();
-				sb.AddUint(cni.id);
+				sb.AddUint(NetSocket.Instance.local_uid);
 				NetSocket.Instance.SendPacketTo( cni.id, CNetFlag.RequestAttributeSet, cni.id, sb );
 			}
 		}
 
         private void DoRequestAttributeSet(ulong ts, NetStringReader stream)
         {
-			uint id = stream.ReadUint();
+			uint to = stream.ReadUint();
 
             var attributes = m_AttributeManager.Attributes;
             if (attributes == null) {
@@ -55,7 +64,7 @@ namespace CNet
 				sb.AddFloat(attributes[i].AutoUpdateStartDelay);
 				sb.AddInt((int)attributes[i].AutoUpdateValueType);
             }
-			NetSocket.Instance.SendDynPacketTo(id, CNetFlag.AttributeSet, cni.id, sb);
+			NetSocket.Instance.SendDynPacketTo(to, CNetFlag.AttributeSet, cni.id, sb);
         }
 
 		public void DoAttributeSet( ulong ts, NetStringReader stream )

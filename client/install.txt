@@ -1,62 +1,114 @@
+1. Import the base network code into the game.
+
 -> Create an object to hold Network scripts.
 -> place NetSocket and CNetItemTracker and CNetBPS(optional, shows BPS speed display) on.
--> later, fill out the item tracker list, but this is not needed yet (for spawnable items)
+-> Put three copies of CNetGraph in. Color each one with simple color materials. It should look like this:
+https://i.imgur.com/pkkqlQJ.png
+-> Don't worry about the item list as we do not spawn any objects yet.
 
-edit both player objects... the PlayerCharacter, and the prefab accessed through Systems>Characters Manager>PlayerCharacter
-- place scripts in this order:
--> CNetId
--> CNetInfo
--> CNetAnimatorMonitor
- * Copy the two graphs (Forward/horizontal movement) from the standard animator monitor
- * Delete the old animator monitor, as we have subclassed it
--> CNetCharacter
--> CNetMecanim
+2. Add the player scripts to PlayerCharacter in Base scene.
 
--> Reference the CNet assembly, inside the TwoNibble assembly definition
+-> as a common step, place CNetId on the Player object. This will enable identification of the player character and other objects.
+-> Additionally, place CNetInfo, CNetCharacter, and CNetAnimatorMonitor into the player object.
+-> copy the two graphs (forward and horizontal movement) from the standard 'animatormonitor' to the CNetAnimatorMonitor.
+-> remove the old animatormonitor from the player object.
+-> Make sure CNet Identifier is running and the other scripts are disabled to start. It should look like this:
+https://i.imgur.com/KzANWOE.png
 
--> Modify Assets\_IMPUNES\Scripts\CharacterController\UMACharacterBuilder.cs:
-- add a 'using CNet' definition.
-- modify this code:
-	if (m_AddHealth)
-	{
-		data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.AttributeManager>();
-		NetSocket.Instance.BuildHealthMonitors(data.gameObject);
-		data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.CharacterHealth>();
-		data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.CharacterRespawner>();
-	}
-- note we added BuildHealthMonitors.
-- modify this code, too:
-	Debug.Log("Finished Building character");
-	NetSocket.Instance.BuildPlayer(data.gameObject);
-	isCreated = true;
+3. Add the player scripts to the Player prefab in the Characters Manager under Systems.
 
--> Modify C:\imp\Assets\_IMPUNES\Scripts\Systems\CharactersManager.cs
- - add 'using CNet'.
- - Start() should start like this:
-	NetSocket.Instance.RegisterCharacterManager(this.CreateRemoteAvatar);
+-> Do the same as before, but this time on the prefab. It should look like this:
+https://i.imgur.com/IY7YdPm.png
 
-	UMAAssetIndexer index = UMAAssetIndexer.Instance;
-	races = index.GetAllAssets<RaceData>();
- - we register the createremoteavatar function.
- - add this function:
-	public GameObject CreateRemoteAvatar(Vector3 position, float heading)
-	{
-		var dynamicCharacterAvatar = CreateDynamicCharacter(position, heading, CharacterFeatures.Pedestrian, CharactersManager.CharacterQuality.Full);
-		if (!dynamicCharacterAvatar) {
-			Debug.Log("NewUser rejected");
-			return null;
-		}
 
-		var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
-		//characterBuilder.m_Build = false;
-		characterBuilder.m_AIAgent = false;
-		characterBuilder.m_AssignCamera = false;
-		characterBuilder.m_AddItems = true;
+4. Modify UMACharacterBuilder.cs:
+-> add 'using CNet;'
 
-		Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
-		dynamicCharacterAvatar.BuildCharacter();
+-> around line 217, modify the code so it looks like this:
+            if (m_AddHealth)
+            {
+                data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.AttributeManager>();
+                CNet.CNet.BuildHealthMonitors(data.gameObject);
+                data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.CharacterHealth>();
+                data.gameObject.AddComponent<Opsive.UltimateCharacterController.Traits.CharacterRespawner>();
+            }
 
-		return dynamicCharacterAvatar.gameObject;
-	}
+-> add the following at line 1046:
+                CNet.CNet.BuildPlayer(gameObject);
 
-You're done! Play to commence.
+5. Modify Env/Clock.cs:
+-> add the following to Start():
+            CNet.CNet.SetupClock( this.SetHour, this.SetDaySpeed );
+
+
+6. Copy CNetConnect.cs to the Assets/_IMPUNES/Multiplayer directory.
+
+7. Modify CharactersManager.cs:
+-> add the following to Start():
+             CNet.SetupCharacterManager(this.CreateRemoteAvatar, this.CreateNPC);
+-> make sure the following 3 functions are setup:
+
+
+        public GameObject CreateRemoteAvatar(Vector3 position, float heading)
+        {
+            var dynamicCharacterAvatar = CreateDynamicCharacter(position, heading, CharacterFeatures.Full, CharactersManager.CharacterQuality.Full);
+            if (!dynamicCharacterAvatar) {
+                Debug.Log("NewUser rejected");
+                return null;
+            }
+
+            var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
+            //characterBuilder.m_Build = false;
+            characterBuilder.m_AIAgent = true;
+            characterBuilder.m_AssignCamera = false;
+            characterBuilder.m_AddItems = true;
+
+            Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
+            dynamicCharacterAvatar.BuildCharacter();
+
+            return dynamicCharacterAvatar.gameObject;
+        }
+
+        public GameObject CreateNPC(Vector3 position, float heading)
+        {
+            var dynamicCharacterAvatar = CreateDynamicCharacter(position, heading, CharacterFeatures.Full, CharactersManager.CharacterQuality.Full);
+            if (!dynamicCharacterAvatar) {
+                Debug.Log("NewUser rejected");
+                return null;
+            }
+            RandomizeCharacterAvatar(dynamicCharacterAvatar, maleAverage);
+
+            var characterBuilder = dynamicCharacterAvatar.GetComponent<UMACharacterBuilder>();
+            //characterBuilder.m_Build = false;
+            characterBuilder.m_AIAgent = true;
+            characterBuilder.m_AssignCamera = false;
+            characterBuilder.m_AddItems = true;
+
+            Application.backgroundLoadingPriority = UnityEngine.ThreadPriority.Low;
+            dynamicCharacterAvatar.BuildCharacter();
+
+            return dynamicCharacterAvatar.gameObject;
+        }
+
+        public GameObject CreateCharacterRandom(Vector3 position, float heading, CharacterFeatures features = CharacterFeatures.Pedestrian, CharacterQuality quality = CharacterQuality.NotImportant)
+        {
+            var dynamicCharacterAvatar = CreateDynamicCharacter(position, heading, features, quality);
+            if (!dynamicCharacterAvatar) return null;
+
+            RandomizeCharacterAvatar(dynamicCharacterAvatar, maleAverage);
+
+            Application.backgroundLoadingPriority = ThreadPriority.Low;
+
+            //testAvatar = dynamicCharacterAvatar;
+            //UMAAssetIndexer.Instance.Preload(testAvatar, true).Completed += Avatar_Completed;
+            dynamicCharacterAvatar.BuildCharacter();
+
+            Application.backgroundLoadingPriority = ThreadPriority.Low;
+
+            return dynamicCharacterAvatar.gameObject;
+        }
+
+8. Copy in the new VehicleSource.cs and UseVehicle.cs files.
+
+9. Finally, setup the vehicle with the CNetVehicle and CNetId classes. It should look like this:
+https://i.imgur.com/qMH0wyA.png

@@ -4,7 +4,7 @@ using System;
 
 [RequireComponent(typeof(Rigidbody))]
 [AddComponentMenu("Rigidbody Network Connection")]
-public class CNetRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
+public class CNetTandemRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
 {
 	private Rigidbody body;
 	private CNetId cni;
@@ -110,8 +110,22 @@ public class CNetRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
 		Lagger.Update( now, ref lagRot );
 
 		hasData = false;
-		if( (lagPos.value - body.position).magnitude > 0.01f ) {
-			body.position = lagPos.value;
+		Vector3 diff = lagPos.value - body.position;
+		if( diff.magnitude > mindist ) {
+			Vector3.MoveTowards( body.position, lagPos.value, maxspeed );
+
+			Vector3 speedGoal;
+			if( diff.magnitude > maxspeed ) {
+				speedGoal = diff.normalized * maxspeed;
+			} else {
+				speedGoal = diff;
+			}
+			if( (speedGoal-lagPos.speed).magnitude > maxaccel ) {
+				lagPos.speed += (speedGoal-lagPos.speed).normalized * maxaccel;
+			} else {
+				lagPos.speed = speedGoal;
+			}
+			lagPos.value = body.position;
 			hasData = true;
 		}
 

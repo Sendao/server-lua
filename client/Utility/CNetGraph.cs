@@ -29,8 +29,6 @@ namespace CNet
 
 		public int windowId = 0;
 
-		private bool showWindow0 = false;
-
 		public void Awake()
 		{
 			#if UNITY_EDITOR
@@ -97,6 +95,7 @@ namespace CNet
 
 		private void OnGUI()
 		{
+			if( NetSocket.Instance.debugMode ) {
 			/*
 			showWindow0 = GUI.Toggle(new Rect(windowRect.x, windowRect.y-10, 512, 20), showWindow0, "Show " + myname);
 
@@ -104,6 +103,7 @@ namespace CNet
 			{*/
 			/*windowRect = */GUI.Window(windowId, windowRect, DrawGraph, "");
 			//}
+			}
 		}
 
 		private void DrawGraph(int windowID)

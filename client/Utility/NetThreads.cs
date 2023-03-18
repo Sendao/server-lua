@@ -16,6 +16,7 @@ namespace CNet
         NetSocket parent;
         public Thread _recvThread;
         public Thread _sendThread;
+        public bool disconnected;
 
         public NetThreads(NetSocket ctrl)
         {
@@ -32,9 +33,10 @@ namespace CNet
             long totalSize, sentSize, lastSize;
             byte[] data;
 
-            while (true)
+            while ( !disconnected )
             {
                 parent._sendQSig.WaitOne();
+                if( disconnected ) break;
                 while (parent.sendQ.Count > 0)
                 {
                     totalSize=0;
@@ -53,12 +55,12 @@ namespace CNet
 
                     sentSize=0;
 
-                    if( totalSize < 128 ) {
+                    if( totalSize < 250 ) {
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)totalSize;
                         parent.ws.Send(idhead);
                         //Debug.Log("HEAD " + totalSize);
-                        sentSize = 1;
+                        sentSize = 0;
                         while( parent.sendQ.Count > 0 ) {
                             lock (parent._sendQLock) {
                                 data = parent.sendQ.Dequeue();
@@ -66,24 +68,24 @@ namespace CNet
                             parent.ws.Send(data);
                             //Debug.Log("SEND " + data.Length);
                             sentSize += data.Length;
-                            if( sentSize >= totalSize+1 ) break;
+                            if( data.Length != 3 && sentSize >= totalSize ) break;
                         }
-                        if( sentSize != totalSize+1 ) {
-                            Debug.Log("Mismatch sent " + sentSize + " vs total " + totalSize+1);
+                        if( sentSize != totalSize ) {
+                            Debug.Log("Mismatch sent " + sentSize + " vs total " + totalSize);
                         }
                         data = null;  // don't hold onto the data
                     } else {
-                        Debug.Log("Compressing " + totalSize + " bytes");
+                        //Debug.Log("Compressing " + totalSize + " bytes");
                         byte[] idhead = new byte[1];
                         idhead[0] = (byte)255;
                         parent.ws.Send(idhead);
-
                         
                         var compressedStream = new MemoryStream();
                         var zipStream = new DeflateStream(compressedStream, System.IO.Compression.CompressionLevel.Optimal);
                         compressedStream.WriteByte(0x78);
                         compressedStream.WriteByte(0xDA);
                         uint a1 = 1, a2 = 0;
+                        sentSize = 0;
                         while( parent.sendQ.Count > 0 ) {
                             lock (parent._sendQLock) {
                                 data = parent.sendQ.Dequeue();
@@ -94,7 +96,7 @@ namespace CNet
                                 a1 = (a1 + b) % 65521;
                                 a2 = (a2 + a1) % 65521;
                             }
-                            if( sentSize >= totalSize ) break;
+                            if( data.Length != 3 && sentSize >= totalSize ) break;
                         }
 
                         data = null;  // don't hold onto the data
@@ -111,13 +113,13 @@ namespace CNet
                         compressedData[compressedData.Length - 1] = (byte)(a1 & 0xFF);
 
                         long compSize = compressedData.Length;
-                        Debug.Log("Compressed to " + compSize + " bytes");
+                        //Debug.Log("Compressed to " + compSize + " bytes");
 
                         byte[] sizehead = new byte[4];
-                        sizehead[0] = (byte)(compSize >> 24);
-                        sizehead[1] = (byte)(compSize >> 16);
-                        sizehead[2] = (byte)(compSize >> 8);
-                        sizehead[3] = (byte)(compSize);
+                        sizehead[0] = (byte)((compSize >> 24) & 0xff);
+                        sizehead[1] = (byte)((compSize >> 16) & 0xff);
+                        sizehead[2] = (byte)((compSize >> 8) & 0xff);
+                        sizehead[3] = (byte)(compSize & 0xFF);
                         parent.ws.Send(sizehead);
                         
                         parent.ws.Send(compressedData);
@@ -141,13 +143,14 @@ namespace CNet
             byte cmdByte;
             long recv_bytes;
 
-            while (true)
+            while (!disconnected)
             {
                 int recv = parent.ws.Receive(readbuffer, readlen, 1024, SocketFlags.None);
                 recv_bytes=0;
                 //Debug.Log("Received " + recv + " bytes");
-                if( recv <= 0 ) {
+                if( recv <= 0 || disconnected ) {
                     Debug.Log("Connection closed");
+                    disconnected = true;
                     break;
                 }
                 readlen += recv;
@@ -180,7 +183,7 @@ namespace CNet
                         byte[] decompressedData = decompressedStream.ToArray();
                         ptr += (int)compressedSize;
 
-                        Debug.Log("Decompressed size: " + decompressedData.Length);                    
+                        //Debug.Log("Decompressed size: " + decompressedData.Length);                    
                         //Debug.Log("Byte check: " + (int)decompressedData[200] + "," + (int)decompressedData[201] + "," + (int)decompressedData[202] + "," + (int)decompressedData[203]);
 
                         int deptr;
@@ -193,7 +196,7 @@ namespace CNet
                             tmpbuf[0] = cmdByte;
                             tmpbuf[1] = decompressedData[deptr-2];
                             tmpbuf[2] = decompressedData[deptr-1];
-                            Debug.Log("Read block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
+                            //Debug.Log("Decompress block of " + smallSize + " bytes: " + tmpbuf[0] + "," + tmpbuf[1] + "," + tmpbuf[2] + ": " + deptr);
                             if( smallSize != 0 )
                                 Array.Copy(decompressedData, deptr, tmpbuf, 3, smallSize);
                             recv_bytes += tmpbuf.Length;

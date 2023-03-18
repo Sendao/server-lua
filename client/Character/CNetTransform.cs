@@ -3,7 +3,11 @@ using Opsive.Shared.Game;
 using Opsive.UltimateCharacterController.Character;
 using Opsive.UltimateCharacterController.Networking;
 using Opsive.UltimateCharacterController.Utility;
+using Opsive.UltimateCharacterController.Character.Abilities;
+using Opsive.UltimateCharacterController.Game;
+using Opsive.Shared.Input.VirtualControls;
 using CNet;
+using Animancer;
 using UnityEngine;
 
 [RequireComponent(typeof(CNetId))]
@@ -14,18 +18,18 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 	private CNetId id;
 	private UltimateCharacterLocomotion characterLocomotion;
 	private CharacterFootEffects characterFootEffects;
+    protected HybridAnimancerComponent m_Animancer;
 
 	private Vector3 netPosition;
-	private Quaternion netRotation;
 	private Vector3 netEulers;
 	private Vector3 netScale;
 	private ulong lastUpdate = 0;
 
 	// setup: startval, maxaccel, maxspeed, mindist
 	private static Vector3 east = new Vector3(0, 0, -1);
-	private LagData<Vector3> lagPos = new LagData<Vector3>(Vector3.zero, 14f, 2.6f, 0.02f);
-	private LagData<Vector3> lagRot = new LagData<Vector3>(east, 6f, 3f, 0.25f);
-	private LagData<Vector3> lagScale = new LagData<Vector3>(Vector3.one, 0.2f, 0.1f, 0.05f);
+	private LagData<Vector3> lagPos = new LagData<Vector3>(Vector3.zero, 1.0f, 3.0f, 0.01f, 12f);
+	private LagData<Vector3> lagRot = new LagData<Vector3>(east, 1.6f, 3.1f, 0.01f, 6f);
+	private LagData<Vector3> lagScale = new LagData<Vector3>(Vector3.one, 0.2f, 0.8f, 0.03f, 1.5f);
 
 	private bool netOnPlatform;
 	private uint netPlatformId;
@@ -33,9 +37,10 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 	private Quaternion netPlatformPrevRotationOffset;
 	private Vector3 netPlatformRelativePosition;
 	private Vector3 netPlatformPrevRelativePosition;
+	private AnimatorMonitor m_AnimatorMonitor;
+	private ILookSource m_LookSource;
 
-	private float distance;
-	private float angle;
+
 	private bool hasData = false;
 
 	private void Awake()
@@ -45,16 +50,30 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 		characterFootEffects = gameObject.GetCachedComponent<CharacterFootEffects>();
 		id = gameObject.GetComponent<CNetId>();
 
+		m_AnimatorMonitor = GetComponent<AnimatorMonitor>();
+		m_Animancer = GetComponent<HybridAnimancerComponent>();
+		m_LookSource = GetComponent<ILookSource>();
+		lagPos.goal = lagPos.value = netPosition = transform.position;
+
 		EventHandler.RegisterEvent(gameObject, "OnRespawn", OnRespawn);
 		EventHandler.RegisterEvent<bool>(gameObject, "OnCharacterImmediateTransformChange", OnImmediateTransformChange);
 	}
 
-	public void Register()
+	public void Start()
 	{
-		NetSocket.Instance.RegisterPacket( CNetFlag.Transform, id.id, DoUpdate ); // dynamic packet
+		lagPos.goal = lagPos.value = netPosition = transform.position;
+		id.RegisterChild(this);
 	}
 
-	public void Start()
+	public void Delist()
+	{
+		if( id.local ) {
+			NetSocket.Instance.UnregisterNetObject( this );
+		} else {
+			NetSocket.Instance.UnregisterPacket( CNetFlag.Transform, id.id );
+		}
+	}
+	public void Register()
 	{
 		if( id.local ) {
 			NetSocket.Instance.RegisterNetObject( this );
@@ -63,9 +82,42 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 			lagRot.goal = lagRot.value = netEulers = transform.rotation * Vector3.forward;
 			lagScale.goal = lagScale.value = netScale = transform.localScale;
 
-			id.RegisterChild( this );
+			NetSocket.Instance.RegisterPacket( CNetFlag.Transform, id.id, DoUpdate ); // dynamic packet
+			NetSocket.Instance.RegisterPacket( CNetFlag.VirtualControl, id.id, OnVirtualControl, 4 );
 		}
 	}
+
+	protected Vector2 GetInputVector(Vector3 direct)
+	{
+		var inputVector = Vector2.zero;
+		var direction = direct;
+		if( direction.x == Mathf.Infinity || direction.x == Mathf.NegativeInfinity ) {
+			Debug.Log("Overflow x");
+			direction.x = direction.x > 0 ? 1 : -1;
+		}
+		if( direction.z == Mathf.Infinity || direction.z == Mathf.NegativeInfinity ) {
+			Debug.Log("Overflow z");
+			direction.z = direction.z > 0 ? 1 : -1;
+		}
+		inputVector.x = direction.x;
+		inputVector.y = direction.z;
+		return inputVector;
+	}
+
+	public void RegisterControls( VirtualControlsManager mgr )
+	{
+		if( id.local ) {
+			Debug.Log("Shouldn't register controls on local");
+			return;
+		}
+		Debug.Log("Got manager and controls");
+	}
+
+	public void SetControl( Vector2 xy )
+	{
+	}
+
+	public float speed = 0f;
 
 	private void Update()
 	{
@@ -73,48 +125,114 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 			return;
 		}
 
-		if( !hasData ) return;
+		// check for active abilities
+		int i;
+		for( i=0; i<characterLocomotion.ActiveAbilities.Length; i++ ) {
+			var ability = characterLocomotion.ActiveAbilities[i];
+			if( ability is MoveTowards ) {
+				Debug.Log("No move during movetowards");
+				return;
+			}
+		}
+
+/*		if( characterLocomotion.UsingRootMotionPosition ) {
+			Debug.Log("Don't move during FRMP");
+			return;
+		}*/
+
+		if( !hasData ) {
+			KinematicObjectManager.SetCharacterMovementInput(characterLocomotion.KinematicObjectIndex, 0, 0);
+			return;
+		}
 
 		System.TimeSpan ts = System.DateTime.Now - System.DateTime.UnixEpoch;
 		ulong now = (ulong)ts.TotalMilliseconds;
-		if( (now - lastUpdate) > 150 ) {
-			lastUpdate = now;
-		} else if( lagPos.updt > lastUpdate ) {
-			lastUpdate = lagPos.updt;
-		}
 
+		hasData=false;
 		if (characterLocomotion.Platform != null) {
-			if (characterFootEffects != null && (netPlatformPrevRelativePosition - netPlatformRelativePosition).sqrMagnitude > 0.01f) {
-				characterFootEffects.CanPlaceFootstep = true;
+			Lagger.Update( now, ref lagPos );
+			Lagger.Update( now, ref lagRot );
+			netPlatformRelativePosition = lagPos.value;
+			if( (netPlatformPrevRelativePosition - netPlatformRelativePosition).sqrMagnitude > 0.001f ) {
+				if( characterFootEffects != null )
+					characterFootEffects.CanPlaceFootstep = true;
+				hasData=true;
 			}
-			
-			//netPlatformPrevRelativePosition = Vector3.MoveTowards(netPlatformPrevRelativePosition, netPlatformRelativePosition, distance * serializationRate);
-			//netPlatformPrevRotationOffset = Quaternion.RotateTowards(netPlatformPrevRotationOffset, netPlatformRotationOffset, angle * serializationRate);
-			//characterLocomotion.SetPositionAndRotation(characterLocomotion.Platform.TransformPoint(netPlatformPrevRelativePosition), MathUtility.TransformQuaternion(characterLocomotion.Platform.rotation, netPlatformPrevRotationOffset), false);
+			//SetControl( new Vector2(0,0) );
+			Quaternion q = new Quaternion();
+			q.SetLookRotation( lagRot.value.normalized );
 
+			Vector3 pos = characterLocomotion.Platform.TransformPoint(lagPos.value);
+			Quaternion rot = MathUtility.TransformQuaternion(characterLocomotion.Platform.rotation, q);
+
+			if( pos != transform.position || rot != transform.rotation ) {
+				characterLocomotion.SetPositionAndRotation( pos,
+						rot, false, false, false );
+				//Debug.Log("Set position and rotation to " + lagPos.value + ": " + pos + ", " + q);
+			}
 		} else {
-			if ((transform.position - netPosition).sqrMagnitude > 0.01f) {
+			float hangTime = ( (now-lastUpdate) / 1000.0f );
+			if( hangTime < 0.0001 ) {
+				//characterLocomotion.Move( 0, 1, 0 ); // InputVector = GetInputVector(movedir);
+				hasData = true;
+				return;
+			}
+
+			Lagger.Update( now, ref lagPos );
+			Lagger.Update( now, ref lagRot );
+
+			Vector3 oldproject = transform.rotation * Vector3.forward;
+			Quaternion q = new Quaternion();
+			float angles = Vector3.SignedAngle( oldproject, lagRot.value, Vector3.up );
+			if( angles != 0 ) {
+				q.SetLookRotation( lagRot.value.normalized );
+				KinematicObjectManager.SetCharacterDeltaYawRotation(characterLocomotion.KinematicObjectIndex, angles);
+				//characterLocomotion.SetRotation(q);
+				transform.rotation = q;
+				hasData=true;
+			} else {
+				KinematicObjectManager.SetCharacterDeltaYawRotation(characterLocomotion.KinematicObjectIndex, 0);
+				q = transform.rotation;
+			}
+
+			if( characterLocomotion.KinematicObjectIndex == -1 ) {
+				Debug.LogWarning("KinematicObjectIndex is -1");
+			}
+			//characterLocomotion.SetPositionAndRotation(lagPos.value, q, false, false, false);
+
+			Vector3 diff = lagPos.goal - transform.position;
+
+			if (diff.sqrMagnitude > 0.001f) {
 				if( characterFootEffects != null ) {
 					characterFootEffects.CanPlaceFootstep = true;
 				}
+				Vector3 movedir = MathUtility.InverseTransformDirection(diff, transform.rotation);
+				Vector2 inputVector = GetInputVector(movedir.normalized).normalized;
+
+				KinematicObjectManager.SetCharacterMovementInput(characterLocomotion.KinematicObjectIndex, inputVector.x, inputVector.y);
+				transform.position = lagPos.value;
+				hasData=true;
+			} else {
+				KinematicObjectManager.SetCharacterMovementInput(characterLocomotion.KinematicObjectIndex, 0, 0); // todo: smooth?
+				transform.position = lagPos.goal;
 			}
-				//Debug.Log("Move distance " + distance*serializationRate + ": " + serializationRate);
-				/* old method:
-				transform.position = Vector3.MoveTowards(transform.position, netPosition, distance * serializationRate);
-				transform.rotation = Quaternion.RotateTowards(transform.rotation, netRotation, angle * serializationRate);
-				*/
-				// new method:
-				//Debug.Log("lagPos: " + lagPos.value + " -> " + lagPos.goal);
-			Lagger.Update( now, ref lagPos );
-			Lagger.Update( now, ref lagRot );
-			//Debug.Log("LDecid: " + lagPos.value);
-			transform.position = lagPos.value;
-			Quaternion q = new Quaternion();
-			q.SetLookRotation( lagRot.value.normalized );
-			transform.rotation = q;//Quaternion.SetLookRotation( lagRot.value.normalized );
 		}
 		Lagger.Update( now, ref lagScale );
 		transform.localScale = lagScale.value;
+		lastUpdate = now;
+	}
+
+	public void OnVirtualControl(ulong ts, NetStringReader stream)
+	{
+		float x = stream.ReadShortFloat(5.0f);
+		float y = stream.ReadShortFloat(5.0f);
+		// ignore.
+			/*
+		if( m_x != null )
+			m_x.my_value = x;
+		if( m_y != null )
+			m_y.my_value = y;
+			*/
 	}
 
 	public void NetUpdate()
@@ -123,7 +241,17 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 			Debug.Log("illegal CNetTransform.NetUpdate() on " + id);
 			return;
 		}
+
+		float x = Input.GetAxis("Horizontal");
+		float y = Input.GetAxis("Vertical");
+
 		NetStringBuilder sb = new NetStringBuilder();
+		sb.AddShortFloat(x, 5.0f);
+		sb.AddShortFloat(y, 5.0f);
+
+		NetSocket.Instance.SendPacket(CNetFlag.VirtualControl, id.id, sb, true);
+		
+		sb = new NetStringBuilder();
 		byte dirtyFlag = 0;
 		if( transform.localScale != netScale ) {
 			dirtyFlag |= (byte)TransformDirtyFlags.Scale;
@@ -139,40 +267,36 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 
 			var position = characterLocomotion.Platform.InverseTransformPoint(transform.position);
 			//var rotation = MathUtility.InverseTransformQuaternion(characterLocomotion.Platform.rotation, transform.rotation);
-			var rotation = MathUtility.InverseTransformQuaternion(characterLocomotion.Platform.rotation, transform.rotation).eulerAngles;
+			var rotation = MathUtility.InverseTransformQuaternion(characterLocomotion.Platform.rotation, transform.rotation) * Vector3.forward;
 
 			if (position != netPosition) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Position;
 				netPosition = position;
 			}
 
-			/*if (rotation != netRotation) {
-				dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
-				netRotation = rotation;
-			}*/
 			if (rotation != netEulers) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
 				netEulers = rotation;
 			}
 
-			if( dirtyFlag == 0 ) {
+			if( dirtyFlag == 0 || dirtyFlag == (byte)TransformDirtyFlags.Platform ) {
 				return;
 			}
 
 			sb.AddByte(dirtyFlag);
 			sb.AddUint(platformIdent.id);
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-				sb.AddShortVector3(position);
+				sb.AddVector3(position);
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-				sb.AddShortVector3(rotation);
+				sb.AddVector3(rotation);
 			}
 		} else {
 			// Determine the changed objects before sending them.
 			if (transform.position != netPosition) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Position;
 			}
-			if (transform.rotation.eulerAngles != netEulers) {
+			if (transform.rotation * Vector3.forward != netEulers) {
 				dirtyFlag |= (byte)TransformDirtyFlags.Rotation;
 			}
 
@@ -182,17 +306,17 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 
 			sb.AddByte(dirtyFlag);
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-				sb.AddShortVector3(transform.position);
-				sb.AddShortVector3(transform.position - netPosition);
+				sb.AddVector3(transform.position);
+				sb.AddVector3(transform.position - netPosition);
 				netPosition = transform.position;
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
 				netEulers = transform.rotation * Vector3.forward;
-				sb.AddShortVector3(netEulers);
+				sb.AddVector3(netEulers);
 			}
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
-			sb.AddShortVector3(transform.localScale);
+			sb.AddVector3(transform.localScale);
 			netScale = transform.localScale;
 		}
 		NetSocket.Instance.SendDynPacket( CNetFlag.Transform, id.id, sb );
@@ -207,45 +331,54 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 
 			// When the character is on a platform the position and rotation is relative to that platform.
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-				netPlatformRelativePosition = stream.ReadShortVector3();
+				netPlatformRelativePosition = stream.ReadVector3();
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-				netPlatformRotationOffset = Quaternion.Euler(stream.ReadShortVector3());
+				netPlatformRotationOffset.SetLookRotation( stream.ReadVector3().normalized );
+				//netPlatformRotationOffset = Quaternion.Euler(stream.ReadVector3());
 			}
 
-			// Do not do any sort of interpolation when the platform has changed.
 			if (platformId != netPlatformId) {
+				Debug.Log("Platform changed: -> " + platformId);
+
 				var platform = NetSocket.Instance.GetRigidbody(platformId).transform;
 				characterLocomotion.SetPlatform(platform, true);
-				netPlatformRelativePosition = netPlatformPrevRelativePosition = platform.InverseTransformPoint(transform.position);
-				netPlatformRotationOffset = netPlatformPrevRotationOffset = MathUtility.InverseTransformQuaternion(platform.rotation, transform.rotation);
+				
+				//netPlatformRelativePosition = netPlatformPrevRelativePosition = platform.InverseTransformPoint(transform.position);
+				//netPlatformRotationOffset = netPlatformPrevRotationOffset = MathUtility.InverseTransformQuaternion(platform.rotation, transform.rotation);
+				lagPos.value = lagPos.goal = netPlatformRelativePosition;
+				lagRot.value = lagRot.goal = netPlatformRotationOffset * Vector3.forward;
+			} else {
+				lagPos.goal = netPlatformRelativePosition;
+				lagRot.goal = netPlatformRotationOffset * Vector3.forward;
 			}
 
-			distance = Vector3.Distance(netPlatformPrevRelativePosition, netPlatformRelativePosition);
-			angle = Quaternion.Angle(netPlatformPrevRotationOffset, netPlatformRotationOffset);
 			netPlatformId = platformId;
 			netOnPlatform = true;
 		} else {
-			if (netOnPlatform) {
-				characterLocomotion.SetPlatform(null, true);
-				netPlatformId = 0;
-				netOnPlatform = false;
-			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-				netPosition = stream.ReadShortVector3();
-				var velocity = stream.ReadShortVector3();
+				netPosition = stream.ReadVector3();
+				var velocity = stream.ReadVector3();
 			}
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-				netEulers = stream.ReadShortVector3();
+				netEulers = stream.ReadVector3();
 			}
+			if (netOnPlatform) {
+				characterLocomotion.SetPlatform(null, true);
+				//transform.parent = null;
+				netPlatformId = 0;
+				netOnPlatform = false;
+				lagPos.value = netPosition;
+				lagRot.value = netEulers;
+			}
+			lagPos.goal = netPosition;
+			lagRot.goal = netEulers;
 		}
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
-			netScale = stream.ReadShortVector3();
+			netScale = stream.ReadVector3();
 		}
 
-		lagPos.goal = netPosition;
-		lagRot.goal = netEulers;
 		lagScale.goal = netScale;
 
 		Lagger.Speed( ts, ref lagPos );
@@ -258,17 +391,15 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 	private void OnRespawn()
 	{
 		netPosition = transform.position;
-		netRotation = transform.rotation;
 		netScale = transform.localScale;
-		netEulers = transform.rotation.eulerAngles;
+		netEulers = transform.rotation * Vector3.forward;
 	}
 
 	private void OnImmediateTransformChange(bool snapAnimator)
 	{
 		netPosition = transform.position;
-		netRotation = transform.rotation;
 		netScale = transform.localScale;
-		netEulers = transform.rotation.eulerAngles;
+		netEulers = transform.rotation * Vector3.forward;
 	}
 
 	private void OnDestroy()

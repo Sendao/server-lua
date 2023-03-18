@@ -17,6 +17,11 @@ namespace CNet
 			cni.RegisterChild(this);
 		}
 
+		public void Delist()
+		{
+			NetSocket.Instance.UnregisterPacket( CNetFlag.ActivateButton, cni.id );
+		}
+
 		public void Register()
 		{
 			NetSocket.Instance.RegisterPacket( CNetFlag.ActivateButton, cni.id, this.ActivateButton, 2 );

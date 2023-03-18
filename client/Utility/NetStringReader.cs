@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
@@ -17,8 +18,6 @@ namespace CNet
 			offset = 0;
 		}
 		public object[] ReadObjects() {
-			if( offset == data.Length )
-				return null;
 			List<object> res = new List<object>();
 			while( offset < data.Length ) {
 				byte type = ReadByte();
@@ -76,10 +75,10 @@ namespace CNet
 				Debug.LogError("ReadInt: out of range");
 				return 0;
 			}
-			int res;
-			res = (int)data[offset+0] << 8 | (int)(data[offset+1] & 0xFF);
+			Int16 res;
+			res = (Int16)(data[offset+0] << 8 | (data[offset+1] & 0xFF));
 			offset += 2;
-			return res;
+			return (int)res;
 		}
 		public uint ReadUint() {
 			if( offset+2 > data.Length ) {
@@ -99,6 +98,17 @@ namespace CNet
 			long res;
 			//res = System.BitConverter.ToInt64(data, offset);
 			res = (long)data[offset+0] << 24 | (long)data[offset+1] << 16 | (long)data[offset+2] << 8 | (long)(data[offset+3] & 0xFF);
+			offset += 4;
+			return res;
+		}
+		public ulong ReadULong() {
+			if( offset+4 > data.Length ) {
+				Debug.LogError("ReadLong: out of range");
+				return 0;
+			}
+			ulong res;
+			//res = System.BitConverter.ToInt64(data, offset);
+			res = (ulong)( (long)(data[offset+0] << 24) | (long)(data[offset+1] << 16) | (long)(data[offset+2] << 8) | (long)(data[offset+3] & 0xFF) );
 			offset += 4;
 			return res;
 		}
@@ -165,7 +175,7 @@ namespace CNet
 			return res;
 		}
 		public string ReadString() {
-			int len = ReadInt();
+			int len = (int)ReadUint();
 			int p;
 			string s;
 			
@@ -173,6 +183,25 @@ namespace CNet
 				Debug.LogError("ReadString: out of range");
 				return "";
 			}
+			s = "";
+			for(p=0; p<len; p++) {
+				s += (char)data[offset+p];
+			}
+			offset += len;
+
+			//Debug.Log("ReadString() length: " + len + ", string: " + s);
+			return s;
+		}
+		public string ReadLongString() {
+			int len = (int)ReadULong();
+			int p;
+			string s;
+			
+			if( offset+len > data.Length ) {
+				Debug.LogError("ReadString: out of range");
+				return "";
+			}
+			//Debug.Log("Read string of " + len + " bytes.");
 			s = "";
 			for(p=0; p<len; p++) {
 				s += (char)data[offset+p];
