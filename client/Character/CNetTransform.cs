@@ -242,16 +242,16 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 			return;
 		}
 
+		/*
 		float x = Input.GetAxis("Horizontal");
 		float y = Input.GetAxis("Vertical");
-
 		NetStringBuilder sb = new NetStringBuilder();
 		sb.AddShortFloat(x, 5.0f);
 		sb.AddShortFloat(y, 5.0f);
-
 		NetSocket.Instance.SendPacket(CNetFlag.VirtualControl, id.id, sb, true);
+		*/
 		
-		sb = new NetStringBuilder();
+		NetStringBuilder sb = new NetStringBuilder();
 		byte dirtyFlag = 0;
 		if( transform.localScale != netScale ) {
 			dirtyFlag |= (byte)TransformDirtyFlags.Scale;
@@ -279,7 +279,7 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 				netEulers = rotation;
 			}
 
-			if( dirtyFlag == 0 || dirtyFlag == (byte)TransformDirtyFlags.Platform ) {
+			if( dirtyFlag == (byte)TransformDirtyFlags.Platform ) {
 				return;
 			}
 
@@ -337,12 +337,26 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 				netPlatformRotationOffset.SetLookRotation( stream.ReadVector3().normalized );
 				//netPlatformRotationOffset = Quaternion.Euler(stream.ReadVector3());
 			}
+			
+			var platform = NetSocket.Instance.GetRigidbody(platformId).transform;
+			if( platform == characterLocomotion.Platform ) {
+				if( netPlatformId != platformId ) {
+					netPlatformId = platformId;
+					netOnPlatform = true;
+					lagPos.value = lagPos.goal = netPlatformRelativePosition;
+					lagRot.value = lagRot.goal = netPlatformRotationOffset * Vector3.forward;
+				} else {
+					lagPos.goal = netPlatformRelativePosition;
+					lagRot.goal = netPlatformRotationOffset * Vector3.forward;
+				}
+			}
+
 
 			if (platformId != netPlatformId) {
 				Debug.Log("Platform changed: -> " + platformId);
 
-				var platform = NetSocket.Instance.GetRigidbody(platformId).transform;
 				characterLocomotion.SetPlatform(platform, true);
+				platformId = netPlatformId;
 				
 				//netPlatformRelativePosition = netPlatformPrevRelativePosition = platform.InverseTransformPoint(transform.position);
 				//netPlatformRotationOffset = netPlatformPrevRotationOffset = MathUtility.InverseTransformQuaternion(platform.rotation, transform.rotation);
@@ -363,16 +377,17 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 			if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
 				netEulers = stream.ReadVector3();
 			}
-			if (netOnPlatform) {
+			netOnPlatform = ( characterLocomotion.Platform != null );
+			if( netOnPlatform ) {
 				characterLocomotion.SetPlatform(null, true);
-				//transform.parent = null;
 				netPlatformId = 0;
 				netOnPlatform = false;
 				lagPos.value = netPosition;
 				lagRot.value = netEulers;
+			} else {
+				lagPos.goal = netPosition;
+				lagRot.goal = netEulers;
 			}
-			lagPos.goal = netPosition;
-			lagRot.goal = netEulers;
 		}
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
@@ -397,6 +412,7 @@ public class CNetTransform: MonoBehaviour, ICNetUpdate, ICNetReg
 
 	private void OnImmediateTransformChange(bool snapAnimator)
 	{
+		//Debug.Log("ImmediateTransformChange"); -> yes it happens, and it happens a lot.
 		netPosition = transform.position;
 		netScale = transform.localScale;
 		netEulers = transform.rotation * Vector3.forward;

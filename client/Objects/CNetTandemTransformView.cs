@@ -9,6 +9,9 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 	private Rigidbody rb;
 	private CNetId cni;
 
+	public float extrapolationFactor = 3f;
+	public float angularExtrapolationFactor = 1.5f;
+
 	private Vector3 netPosition;
 	private float netVelocity=0f;
 	private Vector3 netEulers;
@@ -21,15 +24,16 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 	// setup: startval, maxaccel, maxspeed, mindist
 	private LagData<Vector3> lagScale;
 
+
 	public class Waypoint
 	{
-		public Vector3 pos;
-		public float speed;
-		public Vector3 rot;
-		public float angvel;
+		public Vector3 pos, extrapos;
+		public float speed, extraspeed;
+		public Vector3 rot, extrarot;
+		public float angvel, extraangvel;
 		public float nextdist;
 		public float initdist;
-		public Waypoint(Vector3 p, float s, Vector3 r, float a, float n, float i)
+		public Waypoint(Vector3 p, float s, Vector3 r, float a, float n, float i, Vector3 ep, float es, Vector3 er, float ea)
 		{
 			pos = p;
 			speed = s;
@@ -37,10 +41,15 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 			angvel = a;
 			nextdist = n;
 			initdist = i;
+			extrapos = ep;
+			extraspeed = es;
+			extrarot = er;
+			extraangvel = ea;
 		}
 	};
 
 	private List<Waypoint> waypoints = new List<Waypoint>();
+	private float max_speed=0f;
 
 	private CNetVehicle veh;
 
@@ -58,6 +67,7 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 		netScale = Vector3.one;
 
 		totalDist = 0f;
+		max_speed = 0f;
 	}
 
 	public void Start()
@@ -82,6 +92,13 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 		}
 	}
 
+	private void Update()
+	{
+		if( !cni.local && waypoints.Count > 0 ) {
+			FixedUpdate();
+		}
+	}
+
 	private void FixedUpdate()
 	{
 		if (cni.local || waypoints.Count <= 0 ) {
@@ -92,11 +109,11 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 		Waypoint wp = waypoints[0];
 
 		if( veh != null ) {
-			float distance = (wp.pos - transform.position).magnitude;
+			//float distance = (wp.pos - transform.position).magnitude;
 			if( waypoints.Count > 1 ) {
-				veh.FeedRCCParams( wp.pos, wp.rot, wp.pos, wp.rot, wp.speed, wp.angvel, totalDist - distance, true, waypoints[1].pos );
+				veh.FeedRCCParams( wp.extrapos, wp.extrarot, wp.extraspeed, wp.extraangvel, totalDist, true, waypoints[1].extrapos, max_speed*extrapolationFactor );
 			} else {
-				veh.FeedRCCParams( wp.pos, wp.rot, wp.pos, wp.rot, wp.speed, wp.angvel, totalDist - distance, false, Vector3.zero );
+				veh.FeedRCCParams( wp.extrapos, wp.extrarot, wp.extraspeed, wp.extraangvel, totalDist, false, Vector3.zero, max_speed*extrapolationFactor );
 			}
 		}
 		
@@ -172,40 +189,102 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 		return Mathf.Sqrt( (a.x-b.x)*(a.x-b.x) + (a.z-b.z)*(a.z-b.z) );
 	}
 
+	public void RecalculateMaxSpeed()
+	{
+		max_speed = 0f;
+		for( int i=0; i<waypoints.Count; i++ ) {
+			if( waypoints[i].speed > max_speed ) {
+				max_speed = waypoints[i].speed;
+			}
+		}
+	}
+
+	public Waypoint CalcWaypoint( Vector3 target, float speed, Vector3 rot, float angvel, float nextdist, float initdist, Vector3 start, float startspeed, Vector3 startrot, float startangvel)
+	{
+		Vector3 extrapos = start + (target - start) * this.extrapolationFactor;
+		float extraspeed = startspeed + (speed - startspeed) * this.extrapolationFactor;
+		Vector3 extrarot = (startrot + (rot - startrot) * this.angularExtrapolationFactor).normalized;
+		float extraangvel = startangvel + (angvel - startangvel) * this.angularExtrapolationFactor;
+
+		Waypoint wt = new Waypoint( target, speed, rot, angvel, nextdist, initdist, extrapos, extraspeed, extrarot, extraangvel );		
+		return wt;
+	}
+
 	public void AddWaypoint( Vector3 target, float speed, Vector3 rot, float angvel )
 	{
+		Waypoint p;
 		float dist = Vector2Dist(transform.position, target);
-		if( dist < 0.05f ) return;
-
 		if( target == Vector3.zero ) {
-			Debug.LogError("AddWaypoint: target is zero");
+			Debug.LogWarning("AddWaypoint: target is zero");
 			return;
 		}
 
+		if( speed > max_speed )
+			max_speed = speed;
+
 		if( waypoints.Count == 0 ) {
-			waypoints.Add( new Waypoint( target, speed, rot, angvel, 0.1f, dist ) );
+			p = CalcWaypoint( target, speed, rot, angvel, 0.1f, dist, transform.position, 0f, transform.rotation * Vector3.forward, 0f );
+
+			waypoints.Add( p );
 			totalDist += dist;
 		} else {
+			bool recalcMax=false;
 			while( waypoints.Count > 12 ) {
 				totalDist -= waypoints[0].initdist;
+				if( waypoints[0].speed == max_speed ) {
+					recalcMax=true;
+				}
 				waypoints.RemoveAt(0);
 			}
 			float distance = Vector2Dist(waypoints[waypoints.Count-1].pos, target);
 			float angle = Vector3.Angle( waypoints[waypoints.Count-1].rot, rot );
-			if( dist < distance ) {
+			Waypoint wp = waypoints[waypoints.Count-1];
+			if( dist < distance ) { // Waypoints are not linear, clear all waypoints:
 				waypoints.Clear();
-			} else if( distance < .1f && angle < 15f ) {
-				Waypoint wp = waypoints[waypoints.Count-1];
+			} else if( distance < .1f && angle < 5f ) { // Adjust existing waypoint:
+
+				// Recalculate extrapolation:
+				if( waypoints.Count < 2 ) {
+					Vector3 fwd;
+					wp.extrapos = transform.position + (target - transform.position) * this.extrapolationFactor;
+					wp.extraspeed = 0f + (speed - 0f) * this.extrapolationFactor;
+					fwd = transform.rotation * Vector3.forward;
+					wp.extrarot = (fwd + (rot - fwd) * this.angularExtrapolationFactor).normalized;
+					wp.extraangvel = 0f + (angvel - 0f) * this.angularExtrapolationFactor;
+				} else {
+					Waypoint wp2;
+					wp2 = waypoints[waypoints.Count-2];
+					wp.extrapos = wp2.pos + (target - wp2.pos) * this.extrapolationFactor;
+					wp.extraspeed = wp2.speed + (speed - wp2.speed) * this.extrapolationFactor;
+					wp.extrarot = (wp2.rot + (rot - wp2.rot) * this.angularExtrapolationFactor).normalized;
+					wp.extraangvel = wp2.angvel + (angvel - wp2.angvel) * this.angularExtrapolationFactor;
+				}
+
 				wp.pos = target;
+				if( wp.speed == max_speed ) {
+					recalcMax=true;
+				}
 				wp.speed = speed;
 				wp.rot = rot;
 				wp.angvel = angvel;
+				if( waypoints.Count > 1 ) {
+					distance = Vector2Dist(waypoints[waypoints.Count-2].pos, target);
+				} else {
+					distance = dist;
+				}
 				totalDist += distance - wp.initdist;
 				wp.initdist = distance;
+				if( recalcMax ) {
+					RecalculateMaxSpeed();
+				}
 				return;
 			}
-			waypoints.Add( new Waypoint( target, speed, rot, angvel, 2f*distance, distance ) );
+			p = CalcWaypoint( target, speed, rot, angvel, 2f*distance, distance, wp.pos, wp.speed, wp.rot, wp.angvel );
+			waypoints.Add( p );
 			totalDist += distance;
+			if( recalcMax ) {
+				RecalculateMaxSpeed();
+			}
 		}
 		//Debug.Log("Drop waypoint at " + target + ", speed + " + speed + ", count = " + waypoints.Count + ", totalDist = " + totalDist);
 	}
@@ -221,6 +300,7 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 		}
 		if( waypoints.Count < 2 ) return;
 		float dist1, dist2;
+		bool recalcMax=false;
 
 		dist1 = Vector2Dist(waypoints[0].pos, transform.position);
 		dist2 = Vector2Dist(waypoints[1].pos, transform.position);
@@ -228,10 +308,18 @@ public class CNetTandemTransformView : MonoBehaviour, ICNetReg, ICNetUpdate
 		if( dist1 < dist2 && dist1 > waypoints[0].nextdist ) return;
 		do {
 			totalDist -= waypoints[0].initdist;
+			if( waypoints[0].speed == max_speed ) {
+				recalcMax=true;
+			}
 			waypoints.RemoveAt(0);
 			dist1 = dist2;
-			if( waypoints.Count < 2 ) return;
+			if( waypoints.Count < 2 ) break;
 			dist2 = Vector2Dist(waypoints[1].pos, transform.position);
 		} while( dist2 < dist1 || dist1 < waypoints[0].nextdist );
+
+		if( recalcMax ) {
+			RecalculateMaxSpeed();
+		}
 	}
+
 }

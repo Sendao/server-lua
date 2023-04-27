@@ -8,23 +8,30 @@ using UnityEngine;
 using UnityEngine.AI;
 using System;
 
+// TODO:
+// - add the other indicators (turn signals)
+// - void movement when grinding gears (and switch to kinematic) -- don't do this until finely tuned
+
+
 public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 {
 	/* Config */
 	public bool AllKinematic = false;
-	public float distance_magnifier=0.75f;
+	public float distance_magnifier=1.5f;
 	public float max_power=0.66f;
-	public float steer_speed = 10f;
+	public float steer_speed = 8f;
+	public float thrust_factor = 0.005f;
+	public float initial_boost = 2f;
 
-	public float remote_speed = 1.05f;
+	public float remote_speed = 1f;
 
-	public float physical_power = 0.025f;
+	public float physical_power = 0.005f;
 	public float physical_minpower = 0.02f;
-	public float physical_wheelpower = 20f;
-	public float physical_brakepower = 20f;
-	public float physical_predict = 12f;
+	public float physical_wheelpower = 5f;
+	public float physical_brakepower = 50f;
+	public float physical_predict = 33f;
 	public float physical_predict_continuous = 6f;
-	public float physical_speedmag = 1.1f;
+	public float physical_speedmag = 1f;
 
 	public float physadjust_mindist = 0.5f;
 	public float physadjust_power = 10.0f;
@@ -41,12 +48,13 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 	public float kineturn_power = 1f;
 	public float steer_auxpower = 10f;
 	public float steer_magnifier = 1.5f;
+	public float speed_multiplier=1f;
 
 	public float floordist;
 	private float steerInput, steerNet;
 	private float handbrakeInput;
-	private float throttleInput;
-	private float brakeInput;
+	public float throttleInput;
+	public float brakeInput;
 	private int currentGear;
 	private bool engineRunning;
 	private bool headlightsOn;
@@ -64,29 +72,47 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 	private LagData<Vector3> lagPos;
 	private LagData<Vector3> lagRot;
 
+	private LineRenderer ltrace;
+
 	public void Awake()
 	{
 		this.carController = GetComponent<RCC_CarControllerV3>();
 		this.cni = GetComponent<CNetId>();
 		rbs = carController.GetComponentsInChildren<Rigidbody>();
 
-		r_interp = r_target = transform.position;
-		r_forward = r_forward_target = transform.forward;
+		r_target = transform.position;
+		r_forward = transform.forward;
 		r_speed = 0.0f;
 		r_angular = 0.0f;
 		throttleInput = brakeInput = steerInput = 0f;
-		handbrakeInput = 1f;
+		handbrakeInput = 0f;
 		currentGear = 0;
 
 		lagRot = new LagData<Vector3>(transform.rotation * Vector3.forward, 120f, 120f, 4f, 181.0f, false, false, false, 0.1f, true);
 		lagPos = new LagData<Vector3>(Vector3.zero, 2.5f, 100f, 0.5f, 200f, true, true, false, 0.5f);
 		lagPos.rot = lagPos.newrot = lagRot.value.normalized;
+
+		ltrace = gameObject.AddComponent<LineRenderer>();
+        ltrace.material = new Material(Shader.Find("Standard"));
+		ltrace.material.color = Color.red;
+
+		AnimationCurve ac = new AnimationCurve();
+		ac.AddKey(0f, 1f);
+		ac.AddKey(1f, 1f);
+		ltrace.widthCurve = ac;
+		ltrace.widthMultiplier = 0.1f;
+
+		StartParams();
+
+		//ltrace.positionCount = 2;
+		//ltrace.SetPosition(0, transform.position);
+		//ltrace.SetPosition(1, transform.position + (transform.forward * 10f));
+		Debug.Log("Woke");
 	}
 
 	public void Start()
 	{
 		cni.RegisterChild(this);
-		Debug.Log("Registered car ctl to register");
 	}
 	public void Delist()
 	{
@@ -103,10 +129,12 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 		handbrakeInput = 0f;
 		currentGear = 0;
 		engineRunning = false;
-		r_interp = r_target = transform.position;
-		r_forward = r_forward_target = transform.forward;
+		r_target = transform.position;
+		r_forward = transform.forward;
 		r_speed = 0.0f;
 		r_angular = 0.0f;
+
+		StartParams();
 
 		if( !cni.local ) {
 			NetSocket.Instance.RegisterPacket( CNetFlag.VehicleControls, cni.id, this.OnUpdate );
@@ -134,6 +162,9 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 				body.constraints = RigidbodyConstraints.None;
 			}
 		}
+
+		startingpt = carController.transform.position;
+		startspeed = 0f;
 	}
 
 	public void GetUpdate(ulong ts, NetStringReader stream)
@@ -281,16 +312,17 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 	}
 	public void Update()
 	{
-		if( !cni.local ) {
-			if( !carController.externalController )
-				carController.SetExternalControl(true);
+		if( cni.registered && !cni.local ) {
+
+			SmoothParams();
+
 			hasData = false;
 			if( stickyKinematic || AllKinematic ) {
 
 				float basespeed, baseangular;
 
 				lagPos.goal = r_target;
-				lagRot.goal = r_forward_target;
+				lagRot.goal = r_forward;
 				lagPos.value = transform.position;
 				lagRot.value = transform.rotation * Vector3.forward;
 
@@ -300,80 +332,168 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 
 				//lagRot.value = (transform.rotation * Vector3.forward).normalized;
 				baseangular = Mathf.Max(r_angular, 1f);
-				Lagger.Update( halftime, ref lagRot, r_angular, true ); // update rotation to halfpoint
+				Lagger.Update( halftime, ref lagRot, baseangular, true ); // update rotation to halfpoint
 
 				//lagRot.newrot = (transform.rotation * Vector3.forward).normalized;
-				basespeed = Mathf.Max(r_speed, 1f);
-				Lagger.Speed( halftime, ref lagPos, true, r_speed, true ); // update speed based on rotation change, with rotation to current (halfway point)
+				basespeed = Mathf.Max(r_maxspeed, 1f);
+				Lagger.Speed( halftime, ref lagPos, true, r_maxspeed, true ); // update speed based on rotation change, with rotation to current (halfway point)
 				
 				//lagPos.value = transform.position;
 				lagPos.newrot = lagRot.value.normalized;
 				//Lagger.Speed( now, ref lagPos ); // update speed based on rotation change, again, this time with new (target) rotation set (will happen automatically)
-				Lagger.Update( now, ref lagPos, r_speed, true ); // update position
+				Lagger.Update( now, ref lagPos, r_maxspeed, true ); // update position
 
-				Lagger.Update( now, ref lagRot, r_angular, true ); // update rotation (halfway point to now)
+				Lagger.Update( now, ref lagRot, baseangular, true ); // update rotation (halfway point to now)
 
 
 				hasData = false;
-				if( (transform.position - lagPos.value).magnitude > 0.001f ) {
+				if( (transform.position - lagPos.value).magnitude > 0.01f ) {
 					transform.position = lagPos.value;
-					hasData = true;
+					if( (transform.position-lagPos.goal).magnitude < 0.33f ) {
+						hasData=false;
+					} else {
+						hasData = true;
+					}
 				}
 
 				Quaternion q = new Quaternion();
 				q.SetLookRotation( lagRot.value.normalized );
-				if( Vector3.Angle(transform.forward, lagRot.value.normalized) > 0.1f ) {
+				//if( Vector3.Angle(transform.forward, lagRot.value.normalized) > 1f ) {
 					transform.rotation = q;
-					hasData = true;
-				}
+				//}
 
 				if( !hasData ) {
 					stickyKinematic=false;
-					steerInput = 0f;
+					//steerInput = 0f;
 					handbrakeInput = 0f;
 					FeedRCCTo();
-				} else {
-					FeedRCC(); // we still want to update the throttle and brake, steering etc
 				}
 			} else {
+				//! try to match speed kinetically
+				if( useSpeedMatch ) {
+					Vector3 startdist = (startingpt - carController.transform.position);
+					Vector3 tgtvec = (r_target - carController.transform.position);
+					float tgtspeed = Mathf.Lerp( startspeed, r_speed, 2f * startdist.magnitude / tgtvec.magnitude ); // take half the time to get up to speed
+
+					startingpt = carController.transform.position;
+					startspeed = carController.rigid.velocity.magnitude;
+
+					Vector3 addvel = (r_target - carController.transform.position).normalized * tgtspeed - carController.rigid.velocity;
+					carController.rigid.AddForce( addvel, ForceMode.VelocityChange );
+				}
 				FeedRCCTo();
 			}
+
+			FeedRCC();
 		}
 	}
 	public void FixedUpdate()
 	{
-		FeedRCC();
+		if( cni.registered && !cni.local ) {
+			FeedRCC();
+		}
 	}
 
-	public Vector3 r_target, r_interp;
-	private Vector3 r_forward, r_forward_target, r_more;
+	public bool useSpeedMatch = true;
+	public Vector3 r_target;
+	private Vector3 r_forward, r_more;
 	public float r_speed, r_angular;
-	public float r_total;
+	public float r_total, r_maxspeed;
 	public bool r_hasmore;
+	public Vector3 startingpt;
+	public float startspeed;
+
+	private Vector3 r_target_goal, r_forward_goal, r_more_goal;
+	private float r_total_goal, r_maxspeed_goal, r_speed_goal, r_angular_goal;
+	public float inputSmoothingSeconds = 0.2f;
 
 	private bool gearLock=false;
 
 	private bool checkRCC()
 	{
-		if( Vector2Dist(r_interp, carController.transform.position) < 0.01 ) {
+		if( Vector2Dist(r_target, carController.transform.position) < 0.01 ) {
 			//! check for rotation
 			return false;
 		}
 		return true;
 	}
 
-	public void FeedRCCParams( Vector3 target, Vector3 fwd, Vector3 target_goal, Vector3 fwd_goal, float speed, float rotSpeed, float totalDist, bool hasMore, Vector3 more )
+	public void StartParams()
 	{
-		r_target = target_goal;
-		r_interp = target;
-		r_forward = fwd;
-		r_forward_target = fwd_goal;
-		r_speed = speed;
-		r_angular = rotSpeed;
-		r_total = totalDist;
-		r_hasmore = hasMore;
-		r_more = more;
+		r_target_goal = r_target = carController.transform.position;
+		r_forward_goal = r_forward = carController.transform.rotation * Vector3.forward;
+		r_hasmore = false;
+		r_more_goal = r_more = Vector3.zero;
+		r_total_goal = r_total = 0f;
+		r_maxspeed_goal = r_maxspeed = 0f;
+		r_speed_goal = r_speed = 0f;
+		r_angular_goal = r_angular = 0f;
+	}
+
+	private float accumTime=10f;
+
+	public void SmoothParams()
+	{
+		float fact = Mathf.Min(Time.deltaTime/inputSmoothingSeconds, 1.0f);
+		if( accumTime >= inputSmoothingSeconds ) {
+			r_target = r_target_goal;
+			r_forward = r_forward_goal;
+			if( r_hasmore ) {
+				r_more = r_more_goal;
+			}
+			r_total = r_total_goal;
+			r_maxspeed = r_maxspeed_goal;
+			r_speed = r_speed_goal;
+			r_angular = r_angular_goal;
+			return;
+		}
+		accumTime += Time.deltaTime;
+
+		Vector3 diff2 = (r_target_goal-carController.transform.position);
+		Vector3 diffnow = (r_target-carController.transform.position);
+
+		r_target = carController.transform.position + ( (1-fact)*diffnow + fact*diff2 );
+
+		r_forward = r_forward_goal;
+
+		r_total = (1f-fact)*r_total + fact*r_total_goal;
+		r_maxspeed = (1f-fact)*r_maxspeed + fact*r_maxspeed_goal;
+		r_speed = (1f-fact)*r_speed + fact*r_speed_goal;
+		r_angular = (1f-fact)*r_angular + fact*r_angular_goal;
+
+		//r_target = Vector3.Lerp( r_target, r_target_goal, Time.deltaTime*inputSmoothingSpeed );
+		//r_forward = Vector3.Lerp( r_forward, r_forward_goal, Time.deltaTime*inputSmoothingSpeed );
+		//r_total = Mathf.Lerp( r_total, r_total_goal, Time.deltaTime*inputSmoothingSpeed );
+		//r_maxspeed = Mathf.Lerp( r_maxspeed, r_maxspeed_goal, Time.deltaTime*inputSmoothingSpeed );
+		//r_speed = Mathf.Lerp( r_speed, r_speed_goal, Time.deltaTime*inputSmoothingSpeed );
+		//r_angular = Mathf.Lerp( r_angular, r_angular_goal, Time.deltaTime*inputSmoothingSpeed );
+		if( r_hasmore ) {
+			r_more = r_more_goal;//Vector3.Lerp( r_more, r_more_goal, Time.deltaTime*inputSmoothingSpeed );
+		}
+	}
+
+	public void FeedRCCParams( Vector3 target_goal, Vector3 fwd_goal, float speed, float rotSpeed, float totalDist, bool hasMore, Vector3 more, float maxspeed )
+	{
+		ltrace.positionCount = 2;
+		ltrace.SetPosition(0, transform.position+new Vector3(0,1,0));
+		ltrace.SetPosition(1, (target_goal)+new Vector3(0,1,0));
+		if( hasMore ) {
+			ltrace.positionCount = 3;
+			ltrace.SetPosition(2, (more)+new Vector3(0,1,0));
+		}
+
+		r_target_goal = target_goal;
+		r_forward_goal = fwd_goal;
+		r_speed_goal = speed;
+		r_angular_goal = rotSpeed;
+		r_total_goal = totalDist;
+		r_maxspeed_goal = maxspeed;
 		hasData = true;
+		
+		r_hasmore = hasMore;
+		r_more = r_more_goal = more;
+
+		accumTime = 0f;
 	}
 
 	private float helper, helpz;
@@ -388,6 +508,8 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 	public float actualspeed, calcspeed, angle;
 	private Vector3 dir;
 	private bool hitBrake=false;
+	private bool initialStartup=true;
+
 
 	public float Vector2Dist( Vector3 a, Vector3 b )
 	{
@@ -401,21 +523,23 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 	public void MatchSpeed( float targetspeed, bool shouldReverse, float speed_diff )
 	{
 		float actualdiff = actualspeed - targetspeed;
-		float max_throttle;
+		float max_throttle, min_throttle;
+		float target_distance = r_total;//Vector2Dist(transform.position, r_target);
+		float target_thruster = Mathf.Abs(actualdiff/target_distance);
+		// get up to 10 in 100m:
+		// 10/100 = 0.1
+		// get up to 10 in 10m:
+		// 10/10 = 1
+		// get up to 10 in 1m:
+		// 10/1 = 10
+		//float target = (target_thruster-20f) * (target_thruster-20f); // this is where the problem is
+		float approx_thrust = 0.5f + Mathf.Clamp01(target_thruster*thrust_factor) * 0.5f; // here too.
 
-		if( targetspeed < 3f ) {
-			max_throttle = 0.35f;
-		} else if( targetspeed < 6f ) {
-			max_throttle = 0.5f;
-		} else if( targetspeed < 8f ) {
-			max_throttle = 0.66f;
-		} else if( targetspeed < 16f ) {
-			max_throttle = 0.8f;
-		} else {
-			max_throttle = 1f;
-		}
+		min_throttle = approx_thrust * 0.9f;
+		max_throttle = Mathf.Clamp01( approx_thrust * 1.1f );
+
 		if( inReverse ) {
-			max_throttle = Mathf.Max( max_throttle, 1f - actualspeed*0.5f );
+			max_throttle = Mathf.Max( max_throttle, 1f - actualspeed );
 		}
 
 		float sd = speed_diff;
@@ -426,63 +550,57 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 			break;
 		}
 
-		if( actualspeed + sd*Time.deltaTime*physical_predict < targetspeed ) {
+		if( actualspeed + sd*Time.deltaTime*physical_predict*physical_wheelpower < targetspeed ) {
 			if( !shouldReverse ) {
-				if( brakeInput < 0.05f ) {
-					throttleInput = Mathf.Clamp( throttleInput + physical_wheelpower * sd * Time.deltaTime, 0.0f, max_throttle );
-				} else {
-					brakeInput = 0f;//Mathf.Clamp( brakeInput - Time.deltaTime * physical_brakepower * sd, 0.0f, 0.8f );
-				}
+				brakeInput = 0f;
 				if( inReverse ) {
-					brakeInput = 0f;
-					throttleInput = max_throttle;
-					mode = "Boost throttle -reverse";
+					throttleInput = 1f;
+					mode += ", Boost throttle -reverse";
 				} else {
-					mode = "Boost throttle";
-				}
-			} else {
-				if( throttleInput < 0.05f ) {
-					brakeInput = Mathf.Clamp( brakeInput + physical_wheelpower * sd * Time.deltaTime, 0f, max_throttle );
-				} else {
-					throttleInput = 0f;//Mathf.Clamp( throttleInput - sd * physical_brakepower * Time.deltaTime, 0.0f, 0.8f );
-				}
-				if( !inReverse ) {
-					throttleInput = 0f;
-					brakeInput = 1f;
-					mode = "Boost reverse +reverse";
-				} else {
-					mode = "Boost reverse";
-				}
-			}
-		} else if( Mathf.Abs(actualdiff) < actualspeed*0.05f ) { // slow down or maintain speed
-			brakeInput = throttleInput = 0f;
-			mode = "Freefall";
-		} else {
-			if( !shouldReverse ) {
-				if( inReverse ) {
-					brakeInput = 0f;
-					throttleInput = 0f;
-					mode = "Slow throttle -reverse";
-				} else {
-					if( throttleInput <= 0.05f ) {
-						brakeInput = Mathf.Clamp( brakeInput + physical_brakepower * sd * Time.deltaTime, 0.0f, 0.4f );
-					} else {
-						throttleInput = Mathf.Clamp( throttleInput - Time.deltaTime * physical_brakepower * sd, 0f, max_throttle );
-					}
-					mode = "Slow throttle";
+					throttleInput = Mathf.Clamp( throttleInput + physical_wheelpower * sd * Time.deltaTime, min_throttle, max_throttle );
+					mode += ", Boost throttle";
 				}
 			} else {
 				throttleInput = 0f;
 				if( !inReverse ) {
 					brakeInput = 1f;
-					mode = "Slow reverse +reverse";
+					mode += ", Boost reverse +reverse";
+				} else {
+					brakeInput = Mathf.Clamp( brakeInput + physical_wheelpower * sd * Time.deltaTime, min_throttle, max_throttle );
+					mode += ", Boost reverse";
+				}
+			}
+		} else if( Mathf.Abs(actualdiff) < actualspeed*0.05f || actualspeed <= targetspeed ) { // slow down or maintain speed
+			if( !inReverse ) {
+				brakeInput = throttleInput = 0f;
+			} else {
+				brakeInput = 0.2f;
+				throttleInput = 0f;
+			}
+			mode += ", Freefall";
+		} else { // slow down
+			if( !shouldReverse ) {
+				if( inReverse ) {
+					brakeInput = 0f;
+					throttleInput = 1f;
+					mode += ", Slow throttle -reverse";
+				} else {
+					throttleInput = 0f;
+					brakeInput = Mathf.Clamp( brakeInput + physical_brakepower * sd * Time.deltaTime, 0f, min_throttle );
+					mode += ", Slow throttle";
+				}
+			} else {
+				if( !inReverse ) {
+					throttleInput = 0f;
+					brakeInput = 1f;
+					mode += ", Slow reverse +reverse";
 				} else {
 					if( brakeInput < 0.05f ) {
-						throttleInput = Mathf.Clamp( throttleInput + physical_brakepower * sd * Time.deltaTime, 0f, 0.4f );
+						throttleInput = Mathf.Clamp( throttleInput + physical_brakepower * sd * Time.deltaTime, 0f, min_throttle );
 					} else {
-						brakeInput = Mathf.Clamp( brakeInput - Time.deltaTime * physical_brakepower * sd, 0f, 1.0f );
+						brakeInput = Mathf.Clamp( brakeInput - Time.deltaTime * physical_brakepower * sd, 0.2f, Mathf.Max(min_throttle,0.2f) );
 					}
-					mode = "Slow reverse";
+					mode += ", Slow reverse";
 				}
 			}
 		}
@@ -495,15 +613,33 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 		Vector3 moredir;
 		float moredist;
 
-		dir = (r_interp - carController.transform.position);
+		inReverse = carController.direction == -1;
+
+		dir = (r_target - carController.transform.position);
 		dir.y = 0;
 		dist = Vector1Dist(dir);
 		dir = dir.normalized;
 
 		fwd = carController.transform.rotation * Vector3.forward;
 
+		Vector3 global = Quaternion.Inverse(carController.transform.rotation) * dir;
+		if( inReverse ) {
+			global.z = -global.z;
+			dir = carController.transform.rotation * global;
+		}/*
+		if( inReverse ) {
+			dir = (carController.transform.position - r_target);
+			dir.y = 0;
+			dir = dir.normalized;
+		}*/
+
 		if( r_hasmore ) {
 			moredir = (r_more - carController.transform.position);
+			if( inReverse ) {
+				global = Quaternion.Inverse(carController.transform.rotation) * moredir;
+				global.z = -global.z;
+				moredir = carController.transform.rotation * global;				
+			}
 			moredir.y = 0;
 			moredist = Vector1Dist(moredir);
 			moredir = moredir.normalized;
@@ -512,31 +648,41 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 			moredist = dist;
 		}
 
-		Vector3 rot_dir = r_forward_target;
+		Vector3 rot_dir = r_forward;
 
-		Vector3 blend_dir = dir;//rot_dir;//(dir + rot_dir).normalized;
+		Vector3 blend_dir = (dir + rot_dir).normalized;
 		dot = Vector3.Dot( fwd, blend_dir );
-		if( Mathf.Abs(dot) < 0.9f ) { // we overshot the target, possibly.
+		if( Mathf.Abs(dot) < 0.6f ) { // we overshot the target, possibly.
 			blend_dir = (moredir + rot_dir).normalized;
-			float moredot = Vector3.Dot( fwd, blend_dir );
-			dir = moredir;
-			dot = moredot;
+			dot = Vector3.Dot( fwd, blend_dir );
 		}
 
-		angle = Vector3.Angle( fwd, (dir /*+ rot_dir*/).normalized );
+		angle = Vector3.Angle( fwd, (blend_dir) );
 		if( angle >= 90 ) {
 			angle = 180-angle;
 		}
 
-		if( r_total*distance_magnifier > r_speed*remote_speed ) {
-			base_speed = r_total*distance_magnifier;
-			calcspeed = Mathf.Clamp(calcspeed+physical_speedmag*(r_total*distance_magnifier+r_speed*remote_speed)*0.5f*Time.deltaTime, 0f, base_speed);
-		} else if( r_speed > 0.01f ) {
-			base_speed = r_speed*remote_speed;
-			calcspeed = Mathf.Clamp(calcspeed+physical_speedmag*(r_speed*remote_speed)*Time.deltaTime, 0f, base_speed);
+		if( r_total > 0.025f ) {
+			float xspeed;
+			
+			if( r_total > 0.66f ) { // start the curve with a higher acceleration
+				xspeed = Mathf.Max(r_maxspeed*remote_speed, r_total*distance_magnifier)*initial_boost;
+				if( !initialStartup ) {
+					Debug.Log("Double speed");
+					initialStartup=true;
+				}
+			} else { // match speed as close as possible during curves and while stopping
+				if( initialStartup ) {
+					Debug.Log("Switch modes to normal speed now");
+					initialStartup=false;
+				}
+				xspeed = Mathf.Max(r_maxspeed*remote_speed, r_total*distance_magnifier);
+			}
+			base_speed = xspeed;
+			calcspeed = Mathf.Max(xspeed, 0.05f);//Mathf.Clamp(calcspeed+physical_speedmag*(xspeed*remote_speed)*Time.deltaTime, 0f, base_speed);
 		} else {
-			base_speed = 100f;
-			calcspeed = Mathf.Clamp(calcspeed*Mathf.Pow(0.5f,Time.deltaTime), 0f, base_speed);
+			base_speed = 0f;
+			calcspeed = 0f;
 		}
 
 		Vector3 components = Quaternion.Inverse(carController.transform.rotation) * blend_dir;
@@ -546,24 +692,40 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 		helpz = components.z;
 
 		speed_diff = Mathf.Clamp( physical_power*Mathf.Abs(calcspeed - actualspeed), physical_minpower, max_power );		
+		if( actualspeed < calcspeed/10 ) {
+			speed_diff *= speed_multiplier;
+			calcspeed *= speed_multiplier;
+		}
 
 		hitBrake = false;
 
 		float maxAngle = 40.0f;
 		float steer = Mathf.Clamp01( angle / maxAngle );
-		if( components.x < 0 )
+		if( components.x < 0 ) {
 			steer = -steer;
+		}
+		
+		/* technically this may be correct, but most of the time when z < 0, it is very small and then immediately going back to >0.
+		if( components.z < 0 ) {
+			steer = -steer;
+			if( steer > 0.01 || steer < -0.01 ) {
+				Debug.Log(components.x + "," + components.z + ": " + steer);
+			}
+		}*/
+		// this is not correct.
+		if( inReverse ) {
+			steer = -steer;
+		}
 
-		/*if( stickyKinematic || AllKinematic ) {
-		} else */if( dist > 0.01f ) {
-			inReverse = carController.direction == -1;
+		if( dist > 0.025f ) {
 			if( Mathf.Abs(dot) >= 0.6f ) {
 				bool shouldReverse = (dot < 0);
-				if( angle <= 40 ) {
+				if( angle <= 75 ) {
+					mode = "Normal";
 					MatchSpeed( calcspeed, shouldReverse, speed_diff );
 					shouldFinish=false;
 
-					if( actualspeed < 0.001f ) {
+					if( actualspeed < 0.001f || ( actualspeed < 3f && angle < 2f ) ) {
 						steerInput = Mathf.Lerp( steerInput, steerNet, Time.deltaTime * steer_speed );
 					} else if( steer*steer_magnifier > steerInput ) {
 						steerInput = Mathf.Clamp( steerInput + Time.deltaTime*steer_speed, -1f, steer*steer_magnifier );
@@ -572,33 +734,31 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 					}
 
 				} else {
-					shouldFinish=true;
-					if( !inReverse ) {
-						throttleInput = Mathf.Clamp01( throttleInput * Mathf.Pow( 0.5f, Time.deltaTime ) );
-						brakeInput = Mathf.Clamp( brakeInput - Time.deltaTime * speed_diff, 0f, 0.8f );
-					} else {
-						brakeInput = Mathf.Clamp01( brakeInput *Mathf.Pow( 0.5f, Time.deltaTime ) );
-						throttleInput = Mathf.Clamp( throttleInput - Time.deltaTime * speed_diff, 0f, 0.8f );
-					}
-					mode = "High angle";
 
-					steerInput = Mathf.Lerp( steerInput, 0.0f, Time.deltaTime/2 );
+					if( angle > 75 || dist > 0.1f ) {
+						shouldFinish=true;
+					}
+					throttleInput = Mathf.Clamp01( throttleInput - physical_brakepower*Time.deltaTime );
+					brakeInput = Mathf.Clamp( brakeInput - physical_brakepower*Time.deltaTime, 0f, 0.8f );
+					mode = "High angle";
+					steerInput = Mathf.Lerp( steerInput, steerNet, Time.deltaTime/2 );
 				}
-			} else if( dist > 5f ) {
+				/*
+			} else if( dist > this.kinematic_mindist + actualspeed*this.kinematic_mindist ) {
 				shouldFinish = true;
-				mode = "Too far";
+				mode = "Too far";*/
 			} else if( dist <= actualspeed ) {
 				bool shouldReverse = (dot < 0);
-				MatchSpeed( 0.0f, shouldReverse, speed_diff );
 				mode = "Brakes";
-			} else if( dist > 0.05f && Mathf.Abs(components.x) > Mathf.Abs(components.z) ) {
+				MatchSpeed( 0.0f, shouldReverse, speed_diff );
+			} else if( dist > 0.33f && Mathf.Abs(components.x) > Mathf.Abs(components.z) ) {
 				mode = "High X";
 				shouldFinish = true;
 			} else {
 				shouldFinish = false;
 				bool shouldReverse = (dot < 0);
-				MatchSpeed( calcspeed, shouldReverse, speed_diff );
 				mode = "Low dot"; // can't steer!
+				MatchSpeed( calcspeed, shouldReverse, speed_diff );
 				//steerInput = Mathf.Lerp( steerInput, 0.0f, Time.deltaTime/2 );
 			}
 
@@ -616,12 +776,11 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 			} else {
 				steerInput = Mathf.Clamp( steerInput + Time.deltaTime, -1f, 0f );
 			}
-			//throttleInput = Mathf.Clamp( throttleInput - Time.deltaTime, 0f, 0.5f );
-			//brakeInput = Mathf.Clamp( brakeInput + Time.deltaTime, 0f, 0.5f );
-			hitBrake = true;
+			bool shouldReverse = (dot < 0);
+			mode = "Low dist";
+			MatchSpeed( 0.0f, shouldReverse, speed_diff );
 			hasData = true;
 			shouldFinish = false;
-			mode = "Low dist";
 		}
 		if( !AllKinematic && !shouldFinish && !stickyKinematic && carController.rigid.isKinematic ) {
 			stickyKinematic = false;
@@ -634,14 +793,20 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 				rb.detectCollisions = true;
 			}
 		}
-
-		FeedRCC();
 	}
 
 	public void LateUpdate() {
-		if( !cni.local && ( hasData || checkRCC() ) ) {
+		if( cni.registered && !cni.local && ( hasData || checkRCC() ) ) {
 			Vector3 diff = (r_target - carController.transform.position);
+			/*if( inReverse ) {
+				diff = -diff;
+			}*/
+			Vector3 stdiff = diff;
 			Vector3 global = Quaternion.Inverse(carController.transform.rotation) * diff;
+			if( carController.direction == -1 ) {
+				global.z = -global.z;
+				diff = carController.transform.rotation * global;
+			}
 
 			floordist = Mathf.Abs(global.x) + Mathf.Abs(global.z);
 			bool setDist = false;
@@ -657,7 +822,7 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 			if( AllKinematic || stickyKinematic ) { // this is handled in fixedupdate now
 				setDist=true;
 			} else {
-				if( ( shouldFinish && ( floordist > 0.05f || angledistance > this.kinematic_minangle ) ) ||
+				if( ( shouldFinish ) ||
 					stickyKinematic ||
 					( floordist > this.kinematic_mindist + actualspeed*this.kinematic_mindist ) ) {
 					
@@ -698,26 +863,36 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 					//now += (ulong)(Time.deltaTime*500); // move halfway forward and turn
 					Lagger.Speed( now, ref lagRot, true, r_angular, true );
 					Lagger.Speed( now, ref lagPos, true, r_speed, true );
-				} else if( !carController.rigid.isKinematic && angledistance > physadjust_minangle && ( floordist > physadjust_mindist + (physadjust_mindist*actualspeed)) ) {
-				
-					float power = Mathf.Clamp( diff.magnitude, 0f, physadjust_max );
+				} else if( !carController.rigid.isKinematic ) {
+					if( dot < -0.4 && carController.direction == 1 && carController.rigid.velocity.magnitude > 0.01f && carController.rigid.velocity.magnitude < 2.5f ) {
+						carController.rigid.AddForce( carController.rigid.velocity * -2, ForceMode.VelocityChange );
+						//Debug.Log("Use speed reverse " + carController.rigid.velocity.magnitude);
+					} else if( !carController.rigid.isKinematic && ( (angledistance > physadjust_minangle) || ( floordist > physadjust_mindist + (physadjust_mindist*actualspeed)) ) ) {
+						float power = Mathf.Clamp( diff.magnitude, 0f, physadjust_max );
 					//carController.rigid.AddForce( diff.normalized * power * Time.fixedDeltaTime, ForceMode.VelocityChange );
-					carController.transform.position += diff.normalized * power * Time.fixedDeltaTime;
-					Debug.Log("Use phys adjust + " + power);
-					stickyKinematic = false;
+						carController.transform.position += stdiff.normalized * power * Time.fixedDeltaTime;
+						//Debug.Log("Use phys adjust + " + power);
+						stickyKinematic = false;
+					} else {
+						stickyKinematic = false;
+					}
 				} else {
 					stickyKinematic = false;
 				}
 
 				if( (shouldSteer && angledistance > this.kineturn_minangle) || angledistance > this.kineturn_minforceangle ) {
 					if( carController.rigid.isKinematic ) {
+						//var yturn = this.kineturn_power* carController.direction* steerInput*steer_auxpower*Time.deltaTime;
+						//carController.rigid.AddRelativeTorque( new Vector3(0f,yturn,0f), ForceMode.VelocityChange );
+						
 						Quaternion q = new Quaternion();
-						q.SetLookRotation(r_forward, Vector3.up);
+						q.SetLookRotation(diff.normalized, Vector3.up);
 						carController.transform.rotation = Quaternion.RotateTowards(carController.transform.rotation, q, Time.deltaTime * this.kineturn_speed );
+						
 						Debug.Log("Kinematic turn " + kineturn_speed*Time.deltaTime);
-					} else if( actualspeed > 0.05f && floordist > 0.1f ) {
-						var yturn = this.kineturn_power*carController.direction*steerInput*steer_auxpower*Time.deltaTime;
-						carController.rigid.AddRelativeTorque( new Vector3(0f,yturn,0f), ForceMode.VelocityChange );
+					} else if( floordist > 0.02f ) {
+						var yturn = this.kineturn_power* carController.direction* steerInput*steer_auxpower*Time.deltaTime;
+						//carController.rigid.AddRelativeTorque( new Vector3(0f,yturn,0f), ForceMode.VelocityChange );
 						Debug.Log("Add turn torque " + yturn);
 					}
 				}
@@ -735,12 +910,16 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 				}
 				stickyKinematic = false;
 			}
+			FeedRCC();
 		}
 	}
 
 	public bool firstSkip=false;
-	
+
     private void FeedRCC() {
+
+		if( !carController.externalController )
+			carController.SetExternalControl(true);
 
 		TimeSpan ts = DateTime.Now - DateTime.UnixEpoch;
 		ulong now = (ulong)ts.TotalMilliseconds;
@@ -749,6 +928,14 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 			Debug.Log("Change engine: " + engineRunning);
 			carController.SetEngine(engineRunning);
 			this.engineStartTime = now;
+		} else if( !engineRunning ) {
+			return;
+		}
+		
+		if( carController.direction == 1 && !carController.changingGear && brakeInput > 0.9f ) {
+			carController.direction = -1;
+		} else if( carController.direction == -1 && !carController.changingGear && brakeInput < 0.1f ) {
+			carController.direction = 1;
 		}
 
 		if( headlightsOn != carController.lowBeamHeadLightsOn ) {
@@ -759,28 +946,20 @@ public class CNetVehicle : MonoBehaviour, ICNetReg, ICNetUpdate
 			carController.highBeamHeadLightsOn = brightsOn;
 		}
 
-/* let this be automatic instead:
-		if( currentGear != carController.currentGear && !carController.changingGear ) {
-			Debug.Log("Changing gears to " + currentGear + " from " + carController.currentGear);
-			throttleInput = 0.0f;
-			brakeInput = 0.0f;
-			StartCoroutine( carController.ChangeGear( currentGear ) );
-		} */
-
 		float useThrottle = throttleInput, useBrake = brakeInput + (hitBrake ? 0.5f : 0f);
 
-        if (!carController.changingGear && !carController.cutGas)
-            carController.throttleInput = (carController.direction == 1 ? Mathf.Clamp01(useThrottle) : Mathf.Clamp01(useBrake));
-        else
+        if (!carController.changingGear && !carController.cutGas) {
+            carController.throttleInput = Mathf.Clamp01(carController.direction == 1 ? useThrottle : useBrake);
+        } else {
             carController.throttleInput = 0f;
+		}
 
         if (!carController.changingGear && !carController.cutGas) {
-            carController.brakeInput = (carController.direction == 1 ? Mathf.Clamp01(useBrake) : Mathf.Clamp01(useThrottle));
+            carController.brakeInput = Mathf.Clamp01(carController.direction == 1 ? useBrake : useThrottle);
         } else {
             carController.brakeInput = 0f;
 		}
 
-        // Feeding steerInput of the RCC.
 		if( steerInput != carController.steerInput ) {
         	carController.steerInput = steerInput;
 		}

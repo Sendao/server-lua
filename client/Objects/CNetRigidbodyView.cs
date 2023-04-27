@@ -55,14 +55,17 @@ public class CNetRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
 	}
 	public void Register()
 	{
-		lagPos.goal = lagPos.value = netPosition = body.position;
-		lagRot.goal = lagRot.value = netEulers = body.rotation * Vector3.forward;
-		lagScale.goal = lagScale.value = netScale = transform.localScale;
 		if( !cni.local ) {
 			this.body.isKinematic = true;
+			lagPos.goal = lagPos.value = netPosition = body.position;
+			lagRot.goal = lagRot.value = netEulers = body.rotation * Vector3.forward;
+			lagScale.goal = lagScale.value = netScale = transform.localScale;
 			NetSocket.Instance.RegisterPacket( CNetFlag.ObjTransform, cni.id, this.DoUpdate );
 		} else {
 			this.body.isKinematic = false;
+			netPosition = Vector3.zero;
+			netEulers = new Vector3(0,0,1);
+			netScale = Vector3.one;
 			NetSocket.Instance.RegisterNetObject( this );
 		}
 	}
@@ -164,15 +167,15 @@ public class CNetRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
 			netPosition = body.position;
-			sb.AddShortVector3(netPosition);
+			sb.AddVector3(netPosition);
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
 			netEulers = body.rotation * Vector3.forward;
-			sb.AddShortVector3(netEulers);
+			sb.AddVector3(netEulers);
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
 			netScale = transform.localScale;
-			sb.AddShortVector3(netScale);
+			sb.AddVector3(netScale);
 		}
 		NetSocket.Instance.SendDynPacket( CNetFlag.ObjTransform, cni.id, sb );
 	}
@@ -181,13 +184,13 @@ public class CNetRigidbodyView : MonoBehaviour, ICNetReg, ICNetUpdate
 		byte dirtyFlag = stream.ReadByte();
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-			netPosition = stream.ReadShortVector3();
+			netPosition = stream.ReadVector3();
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-			netEulers = stream.ReadShortVector3();
+			netEulers = stream.ReadVector3();
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
-			netScale = stream.ReadShortVector3();
+			netScale = stream.ReadVector3();
 		}
 
 		lagPos.goal = netPosition;

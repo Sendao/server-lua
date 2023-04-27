@@ -43,11 +43,14 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 	public void Register()
 	{
 		if( !cni.local ) {
-			NetSocket.Instance.RegisterPacket( CNetFlag.ObjTransform, cni.id, this.DoUpdate );
-		} else {
 			lagPos.goal = lagPos.value = netPosition = transform.position;
 			lagRot.goal = lagRot.value = netEulers = transform.rotation * Vector3.forward;
 			lagScale.goal = lagScale.value = netScale = transform.localScale;
+			NetSocket.Instance.RegisterPacket( CNetFlag.ObjTransform, cni.id, this.DoUpdate );
+		} else {
+			netPosition = Vector3.zero;
+			netEulers = new Vector3(0,0,1);
+			netScale = Vector3.one;
 			NetSocket.Instance.RegisterNetObject( this );
 		}
 	}
@@ -143,15 +146,15 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
 			netPosition = transform.position;
-			sb.AddShortVector3(netPosition);
+			sb.AddVector3(netPosition);
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
 			netEulers = transform.rotation * Vector3.forward;
-			sb.AddShortVector3(netEulers);
+			sb.AddVector3(netEulers);
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
 			netScale = transform.localScale;
-			sb.AddShortVector3(netScale);
+			sb.AddVector3(netScale);
 		}
 		NetSocket.Instance.SendDynPacket( CNetFlag.ObjTransform, cni.id, sb );
 	}
@@ -160,13 +163,13 @@ public class CNetTransformer : MonoBehaviour, ICNetReg, ICNetUpdate
 		byte dirtyFlag = stream.ReadByte();
 
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Position) != 0) {
-			netPosition = stream.ReadShortVector3();
+			netPosition = stream.ReadVector3();
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Rotation) != 0) {
-			netEulers = stream.ReadShortVector3();
+			netEulers = stream.ReadVector3();
 		}
 		if ((dirtyFlag & (byte)TransformDirtyFlags.Scale) != 0) {
-			netScale = stream.ReadShortVector3();
+			netScale = stream.ReadVector3();
 		}
 
 		lagPos.goal = netPosition;

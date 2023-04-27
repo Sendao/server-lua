@@ -72,6 +72,7 @@ namespace CNet {
         public bool authoritative = false;
         public bool connected = false;
         public bool registered = false;
+        public bool havevars = false;
 
         public uint local_uid;
 
@@ -277,8 +278,12 @@ namespace CNet {
                 connected = true;
             }
 
-            if( Player != null ) {
-                //Debug.Log("[authenticating-1]");
+            sb = new NetStringBuilder();
+            sb.AddUint(top_objid);
+            SendMessage( SCommand.ObjectTop, sb ); // send what we think the top object id should be
+
+            if( Player != null && havevars ) {
+                Debug.Log("[authenticating-1]");
                 sb = new NetStringBuilder();
                 sb.AddFloat( Player.transform.position.x );
                 sb.AddFloat( Player.transform.position.y );
@@ -290,9 +295,6 @@ namespace CNet {
                 SendMessage( SCommand.Register, sb ); // authenticate (for now)
             }
 
-            sb = new NetStringBuilder();
-            sb.AddUint(top_objid);
-            SendMessage( SCommand.ObjectTop, sb ); // send what we think the top object id should be
 
             return true;
         }
@@ -351,13 +353,20 @@ namespace CNet {
                         break;
                     case CCommand.EndOfFileList:
                         files.GotEndOfFileList(stream);
+                        if( !havevars ) {
+                            // need to register player now
+                            Debug.Log("[authenticating-2]");
+                            havevars = true;
+                            SetupUser(Player.GetComponent<CNetCharacter>());
+                        } else {
+                            Debug.Log("havevars set to true at time of load");
+                        }
                         break;
                     case CCommand.FileData:
                         files.GotFileData(stream);
                         break;
                     case CCommand.NextFile:
                         files.GotNextFile(stream);
-                        //! Step to next file in queue
                         break;
                     case CCommand.TimeSync:
                         last_game_time = (ulong)stream.ReadLongLong();
@@ -391,17 +400,32 @@ namespace CNet {
                         //! Save uid
                         local_uid = stream.ReadUint();
                         CNetId cni = Player.GetComponent<CNetId>();
+                        if( cni.registered ) {
+                            Debug.Log("Reset player");
+                            cni.Delist();
+                        }
                         cni.id = local_uid;
                         cni.local = true;
+                        registered = true;
+                        cni.Register();
+
                         Debug.Log("Logged in as " + local_uid + ( authoritative ? " (authoritative)" : " (client)"));
                         
                         serverUserObjects[cni.id] = Player;
-                        cni.Register();
 
-                        SendMessage( SCommand.GetFileList, null ); // request file list
+                        if( authoritative ) {
+                            foreach( uint key in clientBodies.Keys ) {
+                                Debug.Log("Switch object to authoritative");
+                                rb = clientBodies[key];
+                                CNetId cni2 = rb.GetComponent<CNetId>();
+                                cni2.Delist();
+                                cni2.local = authoritative;
+                                cni2.Register();
+                                rb.isKinematic = !authoritative;
+                            }
+                        }
                         break;
                     case CCommand.TopObject:
-                        registered = true;
                         // request variable idents
                         FinishConnectionWait();
                         /*
@@ -498,6 +522,8 @@ namespace CNet {
                                 cni2.local = false;
                                 cni2.Register();
                             }
+                        } else {
+                            Debug.LogError("Object " + objid + " not found");
                         }
                         break;
                     case CCommand.Spawn:
@@ -652,11 +678,15 @@ namespace CNet {
                         if( authoritative ) { // send back information about the object
                             //Debug.Log("Sending object " + wh.obj.name + " to server");
                             SendObject( wh.obj );
+                            rb.isKinematic = false;
+                        } else {
+                            rb.isKinematic = true;
                         }
                     }
                 }  
             }
             waitingObjects.Clear();
+            SendMessage(SCommand.GetFileList, null);
         }
         public void RegisterId( MonoBehaviour obj, string oname, int type )
         {
@@ -1015,8 +1045,7 @@ namespace CNet {
             r1 = stream.ReadFloat();
             r2 = stream.ReadFloat();
 
-            if( debugMode )
-                Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2);
+            Debug.Log("SetObjectPositionRotation: " + objid + ": " + x + " " + y + " " + z + " " + r0 + " " + r1 + " " + r2);
             //Rigidbody rb = clientBodies[objid];
             //rb.MovePosition(new Vector3(x,y,z));
             //rb.MoveRotation(new Quaternion(r0,r1,r2,r3));
@@ -1042,8 +1071,8 @@ namespace CNet {
         public void SetupUser( CNetCharacter player ) {
             //Debug.Log("-local player found-");
             Player = player.gameObject;
-            if( connected ) {
-                //Debug.Log("[authenticating]");
+            if( connected && havevars && !registered ) {
+                Debug.Log("[authenticating]");
                 NetStringBuilder sb = new NetStringBuilder();
                 sb.AddFloat( Player.transform.position.x );
                 sb.AddFloat( Player.transform.position.y );
@@ -1407,7 +1436,7 @@ namespace CNet {
 
             detail = stream.ReadShortBytes();
             if( detail == null ) {
-                //Debug.Log("RecvDynPacket: no detail for cmd " + (CNetFlag)cmd + " to tgt " + tgt);
+                Debug.Log("RecvDynPacket: no detail for cmd " + (CNetFlag)cmd + " to tgt " + tgt);
             } else {
                 //Debug.Log("RecvDynPacket: cmd " + (CNetFlag)cmd + " to tgt " + tgt + " at " + ts + " (" + ts_short + ")");
             }
