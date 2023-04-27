@@ -525,10 +525,10 @@ void User::SetObjectPositionRotation( char *data, uint16_t sz )
 // All user data should be loaded before this is called.
 void User::Register( char *data, uint16_t sz )
 {
-	char *buf=NULL;
-	long size;
+	char *buf=NULL, *buf2 = NULL;
+	long size, size2;
 	unsigned char type;
-	u_long alloced = 0;
+	u_long alloced = 0, alloc2;
 	User *otheruser;
 	Object *otherobj;
 	Npc *othernpc;
@@ -544,14 +544,6 @@ void User::Register( char *data, uint16_t sz )
 	strmem->Free( buf, alloced ); alloced = 0; buf = NULL;
 	lprintf("Register: Found user %u at %f %f %f", this->uid, this->x, this->y, this->z);
 
-	ituser = game->usermap.begin();
-	while( ituser != game->usermap.end() ) {
-		otheruser = ituser->second;
-		if( otheruser != this )
-			otheruser->SendTo(this);
-		ituser++;
-	}
-
 	itobj = game->objects.begin();
 	type = 0;
 	while( itobj != game->objects.end() ) {
@@ -561,8 +553,30 @@ void User::Register( char *data, uint16_t sz )
 			SendMsg( CCmdSpawn, size, buf );
 			strmem->Free( buf, alloced ); buf = NULL;
 			alloced = 0;
+		} else {
+			lprintf("Report object position %f %f %f", otherobj->x, otherobj->y, otherobj->z);
+			unsigned char dirtyFlag = 3;
+			uint16_t fakets = 0;
+			uint16_t fakecmd = CNetObjTransform;
+			size2 = spackf(&buf2, &alloc2, "bffffff", dirtyFlag, otherobj->x, otherobj->y, otherobj->z, otherobj->r0, otherobj->r1, otherobj->r2);
+			size = spackf(&buf, &alloced, "uuui", fakecmd, otherobj->uid, fakets, (signed int)size2);
+			char *buf3 = strmem->Alloc( size + size2 );
+			memcpy( buf3, buf, size );
+			memcpy( buf3+size, buf2, size2 );
+			SendMsg( CCmdDynPacket, size+size2, buf3 );
+			strmem->Free( buf3, size+size2 );
+			strmem->Free( buf, alloced ); buf = NULL; alloced = 0;
+			strmem->Free( buf2, alloc2 ); buf2 = NULL; alloc2 = 0;
 		}
 		itobj++;
+	}
+
+	ituser = game->usermap.begin();
+	while( ituser != game->usermap.end() ) {
+		otheruser = ituser->second;
+		if( otheruser != this )
+			otheruser->SendTo(this);
+		ituser++;
 	}
 
 	itnpc = game->npcs.begin();
@@ -814,6 +828,7 @@ void User::DynPacket( char *data, uint16_t sz )
 			ptr = sunpackf(ptr, "b", &dirtybyte);
 			if( (dirtybyte&TransformPosition) != 0 ) {
 				ptr = sunpackf(ptr, "fff", &target->x, &target->y, &target->z);
+				//lprintf("New object %u position: %f, %f, %f", target->uid, target->x, target->y, target->z);
 			}
 			if( (dirtybyte&TransformRotation) != 0 ) {
 				ptr = sunpackf(ptr, "fff", &target->r0, &target->r1, &target->r2);

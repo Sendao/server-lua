@@ -115,7 +115,7 @@ enum CNet {
 	CNetCharacterDropAll,
 	CNetFire,
 	CNetStartReload,
-	CNetReload,
+	CNetReload,//10
 	CNetReloadComplete,
 	CNetMeleeHitCollider,
 	CNetThrowItem,
@@ -125,7 +125,7 @@ enum CNet {
 	CNetMagicImpact,
 	CNetMagicStop,
 	CNetFlashlightToggle,
-	CNetPushRigidbody,
+	CNetPushRigidbody,//20
 	CNetSetRotation,
 	CNetSetPosition,
 	CNetResetPositionRotation,
@@ -138,7 +138,7 @@ enum CNet {
 	CNetRequestAnimation,
 	CNetRequestItemAnimation,
 	CNetInitAnimation,
-	CNetInitItemAnimation,
+	CNetInitItemAnimation,//30
 
 	// LOOK SOURCE
 	CNetPlayerLook,
@@ -149,7 +149,7 @@ enum CNet {
 	CNetRigidbodyUpdate,
 
 	// OBJECTS - TRANSFORM
-	CNetObjTransform,
+	CNetObjTransform, // 34
 
 	// MECANIM
 	CNetMecContinuousUpdate,

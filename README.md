@@ -132,7 +132,7 @@
 
 11. Add CNet to the assembly definition for IMPUNES.
 
-12. Finally, I don't remember exactly how to configure this, but your scripting define symbols should look like this:
+12. I don't remember exactly how to configure this, but your scripting define symbols should look like this:
 ![](https://i.imgur.com/vXkrDkI.png)
 
 # MinGW Instructions:
